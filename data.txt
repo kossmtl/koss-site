@@ -1,0 +1,34 @@
+# =====================================================================
+# K-OSS — données du site
+# =====================================================================
+# Ce fichier est lu automatiquement par le site (index.html et
+# a-propos.html) à chaque visite. Change une valeur ici, republie ce
+# fichier au même endroit sur ton hébergement, et le site se met à jour
+# tout seul — sans repasser par Claude.
+#
+# Comment écrire une ligne : nom_du_champ=nouvelle valeur
+# - Ne touche pas à ce qui est à gauche du signe =.
+# - N'ajoute pas de guillemets autour du texte.
+# - Une ligne qui commence par # est juste une note, elle est ignorée.
+# =====================================================================
+
+# --- Dates ---
+date_essai_enfants=2 septembre 2026
+heure_essai_enfants=17h
+date_intro_bjj=7 septembre 2026
+date_parents_enfants=12 septembre 2026
+date_babillard_queers=20 septembre 2026
+date_babillard_championnat=3 octobre 2026 · Centre Pierre-Charbonneau
+
+# --- Liens & coordonnées ---
+telephone=438-869-9187
+courriel=kossmtl@gmail.com
+instagram=https://www.instagram.com/k.oss.montreal/
+facebook=https://www.facebook.com/k.oss.montreal/
+lien_parents_enfants=https://clients.mindbodyonline.com/classic/ws?studioid=5736529&stype=-7&sVT=8&sView=day&sLoc=0
+lien_mindbody_general=https://www.mindbodyonline.com/explore/locations/jiu-jitsu-k-oss-inc
+
+# Note : les liens de réservation pour "Intro BJJ" et le "cours d'essai
+# enfants" ne sont PAS dans ce fichier — ils se construisent tout seuls
+# à partir des dates ci-dessus (date_intro_bjj / date_essai_enfants).
+# Change la date, le bouton de réservation suit automatiquement.
