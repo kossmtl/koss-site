@@ -111,7 +111,7 @@
     position:fixed; left:20px; bottom:20px; z-index:40;
     padding:14px;
     color:var(--paper);
-    display:flex; align-items:center; justify-content:center;
+    display:inline-flex; align-items:center; justify-content:center;
     filter:drop-shadow(0 2px 5px rgba(0,0,0,0.55));
     text-decoration:none;
   }
@@ -383,7 +383,16 @@
        layers the fade-in-on-scroll behavior on top for browsers that can do it, and
        is simply ignored elsewhere. */
     .rail-desktop{ display:none; }
-    .mnav{ display:block; }
+    /* .fab-anchor n'existe que pour regrouper .mnav + .chat-fab tout en haut de
+       .fab-scroll-track dans le HTML (voir index.html/a-propos.html) ; en
+       display:contents il ne génère aucune boîte, donc .fab-scroll-track (qui,
+       lui, couvre presque toute la hauteur de la page) devient directement le
+       bloc conteneur de .mnav-fab et .chat-fab pour le calcul du sticky top
+       ci-dessous. Sans ça, un conteneur intermédiaire "petit" (juste la taille
+       du bouton) empêcherait le sticky de coller — il resterait figé à sa
+       position de départ tout en haut, invisible pendant tout le scroll. */
+    .fab-anchor{ display:contents; }
+    .mnav{ display:contents; }
     .mnav-check{
       position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
       clip:rect(0,0,0,0); white-space:nowrap; border:0;
@@ -391,11 +400,22 @@
     .mnav-backdrop{ display:none; position:fixed; inset:0; z-index:44; }
     .mnav-check:checked ~ .mnav-backdrop{ display:block; }
     /* Style "icône seule" (pas de rond), même traitement que .chat-fab : juste une
-       ombre portée, padding invisible pour la zone de tap. */
+       ombre portée, padding invisible pour la zone de tap.
+       position:sticky (pas fixed) + .fab-scroll-track (voir HTML, un wrapper qui
+       entoure tout SAUF .footer-reviews) : le bouton se comporte comme un bouton fixe
+       tant qu'on est dans le contenu principal, mais une fois qu'on atteint la fin de
+       ce wrapper (juste avant les avis Google), il ne peut pas "coller" plus loin — il
+       s'arrête net et défile normalement avec le reste, pile à la ligne pointillée.
+       Important : on utilise "top" (pas "bottom") avec .fab-anchor placée tout en
+       haut du wrapper — un sticky "bottom" ne colle qu'en s'approchant de la FIN de
+       son bloc, donc il resterait invisible sur presque toute la page. Avec "top" et
+       une ancre en haut, il colle dès le départ. calc(100vh - 64px) = 20px de marge
+       + 44px de hauteur du bouton, mesuré depuis le haut du viewport. */
     .mnav-fab{
-      position:fixed; right:20px; bottom:20px; z-index:46;
+      position:sticky; top:calc(100vh - 64px); z-index:46;
       padding:14px;
       display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+      width:fit-content; margin-left:auto; margin-right:20px;
       cursor:pointer;
       filter:drop-shadow(0 2px 5px rgba(0,0,0,0.55));
     }
@@ -418,6 +438,12 @@
     .mnav-panel a{ display:flex; align-items:baseline; gap:12px; text-decoration:none; padding:6px 0; }
     .mnav-panel .num{ font-family:'Aestetico', sans-serif; font-weight:800; font-size:13px; color:var(--tan); }
     .mnav-panel .title{ font-family:'Aestetico', sans-serif; font-weight:600; font-size:14px; color:var(--paper); }
+
+    /* on mobile, .chat-fab switches from fixed (its desktop behavior) to sticky too,
+       for the same "stops before the footer" reason as .mnav-fab above (same "top"
+       + .fab-anchor logic — see the comment on .mnav-fab). 74px = 20px de marge +
+       54px de hauteur du bouton (padding 14 + icône 26 + padding 14). */
+    .chat-fab{ position:sticky; top:calc(100vh - 74px); bottom:auto; }
 
     @supports (animation-timeline: scroll()){
       @keyframes mnav-reveal{

@@ -487,6 +487,7 @@
   .cork-rot-8{ transform:rotate(3deg); margin-top:8px; }
   .cork-rot-9{ transform:rotate(-1deg); margin-top:24px; }
   .cork-rot-10{ transform:rotate(2deg); margin-top:6px; }
+  .cork-rot-11{ transform:rotate(-2deg); margin-top:14px; }
 
   /* premier post-it — décollé du mot "Babillard" écrit à la main, angle différent */
   .cork-first-note{ margin-top:40px; transform:rotate(4deg); }
@@ -556,6 +557,9 @@
     font-family:'Caveat', cursive; font-weight:600; font-size:14px; color:rgba(255,255,255,0.42); text-align:center; padding:0 10px;
   }
   .cork-polaroid-empty .frame img{ width:100%; height:100%; object-fit:cover; object-position:center top; display:block; }
+  /* photo "Nos alpha" — recadrée un peu plus bas que "top" par défaut, pour ne pas
+     couper le bas de l'action. */
+  .cork-rot-8 .frame img{ object-position:center 40%; }
   .cork-polaroid-caption{
     position:absolute; left:4px; right:4px; bottom:8px;
     font-family:'Rock Salt', cursive; font-weight:400; font-size:11px; line-height:1.3;
@@ -697,6 +701,30 @@
 </style>
 </head>
 <body>
+<div class="fab-scroll-track">
+<div class="fab-anchor">
+<div class="mnav">
+  <input type="checkbox" id="mnav-check" class="mnav-check">
+  <label for="mnav-check" class="mnav-backdrop" aria-hidden="true"></label>
+  <label for="mnav-check" class="mnav-fab" aria-label="Menu des sections">
+    <span class="mnav-bar"></span><span class="mnav-bar"></span><span class="mnav-bar"></span>
+  </label>
+  <nav class="mnav-panel">
+    <a href="index.html#inscris-toi"><span class="num">00</span><span class="title">Inscris-toi</span></a>
+    <a href="index.html#horaire"><span class="num">01</span><span class="title">Horaire</span></a>
+    <a href="index.html#important"><span class="num">02</span><span class="title">Important</span></a>
+    <a href="index.html#communaute"><span class="num">03</span><span class="title">Communauté</span></a>
+    <a href="#a-propos"><span class="num">04</span><span class="title">À propos</span></a>
+    <a href="#instructeurs"><span class="num">05</span><span class="title">Instructeurs</span></a>
+    <a href="#prix"><span class="num">06</span><span class="title">Prix</span></a>
+    <a href="#classes"><span class="num">07</span><span class="title">Classes</span></a>
+    <a href="#babillard"><span class="num">08</span><span class="title">Babillard</span></a>
+  </nav>
+</div>
+<a href="https://ig.me/m/k.oss.montreal" data-field-href="instagram_dm" target="_blank" rel="noopener" class="chat-fab" aria-label="Nous écrire sur Instagram">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"></rect><circle cx="12" cy="12" r="4.2"></circle><circle cx="17.3" cy="6.7" r="1.1" fill="currentColor" stroke="none"></circle></svg>
+</a>
+</div>
 <nav class="nav">
   <div class="brand">K-OSS</div>
   <a class="nav-cta" href="#essai-modal">Cours d'essai</a>
@@ -780,24 +808,6 @@
   <a href="#babillard"><span class="num">08</span><span class="title">Babillard</span></a>
 </nav>
 
-<div class="mnav">
-  <input type="checkbox" id="mnav-check" class="mnav-check">
-  <label for="mnav-check" class="mnav-backdrop" aria-hidden="true"></label>
-  <label for="mnav-check" class="mnav-fab" aria-label="Menu des sections">
-    <span class="mnav-bar"></span><span class="mnav-bar"></span><span class="mnav-bar"></span>
-  </label>
-  <nav class="mnav-panel">
-    <a href="index.html#inscris-toi"><span class="num">00</span><span class="title">Inscris-toi</span></a>
-    <a href="index.html#horaire"><span class="num">01</span><span class="title">Horaire</span></a>
-    <a href="index.html#important"><span class="num">02</span><span class="title">Important</span></a>
-    <a href="index.html#communaute"><span class="num">03</span><span class="title">Communauté</span></a>
-    <a href="#a-propos"><span class="num">04</span><span class="title">À propos</span></a>
-    <a href="#instructeurs"><span class="num">05</span><span class="title">Instructeurs</span></a>
-    <a href="#prix"><span class="num">06</span><span class="title">Prix</span></a>
-    <a href="#classes"><span class="num">07</span><span class="title">Classes</span></a>
-    <a href="#babillard"><span class="num">08</span><span class="title">Babillard</span></a>
-  </nav>
-</div>
 <section id="a-propos">
   <div class="section-inner">
     <div class="index">04 — à propos</div>
@@ -1371,6 +1381,12 @@
         <div class="cork-polaroid-caption">Nos alpha ♥</div>
       </div>
 
+      <div class="cork-polaroid-empty cork-rot-11">
+        <span class="cork-pin cork-pin-ink"></span>
+        <div class="frame"><img src="photos/polaroid-4.jpg" alt="Émile, Souders et Momo, bras dessus bras dessous, souriants au gym" loading="lazy"></div>
+        <div class="cork-polaroid-caption">Emile, Souders &amp; Momo</div>
+      </div>
+
       <div class="cork-leaderboard cork-rot-9">
         <span class="cork-pin cork-pin-ink"></span>
         <div class="cork-leaderboard-eyebrow">Side quest — juillet 2026</div>
@@ -1427,6 +1443,8 @@
       </div>
     </div>
   </div>
+</div>
+
 </div>
 
 <div class="footer-reviews">
@@ -2140,9 +2158,6 @@
   </div>
 </div>
 
-<a href="https://ig.me/m/k.oss.montreal" data-field-href="instagram_dm" target="_blank" rel="noopener" class="chat-fab" aria-label="Nous écrire sur Instagram">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"></rect><circle cx="12" cy="12" r="4.2"></circle><circle cx="17.3" cy="6.7" r="1.1" fill="currentColor" stroke="none"></circle></svg>
-</a>
 
 <script src="site-data.js" defer></script>
 </body>
