@@ -83,15 +83,15 @@
     transform:translateY(-50%);
     display:flex; flex-direction:column; gap:12px;
   }
-  .rail-desktop a, .rail-mobile a{
+  .rail-desktop a{
     position:relative; display:block; text-decoration:none; text-align:right;
     padding:2px 0; min-width:26px;
   }
-  .rail-desktop .num, .rail-mobile .num{
+  .rail-desktop .num{
     font-family:'Aestetico', sans-serif; font-weight:800; font-size:16px; line-height:1; color:var(--tan);
     transition:opacity 0.15s ease;
   }
-  .rail-desktop .title, .rail-mobile .title{
+  .rail-desktop .title{
     position:absolute; top:2px; right:0; white-space:nowrap;
     font-family:'Aestetico', sans-serif; font-weight:800; font-size:16px; line-height:1; color:var(--paper);
     opacity:0; pointer-events:none; transition:opacity 0.15s ease;
@@ -348,25 +348,40 @@
     }
 
     /* SECTION INDEX on mobile — .rail-desktop hides, .rail-mobile takes over, floating
-       inside the hero-panel itself. Tap to reveal the title, tap again to navigate,
-       5s with no second tap and it reverts to a number on its own (pure CSS timer). */
+       inside the hero-panel itself, bottom-left, always visible with the hero (not
+       scroll-triggered). Two-step tap (pure CSS, checkbox+label — same technique as
+       .poster-flip-check): first tap on a number reveals the section name without
+       navigating; a second tap on the now-visible name follows the link. */
     .rail-desktop{ display:none; }
     .rail-mobile{
-      display:flex; flex-direction:column; gap:2px;
+      display:flex; flex-direction:column; gap:6px;
       position:absolute; bottom:12px; left:24px; z-index:6;
     }
-    .rail-mobile a{ text-align:left; min-width:0; padding:1px 0; }
+    .rail-item{ position:relative; }
+    .rail-check{
+      position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+      clip:rect(0,0,0,0); white-space:nowrap; border:0;
+    }
+    .rail-num-btn{ display:block; cursor:pointer; text-align:left; min-width:0; padding:1px 0; }
     /* video behind on index.html = unpredictable background: white text + black shadow stays legible */
-    .rail-mobile .num, .rail-mobile .title{
+    .rail-mobile .num{
+      font-family:'Aestetico', sans-serif; font-weight:800; line-height:1;
+      font-size:12px; color:var(--paper);
+      text-shadow:0 1px 3px rgba(0,0,0,0.85), 0 0 8px rgba(0,0,0,0.5);
+      transition:opacity 0.15s ease;
+    }
+    .rail-title-link{
+      position:absolute; top:1px; left:0; right:auto; display:block; white-space:nowrap;
+      text-decoration:none; padding:1px 0;
+      opacity:0; pointer-events:none; transition:opacity 0.15s ease;
+    }
+    .rail-mobile .title{
+      font-family:'Aestetico', sans-serif; font-weight:800; line-height:1;
       font-size:12px; color:var(--paper);
       text-shadow:0 1px 3px rgba(0,0,0,0.85), 0 0 8px rgba(0,0,0,0.5);
     }
-    .rail-mobile .title{ left:0; right:auto; top:1px; }
-
-    @keyframes rail-num-hide{ 0%{opacity:0;} 99%{opacity:0;} 100%{opacity:1;} }
-    @keyframes rail-title-show{ 0%{opacity:1; pointer-events:auto;} 99%{opacity:1; pointer-events:auto;} 100%{opacity:0; pointer-events:none;} }
-    .rail-mobile a:focus .num{ animation:rail-num-hide 5s steps(1) forwards; }
-    .rail-mobile a:focus .title{ animation:rail-title-show 5s steps(1) forwards; }
+    .rail-check:checked ~ .rail-num-btn .num{ opacity:0; }
+    .rail-check:checked ~ .rail-title-link{ opacity:1; pointer-events:auto; z-index:2; }
   }
 
 /* ============================================================
@@ -585,28 +600,37 @@
 
 /* ============================================================
    POST-IT — petite bulle d'info par cours (sections "01 — horaire"
-   et "07 — classes", même mécanique sur les deux pages). Pur CSS :
-   :hover pour la souris, :focus-within pour le clavier ET pour le
-   tactile (taper sur le nom du cours lui donne le focus, ce qui
-   affiche la bulle sans navigation ni JS). Le déclencheur EST le nom
-   du cours lui-même (un <button> stylé pour être visuellement
-   identique au texte d'origine, sans icône séparée). Texte
-   actuellement aléatoire/placeholder par cours.
-   ============================================================ */
+   et "07 — classes"), par citation (section "03 — communauté"), par
+   événement du babillard, et pour l'avis "1 étoile" — même mécanique
+   partout, sur les deux pages. Pur CSS, checkbox+label caché (même
+   technique que .poster-flip-check / .rail-check) : :hover pour la
+   souris (aperçu sans clic), ET un vrai état "ouvert/fermé" piloté par
+   un checkbox pour le tactile/clavier — taper sur le nom OUVRE la
+   bulle, taper sur son petit ✕ la FERME (un simple :focus-within ne
+   donnait aucun moyen fiable de la refermer au toucher). */
 .postit-wrap{ position:relative; display:inline-block; }
+.postit-check{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+  clip:rect(0,0,0,0); white-space:nowrap; border:0;
+}
 .postit-name-btn{
-  display:inline; background:none; border:none; margin:0; padding:0;
-  font:inherit; color:inherit; text-transform:inherit; letter-spacing:inherit;
+  display:inline; color:inherit; text-transform:inherit; letter-spacing:inherit;
   text-decoration-line:none; cursor:pointer;
 }
-.postit-wrap:hover .postit-name-btn, .postit-name-btn:focus{ text-decoration-line:underline; text-underline-offset:3px; }
-.postit-name-btn:focus{ outline:2px solid var(--deep); outline-offset:3px; }
+.postit-wrap:hover .postit-name-btn,
+.postit-check:focus ~ .postit-name-btn,
+.postit-check:checked ~ .postit-name-btn{ text-decoration-line:underline; text-underline-offset:3px; }
+.postit-check:focus-visible ~ .postit-name-btn{ outline:2px solid var(--deep); outline-offset:3px; }
+/* Variantes "cours" et "communauté" — le nom reste toujours souligné, même
+   sans survol/tap, pour qu'on voie tout de suite que c'est cliquable. */
+.class-postit .postit-name-btn,
+.quote-postit .postit-name-btn{ text-decoration-line:underline; text-underline-offset:3px; }
 .postit{
   position:absolute; bottom:calc(100% + 12px); left:50%; z-index:20;
   transform:translateX(-50%) translateY(6px) rotate(-2deg);
   width:200px; background:#F5DE8C; color:var(--ink);
   border:1px solid rgba(40,41,46,0.15); box-shadow:3px 4px 10px rgba(40,41,46,0.35);
-  padding:14px 16px; font-family:'Aestetico', sans-serif; font-weight:500; font-size:12.5px; line-height:1.45;
+  padding:30px 32px 14px 16px; font-family:'Aestetico', sans-serif; font-weight:500; font-size:12.5px; line-height:1.45;
   text-align:left; text-transform:none; letter-spacing:normal; white-space:normal;
   opacity:0; visibility:hidden; pointer-events:none;
   transition:opacity 0.18s ease, transform 0.18s ease;
@@ -615,9 +639,18 @@
   content:""; position:absolute; top:0; right:0; width:0; height:0;
   border-style:solid; border-width:0 13px 13px 0; border-color:transparent rgba(40,41,46,0.18) transparent transparent;
 }
-.postit-wrap:hover .postit, .postit-wrap:focus-within .postit{
+.postit-wrap:hover .postit,
+.postit-check:checked ~ .postit{
   opacity:1; visibility:visible; pointer-events:auto; transform:translateX(-50%) translateY(0) rotate(-2deg);
 }
+.postit-close{
+  position:absolute; top:7px; right:7px; z-index:1; width:18px; height:18px;
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Aestetico', sans-serif; font-weight:700; font-size:10px; line-height:1; color:var(--ink);
+  background:rgba(40,41,46,0.1); border-radius:50%; cursor:pointer;
+  transition:background 0.15s ease;
+}
+.postit-close:hover{ background:rgba(40,41,46,0.22); }
 /* Variante qui s'ouvre vers le bas — pour les cours du haut d'une liste/rangée
    qui n'ont pas assez d'espace au-dessus (ex: sous un titre de section). */
 .postit-wrap.postit-down .postit{
@@ -628,11 +661,12 @@
   top:auto; bottom:0; border-width:13px 13px 0 0;
   border-color:rgba(40,41,46,0.18) transparent transparent transparent;
 }
-.postit-wrap.postit-down:hover .postit, .postit-wrap.postit-down:focus-within .postit{
+.postit-wrap.postit-down:hover .postit,
+.postit-wrap.postit-down .postit-check:checked ~ .postit{
   transform:translateX(-50%) translateY(0) rotate(-2deg);
 }
 @media (max-width:600px){
-  .postit{ width:168px; font-size:12px; padding:12px 14px; }
+  .postit{ width:168px; font-size:12px; padding:28px 16px 12px 14px; }
 }
 
 /* Variante "communauté" — le texte de présentation est un vrai paragraphe
@@ -730,6 +764,8 @@
 }
 .album-modal-box a{ color:inherit; text-decoration:underline; text-underline-offset:2px; }
 .album-modal-box a:hover{ color:#C0392B; }
+.album-modal-box .modal-close{ color:var(--paper); text-decoration:none; }
+.album-modal-box .modal-close:hover{ color:var(--paper); }
 
 /* Choix "pilule rouge / pilule bleue" (façon Matrix) — clic sur une pilule =
    elle grossit plein écran et s'ouvre en deux, comme si le texte était
