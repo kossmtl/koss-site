@@ -24,6 +24,7 @@ date_babillard_championnat=3 octobre 2026 · Centre Pierre-Charbonneau
 telephone=438-869-9187
 courriel=kossmtl@gmail.com
 instagram=https://www.instagram.com/k.oss.montreal/
+instagram_dm=https://ig.me/m/k.oss.montreal
 facebook=https://www.facebook.com/k.oss.montreal/
 lien_parents_enfants=https://clients.mindbodyonline.com/classic/ws?studioid=5736529&stype=-7&sVT=8&sView=day&sLoc=0
 lien_mindbody_general=https://www.mindbodyonline.com/explore/locations/jiu-jitsu-k-oss-inc

@@ -78,6 +78,7 @@
      browsers, even though it paints). .rail-mobile lives INSIDE .hero-panel so it can
      anchor to the hero's own bottom edge on small screens. Only one is visible at a time. */
   .rail-mobile{ display:none; }
+  .mnav{ display:none; }
   .rail-desktop{
     position:fixed; top:50%; right:22px; z-index:20;
     transform:translateY(-50%);
@@ -98,6 +99,24 @@
   }
   .rail-desktop a:hover .num{ opacity:0; }
   .rail-desktop a:hover .title{ opacity:1; pointer-events:auto; }
+
+  /* CHAT FAB — small fixed button, bottom-left, on every page. Zéro JS : c'est un
+     simple lien vers Instagram (ig.me/m/... ouvre directement la fenêtre de message,
+     pas juste le profil). z-index reste sous les .modal (100) pour que le bouton se
+     retrouve naturellement caché derrière le fond opaque d'une boîte ouverte.
+     Style "icône seule" (pas de rond) — juste une ombre portée pour rester lisible
+     peu importe ce qu'il y a en dessous. Le padding est invisible, juste pour garder
+     une zone de tap confortable. */
+  .chat-fab{
+    position:fixed; left:20px; bottom:20px; z-index:40;
+    padding:14px;
+    color:var(--paper);
+    display:flex; align-items:center; justify-content:center;
+    filter:drop-shadow(0 2px 5px rgba(0,0,0,0.55));
+    text-decoration:none;
+  }
+  .chat-fab svg{ width:26px; height:26px; }
+  .chat-fab:hover{ color:var(--tan); }
   .announce{
     max-width:1200px; margin:0 auto; padding:16px 0;
     display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;
@@ -337,7 +356,7 @@
   }
   @media (max-width:700px){
     .hero-panel{ padding:48px 24px 0; }
-    .stamp{ display:none; }
+    .stamp{ top:26px; right:24px; font-size:9px; padding:7px 10px; }
     .hero-ctas{ margin:36px 0 16px; }
     .hero-media{
       position:relative; left:auto; right:auto; top:auto; bottom:auto;
@@ -347,41 +366,71 @@
       background:linear-gradient(to bottom, var(--deep) 0%, rgba(56,70,57,0.92) 18%, rgba(56,70,57,0.55) 38%, rgba(56,70,57,0) 65%);
     }
 
-    /* SECTION INDEX on mobile — .rail-desktop hides, .rail-mobile takes over, floating
-       inside the hero-panel itself, bottom-left, always visible with the hero (not
-       scroll-triggered). Two-step tap (pure CSS, checkbox+label — same technique as
-       .poster-flip-check): first tap on a number reveals the section name without
-       navigating; a second tap on the now-visible name follows the link. */
+    /* SECTION INDEX on mobile — .rail-desktop hides; instead of numbers floating in
+       the hero, a small hamburger button sits fixed bottom-right of the SCREEN (not
+       just the hero) so it can jump to any section from anywhere on the page. Pure
+       CSS checkbox+label toggle (same technique as postits/modals): tap to open a
+       panel listing every section's number + name, tap a link to go there, or tap
+       anywhere outside the panel (the invisible backdrop) to close it without
+       navigating.
+       The button is also meant to fade in only once the visitor starts scrolling
+       down, and fade out again back at the very top. A true scroll-position-driven
+       reveal like that needs CSS scroll-driven animations (animation-timeline:
+       scroll()) — a real, standardized feature, but still not supported on every
+       browser (notably not on Firefox, and only on quite recent Safari). Rather than
+       have the button silently fail to appear at all for visitors on those browsers,
+       the base rule below keeps it always visible; the @supports block further down
+       layers the fade-in-on-scroll behavior on top for browsers that can do it, and
+       is simply ignored elsewhere. */
     .rail-desktop{ display:none; }
-    .rail-mobile{
-      display:flex; flex-direction:column; gap:6px;
-      position:absolute; bottom:12px; left:24px; z-index:6;
-    }
-    .rail-item{ position:relative; }
-    .rail-check{
+    .mnav{ display:block; }
+    .mnav-check{
       position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
       clip:rect(0,0,0,0); white-space:nowrap; border:0;
     }
-    .rail-num-btn{ display:block; cursor:pointer; text-align:left; min-width:0; padding:1px 0; }
-    /* video behind on index.html = unpredictable background: white text + black shadow stays legible */
-    .rail-mobile .num{
-      font-family:'Aestetico', sans-serif; font-weight:800; line-height:1;
-      font-size:12px; color:var(--paper);
-      text-shadow:0 1px 3px rgba(0,0,0,0.85), 0 0 8px rgba(0,0,0,0.5);
-      transition:opacity 0.15s ease;
+    .mnav-backdrop{ display:none; position:fixed; inset:0; z-index:44; }
+    .mnav-check:checked ~ .mnav-backdrop{ display:block; }
+    /* Style "icône seule" (pas de rond), même traitement que .chat-fab : juste une
+       ombre portée, padding invisible pour la zone de tap. */
+    .mnav-fab{
+      position:fixed; right:20px; bottom:20px; z-index:46;
+      padding:14px;
+      display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+      cursor:pointer;
+      filter:drop-shadow(0 2px 5px rgba(0,0,0,0.55));
     }
-    .rail-title-link{
-      position:absolute; top:1px; left:0; right:auto; display:block; white-space:nowrap;
-      text-decoration:none; padding:1px 0;
-      opacity:0; pointer-events:none; transition:opacity 0.15s ease;
+    .mnav-bar{
+      display:block; width:20px; height:2px; background:var(--paper); border-radius:1px;
+      transition:transform 0.2s ease, opacity 0.2s ease;
     }
-    .rail-mobile .title{
-      font-family:'Aestetico', sans-serif; font-weight:800; line-height:1;
-      font-size:12px; color:var(--paper);
-      text-shadow:0 1px 3px rgba(0,0,0,0.85), 0 0 8px rgba(0,0,0,0.5);
+    .mnav-check:checked ~ .mnav-fab .mnav-bar:nth-child(1){ transform:translateY(7px) rotate(45deg); }
+    .mnav-check:checked ~ .mnav-fab .mnav-bar:nth-child(2){ opacity:0; }
+    .mnav-check:checked ~ .mnav-fab .mnav-bar:nth-child(3){ transform:translateY(-7px) rotate(-45deg); }
+    .mnav-panel{
+      display:flex; flex-direction:column; gap:2px;
+      position:fixed; right:20px; bottom:80px; z-index:46;
+      background:var(--ink); padding:16px 20px; min-width:190px;
+      box-shadow:0 4px 14px rgba(0,0,0,0.35);
+      opacity:0; pointer-events:none; transform:translateY(8px);
+      transition:opacity 0.18s ease, transform 0.18s ease;
     }
-    .rail-check:checked ~ .rail-num-btn .num{ opacity:0; }
-    .rail-check:checked ~ .rail-title-link{ opacity:1; pointer-events:auto; z-index:2; }
+    .mnav-check:checked ~ .mnav-panel{ opacity:1; pointer-events:auto; transform:translateY(0); }
+    .mnav-panel a{ display:flex; align-items:baseline; gap:12px; text-decoration:none; padding:6px 0; }
+    .mnav-panel .num{ font-family:'Aestetico', sans-serif; font-weight:800; font-size:13px; color:var(--tan); }
+    .mnav-panel .title{ font-family:'Aestetico', sans-serif; font-weight:600; font-size:14px; color:var(--paper); }
+
+    @supports (animation-timeline: scroll()){
+      @keyframes mnav-reveal{
+        from{ opacity:0; pointer-events:none; }
+        to{ opacity:1; pointer-events:auto; }
+      }
+      .mnav-fab{
+        opacity:0;
+        animation:mnav-reveal linear both;
+        animation-timeline:scroll(root block);
+        animation-range:0px 70px;
+      }
+    }
   }
 
 /* ============================================================
@@ -603,11 +652,14 @@
    et "07 — classes"), par citation (section "03 — communauté"), par
    événement du babillard, et pour l'avis "1 étoile" — même mécanique
    partout, sur les deux pages. Pur CSS, checkbox+label caché (même
-   technique que .poster-flip-check / .rail-check) : :hover pour la
-   souris (aperçu sans clic), ET un vrai état "ouvert/fermé" piloté par
-   un checkbox pour le tactile/clavier — taper sur le nom OUVRE la
-   bulle, taper sur son petit ✕ la FERME (un simple :focus-within ne
-   donnait aucun moyen fiable de la refermer au toucher). */
+   technique que .poster-flip-check / .rail-check) : un vrai état
+   "ouvert/fermé" piloté par un checkbox — taper sur le nom OUVRE la
+   bulle, taper sur son petit ✕ la FERME. Le :hover (aperçu souris sans
+   clic) est enfermé dans @media(hover:hover) : sur tactile, un tap peut
+   laisser un :hover "collé" sur l'élément (bug connu des navigateurs
+   mobiles), ce qui empêchait le ✕ de fermer la bulle — en limitant
+   :hover aux appareils qui ont une vraie souris, le tactile ne dépend
+   plus que du checkbox, fiable dans les deux sens. */
 .postit-wrap{ position:relative; display:inline-block; }
 .postit-check{
   position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
@@ -617,9 +669,11 @@
   display:inline; color:inherit; text-transform:inherit; letter-spacing:inherit;
   text-decoration-line:none; cursor:pointer;
 }
-.postit-wrap:hover .postit-name-btn,
 .postit-check:focus ~ .postit-name-btn,
 .postit-check:checked ~ .postit-name-btn{ text-decoration-line:underline; text-underline-offset:3px; }
+@media (hover:hover){
+  .postit-wrap:hover .postit-name-btn{ text-decoration-line:underline; text-underline-offset:3px; }
+}
 .postit-check:focus-visible ~ .postit-name-btn{ outline:2px solid var(--deep); outline-offset:3px; }
 /* Variantes "cours" et "communauté" — le nom reste toujours souligné, même
    sans survol/tap, pour qu'on voie tout de suite que c'est cliquable. */
@@ -639,9 +693,13 @@
   content:""; position:absolute; top:0; right:0; width:0; height:0;
   border-style:solid; border-width:0 13px 13px 0; border-color:transparent rgba(40,41,46,0.18) transparent transparent;
 }
-.postit-wrap:hover .postit,
 .postit-check:checked ~ .postit{
   opacity:1; visibility:visible; pointer-events:auto; transform:translateX(-50%) translateY(0) rotate(-2deg);
+}
+@media (hover:hover){
+  .postit-wrap:hover .postit{
+    opacity:1; visibility:visible; pointer-events:auto; transform:translateX(-50%) translateY(0) rotate(-2deg);
+  }
 }
 .postit-close{
   position:absolute; top:7px; right:7px; z-index:1; width:18px; height:18px;
@@ -661,9 +719,13 @@
   top:auto; bottom:0; border-width:13px 13px 0 0;
   border-color:rgba(40,41,46,0.18) transparent transparent transparent;
 }
-.postit-wrap.postit-down:hover .postit,
 .postit-wrap.postit-down .postit-check:checked ~ .postit{
   transform:translateX(-50%) translateY(0) rotate(-2deg);
+}
+@media (hover:hover){
+  .postit-wrap.postit-down:hover .postit{
+    transform:translateX(-50%) translateY(0) rotate(-2deg);
+  }
 }
 @media (max-width:600px){
   .postit{ width:168px; font-size:12px; padding:28px 16px 12px 14px; }
