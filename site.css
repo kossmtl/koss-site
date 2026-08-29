@@ -111,7 +111,7 @@
     position:fixed; left:20px; bottom:20px; z-index:40;
     padding:14px;
     color:var(--paper);
-    display:inline-flex; align-items:center; justify-content:center;
+    display:flex; align-items:center; justify-content:center; width:fit-content;
     filter:drop-shadow(0 2px 5px rgba(0,0,0,0.55));
     text-decoration:none;
   }
@@ -416,6 +416,13 @@
       padding:14px;
       display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
       width:fit-content; margin-left:auto; margin-right:20px;
+      /* .mnav-fab is sticky (in-flow), and being the first real content inside
+         .fab-scroll-track — which starts right at the top of <body> — its own
+         natural height would otherwise push the whole page (nav, hero...) down
+         by that amount. The negative bottom margin cancels that reserved space
+         for the following content, without affecting the sticky positioning
+         itself (which is based on this element's own box, not its margins). */
+      margin-bottom:-44px;
       cursor:pointer;
       filter:drop-shadow(0 2px 5px rgba(0,0,0,0.55));
     }
@@ -443,7 +450,7 @@
        for the same "stops before the footer" reason as .mnav-fab above (same "top"
        + .fab-anchor logic — see the comment on .mnav-fab). 74px = 20px de marge +
        54px de hauteur du bouton (padding 14 + icône 26 + padding 14). */
-    .chat-fab{ position:sticky; top:calc(100vh - 74px); bottom:auto; }
+    .chat-fab{ position:sticky; top:calc(100vh - 74px); bottom:auto; margin-bottom:-54px; }
 
     @supports (animation-timeline: scroll()){
       @keyframes mnav-reveal{
