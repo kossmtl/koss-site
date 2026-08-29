@@ -648,22 +648,30 @@
    colonne heure suffit puisqu'elle reste toujours visible, celle de droite est retirée */
 .horaire-table .h-heure{
   font-weight:700; font-size:12.5px; color:var(--ink); text-align:center;
-  border-bottom:1px solid rgba(40,41,46,0.15); padding:10px 2px;
+  border-bottom:1px solid rgba(40,41,46,0.15); padding:6px 2px; height:40px;
   position:sticky; left:0; z-index:1; background:var(--paper-2);
 }
 .horaire-table thead .h-heure-head{
   border-bottom:none; padding:6px 4px 12px; position:sticky; left:0; z-index:2; background:var(--paper-2);
 }
-.horaire-table td.h-blank{ border:none; background:none; }
+.horaire-table td.h-blank{ border:none; background:none; height:40px; }
 .horaire-table td.h-block{
-  border:2px solid var(--ink); text-align:center; font-weight:400; font-size:12.5px;
-  line-height:1.35; padding:8px 5px; color:var(--ink); background:var(--paper-2); white-space:nowrap;
+  border:2px solid var(--ink); text-align:center; font-weight:400; font-size:12px;
+  line-height:1.2; padding:4px 5px; height:40px; color:var(--ink); background:var(--paper-2); white-space:nowrap;
 }
 .horaire-table td.h-os{ background:none; font-weight:400; }
 .horaire-table td.h-dark{ background:var(--ink); color:var(--paper); }
 .horaire-table td.h-cyan{ background:#C7EFF4; }
 .horaire-table td.h-tan{ background:var(--tan); }
 .horaire-table td.h-sage{ background:var(--sage); }
+.horaire-table td.h-pink{
+  border:4px solid transparent;
+  background-color:var(--ink);
+  background-image:linear-gradient(var(--ink),var(--ink)), linear-gradient(90deg, #7A2836, #A15A2A, #A8862B, #3F6B4A, #2E5F72, #533A63);
+  background-origin:border-box;
+  background-clip:padding-box, border-box;
+  color:var(--paper);
+}
 
 .horaire-foot{ margin-top:20px; }
 .horaire-foot p{ margin:0; font-size:11.5px; line-height:1.5; color:var(--deep); }
