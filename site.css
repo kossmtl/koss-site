@@ -982,7 +982,7 @@
 .lightbox-backdrop{ position:absolute; inset:0; background:rgba(40,41,46,0.94); }
 .lightbox-box{ position:relative; z-index:1; }
 .lightbox-photo{
-  width:min(70vw,560px); height:min(70vh,560px); background:var(--paper-2);
+  width:min(70vw,70vh,560px); height:min(70vw,70vh,560px); background:var(--paper-2);
   border:2px solid var(--ink); overflow:hidden;
 }
 .lightbox-photo img{ display:block; width:100%; height:100%; object-fit:cover; }
