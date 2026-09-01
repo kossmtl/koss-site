@@ -682,6 +682,7 @@
 
 .horaire-foot{ margin-top:20px; }
 .horaire-foot p{ margin:0; font-size:11.5px; line-height:1.5; color:var(--deep); }
+.horaire-foot p + p{ margin-top:8px; }
 
 @media (max-width:600px){
   .horaire-modal-box{ padding:26px 20px; }
