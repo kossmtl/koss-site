@@ -4808,14 +4808,18 @@
       render();
     }
     else if(action==='pay-with-helcim'){
-      const plan = state.data.membershipPlans.find(p=>p.id===e.currentTarget.dataset.plan);
-      const name = e.currentTarget.dataset.name;
-      const email = e.currentTarget.dataset.email;
-      const isNew = e.currentTarget.dataset.new === '1';
-      const introStart = e.currentTarget.dataset.introStart || null;
-      const introEnd = e.currentTarget.dataset.introEnd || null;
-      const introPrice = e.currentTarget.dataset.introPrice || null;
-      const profileId = e.currentTarget.dataset.profile || null;
+      // Important : on capture le bouton et ses data-* AVANT le premier await, car
+      // e.currentTarget redevient null dès que le navigateur a fini de distribuer
+      // l'événement (donc plus jamais utilisable après un "await").
+      const btn = e.currentTarget;
+      const plan = state.data.membershipPlans.find(p=>p.id===btn.dataset.plan);
+      const name = btn.dataset.name;
+      const email = btn.dataset.email;
+      const isNew = btn.dataset.new === '1';
+      const introStart = btn.dataset.introStart || null;
+      const introEnd = btn.dataset.introEnd || null;
+      const introPrice = btn.dataset.introPrice || null;
+      const profileId = btn.dataset.profile || null;
 
       let m = pendingMembershipForEmail(email);
       if(!m || m.planId !== plan.id || (m.profileId||null)!==(profileId||null)){
@@ -4826,7 +4830,6 @@
       }
       await persist();
 
-      const btn = e.currentTarget;
       btn.disabled = true;
       const originalLabel = btn.textContent;
       btn.textContent = 'Ouverture du paiement sécurisé…';
