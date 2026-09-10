@@ -1076,10 +1076,11 @@
   }
 
   // ---------- paiement Helcim intégré (HelcimPay.js) ----------
-  // Ouvre le module de paiement Helcim DIRECTEMENT dans l'app (iframe superposée),
-  // sans redirection et sans que l'élève ait à retaper son courriel : la correspondance
-  // avec l'abonnement se fait par référence exacte (invoiceNumber = id de l'abonnement),
-  // voir la fonction Supabase koss-init-payment. onDone reçoit 'SUCCESS' ou 'ABORTED'.
+  // Ouvre le module de paiement Helcim DIRECTEMENT dans l'app (iframe superposée), sans
+  // redirection. onDone(status, transaction) est appelé avec status 'SUCCESS' ou 'ABORTED' ;
+  // sur SUCCESS, transaction est l'objet transaction rapporté par Helcim (contient
+  // transactionId) — il sert seulement à savoir QUOI vérifier ; la confirmation réelle se
+  // fait côté serveur (koss-confirm-payment) qui revérifie lui-même auprès de Helcim.
   function startHelcimCheckout(checkoutToken, onDone){
     if(typeof appendHelcimPayIframe !== 'function'){
       showToast('Le module de paiement n’a pas pu se charger. Réessayez ou contactez le studio.');
@@ -1092,7 +1093,11 @@
       if(!event.data || event.data.eventName !== key) return;
       if(event.data.eventStatus === 'HIDE') return; // fermeture visuelle seulement, pas un résultat final
       window.removeEventListener('message', handler);
-      onDone(event.data.eventStatus);
+      let transaction = null;
+      if(event.data.eventStatus === 'SUCCESS'){
+        try{ transaction = JSON.parse(event.data.eventMessage); }catch(err){ console.error('Réponse Helcim illisible:', err); }
+      }
+      onDone(event.data.eventStatus, transaction);
     };
     window.addEventListener('message', handler);
   }
@@ -4837,11 +4842,25 @@
       try{
         const resp = await sb.functions.invoke('koss-init-payment', {body:{membershipId:m.id}});
         if(resp.error || !resp.data || !resp.data.checkoutToken) throw new Error('init failed');
-        startHelcimCheckout(resp.data.checkoutToken, async (status)=>{
+        const checkoutToken = resp.data.checkoutToken;
+        startHelcimCheckout(checkoutToken, async (status, transaction)=>{
           if(status==='SUCCESS'){
             state.modal = null; closeModalDom(); render();
-            showToast('Paiement reçu ! Votre abonnement s’active automatiquement (quelques secondes)…');
-            setTimeout(async ()=>{ await loadData(); render(); }, 4000);
+            showToast('Paiement reçu, confirmation en cours…');
+            try{
+              const confirmResp = await sb.functions.invoke('koss-confirm-payment', {
+                body:{checkoutToken, transactionId: transaction && transaction.transactionId}
+              });
+              if(confirmResp.error || !confirmResp.data || !confirmResp.data.ok){
+                showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
+              } else {
+                showToast('Abonnement activé !');
+              }
+            }catch(confirmErr){
+              console.error('Échec confirmation paiement:', confirmErr);
+              showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
+            }
+            await loadData(); render();
             if(isNew){ state.modal = {type:'ask-phone', payload:{email}}; render(); }
           } else if(status==='ABORTED'){
             btn.disabled = false; btn.textContent = originalLabel;
