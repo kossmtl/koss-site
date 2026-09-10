@@ -3035,15 +3035,26 @@
           ${introStart ? `
             <p style="font-size:12px;color:var(--chalk-dim);">Aucun remboursement n\u2019est offert. Un crédit complet est donné si l\u2019annulation est demandée au moins 21 jours avant le début du programme. Après cette date, comme les places sont limitées, un crédit partiel de 50% de la valeur de l\u2019achat sera offert.</p>
           ` : ''}
-          <p style="font-size:13px;">Réglez le paiement pour activer votre abonnement — ${'l’abonnement s’active automatiquement dès que le paiement est confirmé.'}</p>
-          <div class="btn-row">
-            <button class="btn btn-primary" data-action="pay-with-helcim" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-intro-start="${introStart||''}" data-intro-end="${introEnd||''}" data-intro-price="${introPrice||''}" data-profile="${profileId||''}">🔒 Payer maintenant</button>
-          </div>
-          <p id="helcim-pay-fallback-${plan.id}" style="font-size:12px;color:var(--chalk-dim);margin-top:12px;display:none;">
-            Le paiement en ligne intégré est momentanément indisponible.
-            ${plan.paymentLink ? `<a href="${escapeHtml(plan.paymentLink)}" target="_blank" rel="noopener">Utilisez ce lien à la place</a>, puis` : 'Contactez le studio, ou'}
-            <button class="small-btn" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-intro-start="${introStart||''}" data-intro-end="${introEnd||''}" data-intro-price="${introPrice||''}" data-profile="${profileId||''}">déclarez votre paiement manuellement</button>.
-          </p>
+          ${introStart ? `
+            <p style="font-size:13px;">Réglez le paiement pour activer votre inscription :</p>
+            <div class="btn-row">
+              ${plan.paymentLink ? `<a class="btn btn-primary" href="${escapeHtml(plan.paymentLink)}" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;">Payer maintenant</a>` : ''}
+            </div>
+            <p style="font-size:12px;color:var(--chalk-dim);margin-top:12px;">Une fois le paiement complété, cliquez ci-dessous.</p>
+            <div class="btn-row">
+              <button class="btn btn-sage" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-intro-start="${introStart||''}" data-intro-end="${introEnd||''}" data-intro-price="${introPrice||''}" data-profile="${profileId||''}">✓ J'ai complété le paiement</button>
+            </div>
+          ` : `
+            <p style="font-size:13px;">Réglez le paiement pour activer votre abonnement — l’abonnement s’active automatiquement dès que le paiement est confirmé.</p>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="pay-with-helcim" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}">🔒 Payer maintenant</button>
+            </div>
+            <p id="helcim-pay-fallback-${plan.id}" style="font-size:12px;color:var(--chalk-dim);margin-top:12px;display:none;">
+              Le paiement en ligne intégré est momentanément indisponible.
+              ${plan.paymentLink ? `<a href="${escapeHtml(plan.paymentLink)}" target="_blank" rel="noopener">Utilisez ce lien à la place</a>, puis` : 'Contactez le studio, ou'}
+              <button class="small-btn" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}">déclarez votre paiement manuellement</button>.
+            </p>
+          `}
         </div>
       `;
     } else if(m.type === 'plan-form'){
@@ -4816,22 +4827,19 @@
       // Important : on capture le bouton et ses data-* AVANT le premier await, car
       // e.currentTarget redevient null dès que le navigateur a fini de distribuer
       // l'événement (donc plus jamais utilisable après un "await").
+      // Note : ce bouton n'est jamais affiché pour les programmes "intro" (introStart) —
+      // ceux-ci gardent l'ancien flux manuel, qui crée aussi leurs réservations spéciales ;
+      // koss-confirm-payment ne sait activer que les abonnements illimités/crédits classiques.
       const btn = e.currentTarget;
       const plan = state.data.membershipPlans.find(p=>p.id===btn.dataset.plan);
       const name = btn.dataset.name;
       const email = btn.dataset.email;
       const isNew = btn.dataset.new === '1';
-      const introStart = btn.dataset.introStart || null;
-      const introEnd = btn.dataset.introEnd || null;
-      const introPrice = btn.dataset.introPrice || null;
       const profileId = btn.dataset.profile || null;
 
       let m = pendingMembershipForEmail(email);
       if(!m || m.planId !== plan.id || (m.profileId||null)!==(profileId||null)){
         m = activatePlanForStudent(plan, name, email, false, profileId);
-      }
-      if(introStart){
-        m.introStart = introStart; m.introEnd = introEnd; m.planPrice = introPrice+' $';
       }
       await persist();
 
