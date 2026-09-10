@@ -1095,7 +1095,17 @@
       window.removeEventListener('message', handler);
       let transaction = null;
       if(event.data.eventStatus === 'SUCCESS'){
-        try{ transaction = JSON.parse(event.data.eventMessage); }catch(err){ console.error('Réponse Helcim illisible:', err); }
+        console.log('Événement HelcimPay SUCCESS:', event.data); // utile pour diagnostiquer si jamais la confirmation échoue
+        // eventMessage est normalement une chaîne JSON, mais on se protège au cas où
+        // Helcim la fournirait déjà comme objet.
+        if(typeof event.data.eventMessage === 'string'){
+          try{ transaction = JSON.parse(event.data.eventMessage); }catch(err){ console.error('Réponse Helcim illisible:', err); }
+        } else if(event.data.eventMessage && typeof event.data.eventMessage === 'object'){
+          transaction = event.data.eventMessage;
+        }
+        if(!transaction || !transaction.transactionId){
+          console.error('Impossible d’extraire transactionId de la réponse Helcim:', event.data);
+        }
       }
       onDone(event.data.eventStatus, transaction);
     };
@@ -1237,7 +1247,7 @@
         const m = activeMembershipForEmail(email, c.category, profileId);
         if(!m || m.type !== 'credits'){
           state.modal = {type:'need-membership', payload:{
-            name, email, profileId,
+            name, email, profileId, classId, dateIso,
             intro:'Un abonnement à la carte (crédits) est requis pour réserver ce cours une 2e fois',
             neededCategory:c.category,
             requireCreditsOnly:true
@@ -1250,7 +1260,7 @@
         membership = activeMembershipForEmail(email, c.category, profileId);
         if(!membership){
           state.modal = {type:'need-membership', payload:{
-            name, email, profileId,
+            name, email, profileId, classId, dateIso,
             intro:`Votre abonnement ne couvre pas les cours "${categoryLabel(c.category)}"`,
             neededCategory:c.category
           }};
@@ -2885,7 +2895,7 @@
         </div>
       `;
     } else if(m.type === 'need-membership'){
-      const {name,email,intro,neededCategory,requireCreditsOnly,profileId} = m.payload;
+      const {name,email,intro,neededCategory,requireCreditsOnly,profileId,classId,dateIso} = m.payload;
       if(!m.payload.expandedGroups){
         m.payload.expandedGroups = {};
         if(neededCategory) m.payload.expandedGroups[neededCategory] = true;
@@ -2922,7 +2932,7 @@
         return `
         <li>
           <span><strong>${escapeHtml(p.name)}</strong><br><span style="color:var(--chalk-dim);font-size:12px;">${priceLine}</span></span>
-          <button class="small-btn" style="background:var(--amber);border-color:var(--amber);color:var(--ink);" data-action="choose-plan" data-plan="${p.id}">Choisir</button>
+          <button class="small-btn" style="background:var(--amber);border-color:var(--amber);color:var(--ink);" data-action="choose-plan" data-plan="${p.id}" data-class="${classId||''}" data-date="${dateIso||''}">Choisir</button>
         </li>`;
       };
 
@@ -3025,7 +3035,7 @@
         </div>
       `;
     } else if(m.type === 'buy-membership'){
-      const {plan, name, email, isNewAccount, introStart, introEnd, introPrice, profileId} = m.payload;
+      const {plan, name, email, isNewAccount, introStart, introEnd, introPrice, profileId, classId, dateIso} = m.payload;
       const displayPrice = introPrice!=null ? `${introPrice} $` : plan.price;
       html = `
         <div class="modal">
@@ -3046,8 +3056,9 @@
             </div>
           ` : `
             <p style="font-size:13px;">Réglez le paiement pour activer votre abonnement — l’abonnement s’active automatiquement dès que le paiement est confirmé.</p>
+            <p style="font-size:12px;color:var(--chalk-dim);">🔒 Paiement sécurisé traité directement par Helcim — vos informations de carte ne sont jamais stockées sur le site K-OSS.</p>
             <div class="btn-row">
-              <button class="btn btn-primary" data-action="pay-with-helcim" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}">🔒 Payer maintenant</button>
+              <button class="btn btn-primary" data-action="pay-with-helcim" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}" data-class="${classId||''}" data-date="${dateIso||''}">🔒 Payer maintenant</button>
             </div>
             <p id="helcim-pay-fallback-${plan.id}" style="font-size:12px;color:var(--chalk-dim);margin-top:12px;display:none;">
               Le paiement en ligne intégré est momentanément indisponible.
@@ -4088,7 +4099,15 @@
   function attachHandlers(scope){
     const root = scope || document.getElementById('app');
     root.querySelectorAll('[data-action]').forEach(node=>{
-      node.addEventListener('click', onAction);
+      // Filet de sécurité : si onAction (ou un render() qu'il déclenche) lève une erreur
+      // inattendue, on l'affiche/loggue au lieu de laisser l'app silencieusement figée
+      // (plus rien ne réagit aux clics) sans que personne ne sache pourquoi.
+      node.addEventListener('click', (e)=>{
+        Promise.resolve(onAction(e)).catch(err=>{
+          console.error('Erreur dans onAction:', err);
+          showToast('Une erreur est survenue. Rafraîchissez la page si l’app ne répond plus.');
+        });
+      });
     });
   }
 
@@ -4771,6 +4790,10 @@
     }
     else if(action==='choose-plan'){
       const plan = state.data.membershipPlans.find(p=>p.id===e.currentTarget.dataset.plan);
+      // Si ce choix de plan part d'une tentative de réservation (need-membership), on garde
+      // le cours visé pour pouvoir y inscrire l'élève automatiquement une fois le paiement fait.
+      const classId = e.currentTarget.dataset.class || null;
+      const dateIso = e.currentTarget.dataset.date || null;
       if(state.studentSession){
         const sessAcct = findStudentAccount(state.studentSession.email);
         if(!sessAcct){ state.studentSession = null; await clearSessionStorage(); showToast('Session expirée, reconnectez-vous.'); render(); return; }
@@ -4780,7 +4803,7 @@
         if(plan.isIntroProgram){
           state.modal = {type:'choose-intro-program', payload:{plan, name:buyerName, email:sessAcct.email, profileId}};
         } else {
-          state.modal = {type:'buy-membership', payload:{plan, name:buyerName, email:sessAcct.email, profileId}};
+          state.modal = {type:'buy-membership', payload:{plan, name:buyerName, email:sessAcct.email, profileId, classId, dateIso}};
         }
         render();
         return;
@@ -4807,7 +4830,7 @@
       if(plan.isIntroProgram){
         state.modal = {type:'choose-intro-program', payload:{plan,name,email,isNewAccount:auth.isNew}};
       } else {
-        state.modal = {type:'buy-membership', payload:{plan,name,email,isNewAccount:auth.isNew}};
+        state.modal = {type:'buy-membership', payload:{plan,name,email,isNewAccount:auth.isNew,classId,dateIso}};
       }
       render();
     }
@@ -4836,6 +4859,10 @@
       const email = btn.dataset.email;
       const isNew = btn.dataset.new === '1';
       const profileId = btn.dataset.profile || null;
+      // Si l'achat part d'une tentative de réservation (bouton "Choisir" depuis
+      // need-membership), on inscrit automatiquement l'élève à ce cours une fois payé.
+      const pendingClassId = btn.dataset.class || null;
+      const pendingDateIso = btn.dataset.date || null;
 
       let m = pendingMembershipForEmail(email);
       if(!m || m.planId !== plan.id || (m.profileId||null)!==(profileId||null)){
@@ -4869,6 +4896,10 @@
               showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
             }
             await loadData(); render();
+            if(pendingClassId && pendingDateIso){
+              try{ await proceedBooking(pendingClassId, pendingDateIso, name, email, false, profileId); }
+              catch(bookErr){ console.error('Échec inscription automatique au cours:', bookErr); showToast('Abonnement activé, mais l’inscription automatique au cours a échoué — réservez-le à nouveau.'); }
+            }
             if(isNew){ state.modal = {type:'ask-phone', payload:{email}}; render(); }
           } else if(status==='ABORTED'){
             btn.disabled = false; btn.textContent = originalLabel;
