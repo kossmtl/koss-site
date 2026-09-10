@@ -1095,13 +1095,20 @@
       window.removeEventListener('message', handler);
       let transaction = null;
       if(event.data.eventStatus === 'SUCCESS'){
-        console.log('Événement HelcimPay SUCCESS:', event.data); // utile pour diagnostiquer si jamais la confirmation échoue
-        // eventMessage est normalement une chaîne JSON, mais on se protège au cas où
-        // Helcim la fournirait déjà comme objet.
+        // eventMessage est une chaîne JSON de forme {data:{data:{...transaction...}, status, headers}}
+        // (confirmé en conditions réelles le 10 sept 2026) — la transaction elle-même est nichée
+        // deux niveaux plus bas que ce qu'on pourrait croire. On reste tolérant à d'autres formes
+        // possibles (transaction directement à la racine, etc.) au cas où Helcim la ferait varier.
+        let parsed = null;
         if(typeof event.data.eventMessage === 'string'){
-          try{ transaction = JSON.parse(event.data.eventMessage); }catch(err){ console.error('Réponse Helcim illisible:', err); }
+          try{ parsed = JSON.parse(event.data.eventMessage); }catch(err){ console.error('Réponse Helcim illisible:', err); }
         } else if(event.data.eventMessage && typeof event.data.eventMessage === 'object'){
-          transaction = event.data.eventMessage;
+          parsed = event.data.eventMessage;
+        }
+        if(parsed){
+          if(parsed.transactionId) transaction = parsed;
+          else if(parsed.data && parsed.data.transactionId) transaction = parsed.data;
+          else if(parsed.data && parsed.data.data && parsed.data.data.transactionId) transaction = parsed.data.data;
         }
         if(!transaction || !transaction.transactionId){
           console.error('Impossible d’extraire transactionId de la réponse Helcim:', event.data);
