@@ -563,6 +563,7 @@
   }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://secure.helcim.app/helcim-pay/services/start.js"></script>
 <div id="app"></div>
 
 <script>
@@ -1074,6 +1075,28 @@
     showToast._timer = setTimeout(()=>{ t.remove(); }, 2400);
   }
 
+  // ---------- paiement Helcim intégré (HelcimPay.js) ----------
+  // Ouvre le module de paiement Helcim DIRECTEMENT dans l'app (iframe superposée),
+  // sans redirection et sans que l'élève ait à retaper son courriel : la correspondance
+  // avec l'abonnement se fait par référence exacte (invoiceNumber = id de l'abonnement),
+  // voir la fonction Supabase koss-init-payment. onDone reçoit 'SUCCESS' ou 'ABORTED'.
+  function startHelcimCheckout(checkoutToken, onDone){
+    if(typeof appendHelcimPayIframe !== 'function'){
+      showToast('Le module de paiement n’a pas pu se charger. Réessayez ou contactez le studio.');
+      onDone('ABORTED');
+      return;
+    }
+    appendHelcimPayIframe(checkoutToken, true);
+    const key = 'helcim-pay-js-' + checkoutToken;
+    const handler = (event)=>{
+      if(!event.data || event.data.eventName !== key) return;
+      if(event.data.eventStatus === 'HIDE') return; // fermeture visuelle seulement, pas un résultat final
+      window.removeEventListener('message', handler);
+      onDone(event.data.eventStatus);
+    };
+    window.addEventListener('message', handler);
+  }
+
   // ---------- date helpers ----------
   function startOfWeek(offset){
     const now = new Date();
@@ -1555,10 +1578,10 @@
     const grants = state.data.stickerGrants.filter(g=>g.email.toLowerCase()===e && !g.used);
     return grants.map(g=>{
       const s = state.data.stickers.find(x=>x.id===g.stickerId);
-      return s ? Object.assign({}, s, {grantId:g.id}) : null;
+      return s ? Object.assign({}, s, {grantId:g.id, grantMessage:g.message||''}) : null;
     }).filter(Boolean);
   }
-  const MAX_NOTEBOOK_PAGES = 50;
+  const MAX_NOTEBOOK_PAGES = 40;
   function getNotebooksForOwner(ownerKey){
     return state.data.notebooks.filter(nb=>nb.ownerKey===ownerKey).sort((a,b)=>a.createdAt-b.createdAt);
   }
@@ -2286,11 +2309,13 @@
               </div>
             `).join('')}
             ${pageEntries.filter(n=>n.kind==='text').map(n=>{
-              const hAlign = n.hAlign||'left', vAlign = n.vAlign||'top';
-              const tx = hAlign==='right' ? '-100%' : '0';
-              const ty = vAlign==='bottom' ? '-100%' : '0';
+              const hAlign = n.hAlign||'left';
+              const tx = hAlign==='right' ? '-100%' : (hAlign==='center' ? '-50%' : '0');
+              const wide = (hAlign==='center' || hAlign==='justify');
+              const wrapStyle = wide ? 'width:200px;' : '';
+              const contentStyle = wide ? 'display:block;width:100%;' : '';
               return `
-              <div class="textnote-free ${n.id===state.notebookSelectedEntry?'selected':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;translate:${tx} ${ty};transform:rotate(${n.rotation||0}deg);text-align:${hAlign==='right'?'right':'left'};font-family:${textnoteFontCss(n.fontFamily)};font-size:${n.fontSize||16}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};"><span class="textnote-content">${escapeHtml(n.text)}</span>
+              <div class="textnote-free ${n.id===state.notebookSelectedEntry?'selected':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;translate:${tx} 0;transform:rotate(${n.rotation||0}deg);text-align:${hAlign};${wrapStyle}font-family:${textnoteFontCss(n.fontFamily)};font-size:${n.fontSize||16}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};"><span class="textnote-content" style="${contentStyle}">${escapeHtml(n.text)}</span>
                 ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
                   <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
                   <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
@@ -3005,19 +3030,15 @@
           ${introStart ? `
             <p style="font-size:12px;color:var(--chalk-dim);">Aucun remboursement n\u2019est offert. Un crédit complet est donné si l\u2019annulation est demandée au moins 21 jours avant le début du programme. Après cette date, comme les places sont limitées, un crédit partiel de 50% de la valeur de l\u2019achat sera offert.</p>
           ` : ''}
-          ${plan.paymentLink ? `
-            <p style="font-size:13px;">Réglez le paiement pour activer votre abonnement :</p>
-            <div class="btn-row">
-              <a class="btn btn-primary" href="${escapeHtml(plan.paymentLink)}" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;">Payer maintenant</a>
-            </div>
-            <p style="font-size:12px;color:var(--chalk-dim);margin-top:12px;">Une fois le paiement complété, cliquez ci-dessous.</p>
-            <div class="btn-row">
-              <button class="btn btn-sage" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-intro-start="${introStart||''}" data-intro-end="${introEnd||''}" data-intro-price="${introPrice||''}" data-profile="${profileId||''}">✓ J'ai complété le paiement</button>
-            </div>
-          ` : `
-            <p style="font-size:13px;">Le studio vous contactera pour organiser le paiement.</p>
-            <div class="btn-row"><button class="btn btn-sage" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-intro-start="${introStart||''}" data-intro-end="${introEnd||''}" data-intro-price="${introPrice||''}" data-profile="${profileId||''}">Envoyer ma demande</button></div>
-          `}
+          <p style="font-size:13px;">Réglez le paiement pour activer votre abonnement — ${'l’abonnement s’active automatiquement dès que le paiement est confirmé.'}</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="pay-with-helcim" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-intro-start="${introStart||''}" data-intro-end="${introEnd||''}" data-intro-price="${introPrice||''}" data-profile="${profileId||''}">🔒 Payer maintenant</button>
+          </div>
+          <p id="helcim-pay-fallback-${plan.id}" style="font-size:12px;color:var(--chalk-dim);margin-top:12px;display:none;">
+            Le paiement en ligne intégré est momentanément indisponible.
+            ${plan.paymentLink ? `<a href="${escapeHtml(plan.paymentLink)}" target="_blank" rel="noopener">Utilisez ce lien à la place</a>, puis` : 'Contactez le studio, ou'}
+            <button class="small-btn" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-intro-start="${introStart||''}" data-intro-end="${introEnd||''}" data-intro-price="${introPrice||''}" data-profile="${profileId||''}">déclarez votre paiement manuellement</button>.
+          </p>
         </div>
       `;
     } else if(m.type === 'plan-form'){
@@ -3371,7 +3392,7 @@
               return `<ul class="link-list">${grants.map(g=>{
                 const s = state.data.stickers.find(x=>x.id===g.stickerId);
                 if(!s) return '';
-                return `<li><span><img src="${s.image}" style="width:28px;height:28px;object-fit:cover;border-radius:5px;vertical-align:middle;margin-right:8px;">${escapeHtml(s.name)}</span><span><button class="small-btn" data-action="revoke-sticker-grant" data-id="${g.id}" data-email="${escapeHtml(email)}">Retirer</button></span></li>`;
+                return `<li><span><img src="${s.image}" style="width:28px;height:28px;object-fit:cover;border-radius:5px;vertical-align:middle;margin-right:8px;">${escapeHtml(s.name)}${g.message ? ` <span style="font-style:italic;color:var(--chalk-dim);">— "${escapeHtml(g.message)}"</span>` : ''}${g.used ? ' <span style="color:var(--chalk-dim);">(placé)</span>' : ''}</span><span><button class="small-btn" data-action="revoke-sticker-grant" data-id="${g.id}" data-email="${escapeHtml(email)}">Retirer</button></span></li>`;
               }).join('')}</ul>`;
             })()}
             <div class="btn-row"><button class="btn btn-primary" data-action="open-sticker-grant-picker" data-email="${escapeHtml(email)}">🎁 Attribuer un autocollant</button></div>
@@ -3487,7 +3508,6 @@
       const fontFamily = entry ? (entry.fontFamily||'marker') : 'marker';
       const color = entry ? (entry.color||TEXTNOTE_INK_COLORS[0]) : TEXTNOTE_INK_COLORS[0];
       const hAlign = entry ? (entry.hAlign||'left') : 'left';
-      const vAlign = entry ? (entry.vAlign||'top') : 'top';
       const nbId = entry ? entry.notebookId : notebookId;
       const nb = state.data.notebooks.find(x=>x.id===nbId);
       const maxPage = (nb && nb.pageCount) || pageCount || 1;
@@ -3516,13 +3536,12 @@
           <input type="hidden" id="textnote-color-value" value="${color}">
           <label style="margin-top:10px;">Alignement du texte</label>
           <div class="btn-row" style="justify-content:flex-start;gap:6px;">
-            <button type="button" class="small-btn textnote-align-btn" data-axis="h" data-value="left" style="${hAlign==='left'?'background:var(--amber);color:var(--ink);':''}">⟸ Gauche</button>
-            <button type="button" class="small-btn textnote-align-btn" data-axis="h" data-value="right" style="${hAlign==='right'?'background:var(--amber);color:var(--ink);':''}">Droite ⟹</button>
-            <button type="button" class="small-btn textnote-align-btn" data-axis="v" data-value="top" style="${vAlign==='top'?'background:var(--amber);color:var(--ink);':''}">⟰ Haut</button>
-            <button type="button" class="small-btn textnote-align-btn" data-axis="v" data-value="bottom" style="${vAlign==='bottom'?'background:var(--amber);color:var(--ink);':''}">Bas ⟱</button>
+            <button type="button" class="small-btn textnote-align-btn" data-value="left" style="${hAlign==='left'?'background:var(--amber);color:var(--ink);':''}">⟸ Gauche</button>
+            <button type="button" class="small-btn textnote-align-btn" data-value="center" style="${hAlign==='center'?'background:var(--amber);color:var(--ink);':''}">↔ Centré</button>
+            <button type="button" class="small-btn textnote-align-btn" data-value="right" style="${hAlign==='right'?'background:var(--amber);color:var(--ink);':''}">Droite ⟹</button>
+            <button type="button" class="small-btn textnote-align-btn" data-value="justify" style="${hAlign==='justify'?'background:var(--amber);color:var(--ink);':''}">☰ Justifié</button>
           </div>
           <input type="hidden" id="textnote-halign-value" value="${hAlign}">
-          <input type="hidden" id="textnote-valign-value" value="${vAlign}">
           ${entry ? `
           <label style="margin-top:10px;">Page (1 à ${maxPage})</label>
           <input id="textnote-page" type="number" min="1" max="${maxPage}" value="${currentPage}">
@@ -3546,6 +3565,7 @@
             <div class="sticker-picker-item" data-action="pick-sticker" data-sticker="${s.id}" ${s.grantId?`data-grant="${s.grantId}"`:''}>
               <img src="${s.image}">
               <div class="sname">${escapeHtml(s.name)}</div>
+              ${s.grantMessage ? `<div class="sname" style="font-style:italic;opacity:0.85;">"${escapeHtml(s.grantMessage)}"</div>` : ''}
             </div>
           `).join('')}
         </div>
@@ -3574,6 +3594,8 @@
         <div class="modal" style="max-width:420px;">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Attribuer un autocollant à ${escapeHtml(acct?acct.name:email)}</h3>
+          <label style="margin-top:6px;">Petit message (optionnel)</label>
+          <input id="grant-message-input" placeholder="ex. Bravo pour ta ceinture !" style="margin-bottom:10px;">
           ${state.data.stickers.length ? `
             <div class="sticker-picker-grid">
               ${state.data.stickers.map(s=>`
@@ -3928,13 +3950,10 @@
       });
       const alignBtns = backdrop.querySelectorAll('.textnote-align-btn');
       const hAlignInput = backdrop.querySelector('#textnote-halign-value');
-      const vAlignInput = backdrop.querySelector('#textnote-valign-value');
       alignBtns.forEach(btn=>{
         btn.addEventListener('click', ()=>{
-          const axis = btn.dataset.axis;
-          const targetInput = axis==='h' ? hAlignInput : vAlignInput;
-          targetInput.value = btn.dataset.value;
-          alignBtns.forEach(b=>{ if(b.dataset.axis===axis) b.style.background=''; if(b.dataset.axis===axis) b.style.color=''; });
+          hAlignInput.value = btn.dataset.value;
+          alignBtns.forEach(b=>{ b.style.background=''; b.style.color=''; });
           btn.style.background = 'var(--amber)';
           btn.style.color = 'var(--ink)';
         });
@@ -4060,6 +4079,7 @@
   function attachNotebookDrag(){
     const canvas = document.getElementById('nb-canvas');
     if(!canvas) return;
+    if(!state.notebookEditMode) return;
     let dragEl = null, dragId = null, startX = 0, startY = 0, startLeft = 0, startTop = 0, moved = false;
 
     function onMove(ev){
@@ -4340,7 +4360,7 @@
       const acct = findStudentAccount(state.studentSession.email);
       const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
       const nb = getOrCreateActiveNotebook(ownerKey);
-      if((nb.pageCount||1) >= MAX_NOTEBOOK_PAGES){ showToast('Maximum de 50 pages atteint.'); return; }
+      if((nb.pageCount||1) >= MAX_NOTEBOOK_PAGES){ showToast('Maximum de 40 pages atteint.'); return; }
       nb.pageCount = (nb.pageCount||1) + 1;
       state.notebookActivePage = nb.pageCount;
       await persist();
@@ -4384,13 +4404,12 @@
       const fontFamily = document.getElementById('textnote-font').value;
       const color = document.getElementById('textnote-color-value').value;
       const hAlign = document.getElementById('textnote-halign-value').value || 'left';
-      const vAlign = document.getElementById('textnote-valign-value').value || 'top';
       if(!text){ markInvalid('textnote-text'); showToast('La note ne peut pas être vide.'); return; }
       if(!category){ markInvalid('textnote-category-custom'); showToast('Choisis ou tape une catégorie.'); return; }
       if(id){
         const entry = state.data.notebookEntries.find(n=>n.id===id);
         if(entry){
-          entry.text = text; entry.category = category; entry.fontFamily = fontFamily; entry.color = color; entry.hAlign = hAlign; entry.vAlign = vAlign;
+          entry.text = text; entry.category = category; entry.fontFamily = fontFamily; entry.color = color; entry.hAlign = hAlign;
           const pageInput = document.getElementById('textnote-page');
           if(pageInput){
             const nb = state.data.notebooks.find(x=>x.id===entry.notebookId);
@@ -4401,7 +4420,7 @@
           }
         }
       } else {
-        state.data.notebookEntries.push({id:uid(), ownerKey, notebookId, kind:'text', page: state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), text, category, fontFamily, fontSize:16, rotation:0, color, hAlign, vAlign, createdAt:Date.now()});
+        state.data.notebookEntries.push({id:uid(), ownerKey, notebookId, kind:'text', page: state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), text, category, fontFamily, fontSize:16, rotation:0, color, hAlign, createdAt:Date.now()});
       }
       await persist();
       state.modal = null; closeModalDom();
@@ -4493,11 +4512,16 @@
       showToast('Autocollant enregistré.');
     }
     else if(action==='delete-postit'){
+      const removedEntry = state.data.notebookEntries.find(n=>n.id===id);
+      if(removedEntry && removedEntry.kind==='sticker' && removedEntry.grantId){
+        const grant = state.data.stickerGrants.find(g=>g.id===removedEntry.grantId);
+        if(grant) grant.used = false;
+      }
       state.data.notebookEntries = state.data.notebookEntries.filter(n=>n.id!==id);
       if(state.notebookSelectedEntry===id) state.notebookSelectedEntry = null;
       await persist();
       render();
-      showToast('Note retirée.');
+      showToast(removedEntry && removedEntry.kind==='sticker' && removedEntry.grantId ? 'Autocollant retiré — de retour dans la banque de cadeaux.' : 'Note retirée.');
     }
     else if(action==='save-postit'){
       const ownerKey = e.currentTarget.dataset.owner;
@@ -4783,6 +4807,55 @@
       state.modal = {type:'buy-membership', payload:{plan, name, email, isNewAccount, introStart, introEnd, introPrice, profileId}};
       render();
     }
+    else if(action==='pay-with-helcim'){
+      const plan = state.data.membershipPlans.find(p=>p.id===e.currentTarget.dataset.plan);
+      const name = e.currentTarget.dataset.name;
+      const email = e.currentTarget.dataset.email;
+      const isNew = e.currentTarget.dataset.new === '1';
+      const introStart = e.currentTarget.dataset.introStart || null;
+      const introEnd = e.currentTarget.dataset.introEnd || null;
+      const introPrice = e.currentTarget.dataset.introPrice || null;
+      const profileId = e.currentTarget.dataset.profile || null;
+
+      let m = pendingMembershipForEmail(email);
+      if(!m || m.planId !== plan.id || (m.profileId||null)!==(profileId||null)){
+        m = activatePlanForStudent(plan, name, email, false, profileId);
+      }
+      if(introStart){
+        m.introStart = introStart; m.introEnd = introEnd; m.planPrice = introPrice+' $';
+      }
+      await persist();
+
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Ouverture du paiement sécurisé…';
+
+      try{
+        const resp = await sb.functions.invoke('koss-init-payment', {body:{membershipId:m.id}});
+        if(resp.error || !resp.data || !resp.data.checkoutToken) throw new Error('init failed');
+        startHelcimCheckout(resp.data.checkoutToken, async (status)=>{
+          if(status==='SUCCESS'){
+            state.modal = null; closeModalDom(); render();
+            showToast('Paiement reçu ! Votre abonnement s’active automatiquement (quelques secondes)…');
+            setTimeout(async ()=>{ await loadData(); render(); }, 4000);
+            if(isNew){ state.modal = {type:'ask-phone', payload:{email}}; render(); }
+          } else if(status==='ABORTED'){
+            btn.disabled = false; btn.textContent = originalLabel;
+            showToast('Paiement annulé.');
+          } else {
+            btn.disabled = false; btn.textContent = originalLabel;
+          }
+        });
+      }catch(err){
+        console.error('Échec ouverture paiement Helcim:', err);
+        btn.disabled = false; btn.textContent = originalLabel;
+        const fallback = document.getElementById('helcim-pay-fallback-'+plan.id);
+        if(fallback) fallback.style.display = 'block';
+        showToast('Le paiement en ligne intégré est momentanément indisponible.');
+      }
+    }
+
     else if(action==='confirm-purchase'){
       const plan = state.data.membershipPlans.find(p=>p.id===e.currentTarget.dataset.plan);
       const name = e.currentTarget.dataset.name;
@@ -5030,7 +5103,9 @@
       const email = e.currentTarget.dataset.email;
       const already = state.data.stickerGrants.find(g=>g.stickerId===stickerId && g.email.toLowerCase()===email.toLowerCase());
       if(already){ showToast('Déjà offert à cet étudiant.'); return; }
-      state.data.stickerGrants.push({id:uid(), stickerId, email, grantedAt:Date.now()});
+      const messageInput = document.getElementById('grant-message-input');
+      const message = messageInput ? messageInput.value.trim() : '';
+      state.data.stickerGrants.push({id:uid(), stickerId, email, message, grantedAt:Date.now()});
       await persist();
       render();
       showToast('Autocollant offert.');
