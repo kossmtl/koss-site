@@ -550,6 +550,9 @@
   .board-am{margin-bottom:0;align-items:stretch;}
   .board-am .day-col{display:flex;flex-direction:column;}
   .board-am .am-tiles-wrap{margin-top:auto;}
+  /* Sans ça, la marge basse du dernier cours du matin s'ajoutait au padding de la colonne,
+     éloignant les cases du matin de la ligne pointillée par rapport à celles du soir. */
+  .board-am .am-tiles-wrap > :last-child{margin-bottom:0;}
   .board-pm{margin-top:0;}
   .week-divider{
     border-top:2px dashed var(--chalk-dim);
@@ -639,7 +642,7 @@
     'GI Essentials': "Les concepts essentiels du GI (Avec Kimono), ramenés à leur plus simple expression pour rester clairs, efficaces et applicables. On y développe les principes qui reviennent constamment dans un jeu où les grips, le contrôle, la pression et la précision prennent une place centrale.",
     'GI & NOGI Performance': "Un entraînement qui combine GI et NOGI dans une approche axée sur la performance et la préparation aux compétitions. On y travaille la stratégie, la gestion du stress et les mises en situation de combat, avec une intensité plus élevée que dans les cours réguliers. La participation demande une attitude sérieuse, respectueuse et engagée envers sa progression et celle de l\u2019équipe.",
     'Muay Thaï': "Le Muay Thaï, c'est un sport de combat complet basé sur les poings, les jambes, les genoux et les coudes. Originaire de Thaïlande, il se distingue par son approche directe, son travail de distance et son combat rapproché. Tu y développes ta technique, ton cardio, tes réflexes et ta capacité à rester efficace sous pression.",
-    'Yoga': "Le Yoga d'alignement met l'accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, mais exigeante.",
+    'Yoga': "Le Yoga d'alignement met l'accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, et restauratrice.",
     'Intro au BJJ': "Les cours d\u2019intro ont lieu deux fois par semaine, les lundis et mercredis de 18h à 19h, pour un total de 5 cours. Les classes sont réduites afin de pouvoir accorder à chacun toute l\u2019attention requise, et tous les participants sont des débutants comme toi.\n\nLe but, c\u2019est que tu te sentes à l\u2019aise, que tu puisses t\u2019entraîner sans te sentir jugé et que tu puisses rejoindre les classes régulières en toute confiance à la fin du programme d\u2019intro. C\u2019est une super occasion de découvrir ce sport tout en te familiarisant tranquillement avec notre communauté.\n\nC\u2019est Amélie qui t\u2019enseignera tout ce que tu dois savoir à propos du Jiu-Jitsu. Elle en profitera pour te faire rire (ou pleurer) avec ses meilleures blagues. On ne t\u2019en voudra pas si tu ne les trouves pas drôles, nous non plus d\u2019ailleurs !\n\nOn se voit sur le mat !",
     'Queers & Allies': "QUEERS & ALLIES est un cours de BJJ gratuit spécialement prévu pour les gens queers et leurs alliés. Ouvert à tous, le respect d\u2019autrui y est primordial et une politique de tolérance zéro sera appliquée envers tout comportement ou commentaire déplacé. Cette politique est d\u2019ailleurs appliquée dans tous nos cours, sans exception.\n\nLe cours se donne en GI et NOGI (come as you are) et est ouvert aux non-initiés une semaine sur deux. Horaire disponible et réservation obligatoire sur MINDBODY. Prêt de GI disponible au coût de 5$ (négociable en cas de besoin).",
   };
@@ -736,6 +739,9 @@
     notebookSelectedEntry: null,
     notebookEditMode: false,
     membershipSearchQuery: '',
+    shareRecipientType: 'coach',
+    shareSearchQuery: '',
+    shareSelectedRecipient: null,
   };
 
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -867,6 +873,7 @@
     }
     if(!state.data.classNotes) state.data.classNotes = [];
     if(!state.data.notebookEntries) state.data.notebookEntries = [];
+    if(!state.data.sharedItems) state.data.sharedItems = [];
     if(!state.data.notebookSettings) state.data.notebookSettings = {};
     if(!state.data.stickers) state.data.stickers = [];
     if(!state.data.stickerGrants) state.data.stickerGrants = [];
@@ -931,7 +938,7 @@
       'GI Essentials': 'Les concepts essentiels du GI (Avec Kimono), ramenés à leur plus simple expression pour rester clairs, efficaces et applicables. On y développe les principes qui reviennent constamment dans un jeu où les grips, le contrôle, la pression et la précision prennent une place centrale.',
       'GI & NOGI Performance': 'Un entraînement qui combine GI et NOGI dans une approche axée sur la performance et la préparation aux compétitions. On y travaille la stratégie, la gestion du stress et les mises en situation de combat, avec une intensité plus élevée que dans les cours réguliers. La participation demande une attitude sérieuse, respectueuse et engagée envers sa progression et celle de l\u2019équipe.',
       'Muay Thaï': 'Le Muay Thaï, c\u2019est un sport de combat complet basé sur les poings, les jambes, les genoux et les coudes. Originaire de Thaïlande, il se distingue par son approche directe, son travail de distance et son combat rapproché. Tu y développes ta technique, ton cardio, tes réflexes et ta capacité à rester efficace sous pression.',
-      'Yoga': 'Le Yoga d\u2019alignement met l\u2019accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, mais exigeante.',
+      'Yoga': 'Le Yoga d\u2019alignement met l\u2019accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, et restauratrice.',
       'Intro au BJJ': 'Les cours d\u2019intro ont lieu deux fois par semaine, les lundis et mercredis de 18h à 19h, pour un total de 5 cours. Les classes sont réduites afin de pouvoir accorder à chacun toute l\u2019attention requise, et tous les participants sont des débutants comme toi.\n\nLe but, c\u2019est que tu te sentes à l\u2019aise, que tu puisses t\u2019entraîner sans te sentir jugé et que tu puisses rejoindre les classes régulières en toute confiance à la fin du programme d\u2019intro. C\u2019est une super occasion de découvrir ce sport tout en te familiarisant tranquillement avec notre communauté.\n\nC\u2019est Amélie qui t\u2019enseignera tout ce que tu dois savoir à propos du Jiu-Jitsu. Elle en profitera pour te faire rire (ou pleurer) avec ses meilleures blagues. On ne t\u2019en voudra pas si tu ne les trouves pas drôles, nous non plus d\u2019ailleurs !\n\nOn se voit sur le mat !',
       'Queers & Allies': 'QUEERS & ALLIES est un cours de BJJ gratuit spécialement prévu pour les gens queers et leurs alliés. Ouvert à tous, le respect d\u2019autrui y est primordial et une politique de tolérance zéro sera appliquée envers tout comportement ou commentaire déplacé. Cette politique est d\u2019ailleurs appliquée dans tous nos cours, sans exception.\n\nLe cours se donne en GI et NOGI (come as you are) et est ouvert aux non-initiés une semaine sur deux. Prêt de GI disponible au coût de 5$ (négociable en cas de besoin).',
     };
@@ -1623,6 +1630,44 @@
       return s ? Object.assign({}, s, {grantId:g.id, grantMessage:g.message||''}) : null;
     }).filter(Boolean);
   }
+  // Notes/post-its/autocollants partagés entre carnets (élève → coach ou élève → élève).
+  // Une note "signée" est livrée immédiatement (statut 'delivered') ; une note "anonyme"
+  // doit d'abord être approuvée par un·e gestionnaire (statut 'pending_review') — dans les
+  // deux cas, personne (ni Amélie via la modération, ni le destinataire) ne voit qui l'a
+  // envoyée : l'identité de l'expéditeur n'est jamais affichée dans l'interface.
+  function sharedItemContentFromEntry(entry){
+    const base = {kind: entry.kind, category: entry.category||''};
+    if(entry.kind === 'text'){
+      Object.assign(base, {text:entry.text, fontFamily:entry.fontFamily, color:entry.color, hAlign:entry.hAlign});
+    } else if(entry.kind === 'sticker'){
+      Object.assign(base, {stickerId:entry.stickerId});
+    } else {
+      Object.assign(base, {text:entry.text, color:entry.color, photo:entry.photo||null});
+    }
+    return base;
+  }
+  function receivedItemsForOwner(ownerKey){
+    return state.data.sharedItems.filter(s=>s.recipientType==='student' && s.recipientOwnerKey===ownerKey && s.status==='delivered');
+  }
+  function receivedItemsForManager(managerId){
+    return state.data.sharedItems.filter(s=>s.recipientType==='coach' && s.recipientManagerId===managerId && s.status==='delivered');
+  }
+  function pendingModerationSharedItems(){
+    return state.data.sharedItems.filter(s=>s.anonymous && s.status==='pending_review');
+  }
+  function sharedContentPreviewHtml(c){
+    if(c.kind === 'sticker'){
+      const sticker = state.data.stickers.find(s=>s.id===c.stickerId);
+      return sticker ? `<img src="${sticker.image}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;"><div class="sname">${escapeHtml(sticker.name)}</div>` : '<p class="muted" style="color:var(--chalk-dim);">Autocollant introuvable.</p>';
+    }
+    return `
+      <div class="postit" style="background:${c.kind==='text' ? 'transparent' : (c.color||POSTIT_COLORS[0])};${c.kind==='text' ? 'box-shadow:none;border:1px dashed rgba(40,41,46,0.3);font-family:'+textnoteFontCss(c.fontFamily)+';color:'+(c.color||TEXTNOTE_INK_COLORS[0])+';' : ''}max-width:220px;">
+        ${c.category ? `<div class="postit-cat" style="${c.kind==='text'?'color:rgba(40,41,46,0.6);':''}">${escapeHtml(c.category)}</div>` : ''}
+        <div class="postit-text">${escapeHtml(c.text||'')}</div>
+        ${c.photo ? `<img src="${c.photo}">` : ''}
+      </div>
+    `;
+  }
   const MAX_NOTEBOOK_PAGES = 40;
   function getNotebooksForOwner(ownerKey){
     return state.data.notebooks.filter(nb=>nb.ownerKey===ownerKey).sort((a,b)=>a.createdAt-b.createdAt);
@@ -2299,6 +2344,7 @@
         <button class="small-btn" data-action="open-notebook-settings">⚙ Personnaliser</button>
         <button class="small-btn" data-action="new-notebook">+ Nouveau carnet</button>
         <button class="small-btn ${state.notebookEditMode?'active':''}" data-action="toggle-notebook-edit-mode" style="${state.notebookEditMode?'background:var(--amber);color:var(--ink);':''}">${state.notebookEditMode ? '✓ Mode édition' : '✎ Modifier le carnet'}</button>
+        <button class="small-btn" data-action="open-received-items" data-owner="${escapeHtml(ownerKey)}" style="${receivedItemsForOwner(ownerKey).length?'background:var(--amber);color:var(--ink);':''}">📥 Reçu${receivedItemsForOwner(ownerKey).length?' ('+receivedItemsForOwner(ownerKey).length+')':''}</button>
       </div>
       <div style="margin-bottom:10px;">
         <button class="category-chip ${!state.notebookFilterCategory?'active':''}" data-action="filter-notebook-category" data-category="">Tous</button>
@@ -2315,6 +2361,7 @@
                 <div class="postit-actions">
                   <button data-action="goto-notebook-page" data-page="${n.page||1}">Page ${n.page||1}</button>
                   <button data-action="edit-postit" data-id="${n.id}">Modifier</button>
+                  <button data-action="open-share" data-id="${n.id}" data-owner="${escapeHtml(ownerKey)}">↗ Partager</button>
                 </div>
               </div>
             ` : `
@@ -2325,6 +2372,7 @@
                 <div class="postit-actions">
                   <button data-action="goto-notebook-page" data-page="${n.page||1}">Page ${n.page||1}</button>
                   <button data-action="edit-postit" data-id="${n.id}">Modifier</button>
+                  <button data-action="open-share" data-id="${n.id}" data-owner="${escapeHtml(ownerKey)}">↗ Partager</button>
                 </div>
               </div>
             `).join('')}
@@ -2346,6 +2394,7 @@
                 <div class="postit-actions">
                   <button data-action="edit-postit" data-id="${n.id}">Modifier</button>
                   <button data-action="delete-postit" data-id="${n.id}">Retirer</button>
+                  <button data-action="open-share" data-id="${n.id}" data-owner="${escapeHtml(ownerKey)}">↗ Partager</button>
                 </div>
                 ` : ''}
               </div>
@@ -2366,6 +2415,7 @@
                 <div class="textnote-toolbar">
                   <button data-action="edit-postit" data-id="${n.id}">Modifier</button>
                   <button data-action="delete-postit" data-id="${n.id}">Retirer</button>
+                  <button data-action="open-share" data-id="${n.id}" data-owner="${escapeHtml(ownerKey)}">↗ Partager</button>
                 </div>
                 ` : ''}
               </div>
@@ -2383,6 +2433,7 @@
                 ${state.notebookEditMode ? `
                 <div class="textnote-toolbar">
                   <button data-action="delete-postit" data-id="${n.id}">Retirer</button>
+                  <button data-action="open-share" data-id="${n.id}" data-owner="${escapeHtml(ownerKey)}">↗ Partager</button>
                 </div>
                 ` : ''}
               </div>
@@ -2724,6 +2775,40 @@
         ${toConfirmMemberships.length ? `<table><tr><th>Étudiant</th><th>Formule</th><th></th></tr>${confirmRows}</table>`
           : '<p class="muted" style="color:var(--chalk-dim);">Rien en attente pour le moment.</p>'}
       `)}
+
+      ${(()=>{
+        const pendingShared = pendingModerationSharedItems();
+        const mgr = currentManager();
+        const inbox = mgr ? receivedItemsForManager(mgr.id) : [];
+        let out = '';
+        if(pendingShared.length){
+          out += adminCard('shared-moderation', `Notes anonymes à approuver (${pendingShared.length})`, `
+            <p class="muted" style="color:var(--chalk-dim);">Vous voyez le contenu, jamais qui l’envoie ni à qui elle est destinée — pour repérer les abus tout en gardant l’anonymat.</p>
+            ${pendingShared.map(it=>`
+              <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+                ${sharedContentPreviewHtml(it)}
+                <div class="btn-row" style="margin-top:8px;">
+                  <button class="small-btn" style="background:var(--sage);border-color:var(--sage);color:var(--ink);" data-action="approve-shared-item" data-id="${it.id}">Approuver</button>
+                  <button class="small-btn" data-action="refuse-shared-item" data-id="${it.id}">Refuser</button>
+                </div>
+              </div>
+            `).join('')}
+          `, 'var(--amber)', 'var(--amber)');
+        }
+        if(mgr && inbox.length){
+          out += adminCard('shared-inbox', `Notes reçues pour ${escapeHtml(mgr.name)} (${inbox.length})`, `
+            ${inbox.map(it=>`
+              <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+                ${sharedContentPreviewHtml(it)}
+                <div class="btn-row" style="margin-top:8px;">
+                  <button class="small-btn" data-action="archive-shared-item" data-id="${it.id}">Marquer comme lu</button>
+                </div>
+              </div>
+            `).join('')}
+          `);
+        }
+        return out;
+      })()}
 
       ${adminCard('students', 'Étudiants', `
         <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
@@ -3120,8 +3205,6 @@
           </div>
           <label>Prix (affiché)</label>
           <input id="p-price" value="${escapeHtml(p.price||'')}" placeholder="90 $">
-          <label>Lien de paiement (Stripe / Square)</label>
-          <input id="p-link" value="${escapeHtml(p.paymentLink||'')}" placeholder="https://...">
           <label style="margin-top:14px;">Catégories débloquées</label>
           <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
             ${CATEGORIES.map(cat=>`
@@ -3640,6 +3723,74 @@
           <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
         </div>
       `;
+    } else if(m.type === 'share-form'){
+      const {entryId, ownerKey} = m.payload;
+      const entry = state.data.notebookEntries.find(n=>n.id===entryId);
+      const recipientType = state.shareRecipientType || 'coach';
+      const selected = state.shareSelectedRecipient;
+      const searchQuery = state.shareSearchQuery || '';
+      const searchResults = (recipientType==='student' && searchQuery) ? searchStudentAccounts(searchQuery) : [];
+      html = entry ? `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Partager cette note</h3>
+          <div style="margin:10px 0;">${sharedContentPreviewHtml(entry)}</div>
+          <label>Destinataire</label>
+          <div class="btn-row" style="justify-content:flex-start;gap:6px;">
+            <button type="button" class="small-btn" data-action="set-share-recipient-type" data-value="coach" style="${recipientType==='coach'?'background:var(--amber);color:var(--ink);':''}">Coach</button>
+            <button type="button" class="small-btn" data-action="set-share-recipient-type" data-value="student" style="${recipientType==='student'?'background:var(--amber);color:var(--ink);':''}">Étudiant</button>
+          </div>
+          ${recipientType==='coach' ? `
+            <label style="margin-top:10px;">Choisir un coach</label>
+            <select id="share-manager-select">
+              ${state.data.managers.map(mg=>`<option value="${mg.id}">${escapeHtml(mg.name)}</option>`).join('')}
+            </select>
+          ` : `
+            <label style="margin-top:10px;">Chercher un·e étudiant·e (nom)</label>
+            ${selected ? `
+              <p style="margin:6px 0;">Sélectionné : <strong style="color:var(--chalk);">${escapeHtml(selected.label)}</strong> <button type="button" class="small-btn" data-action="clear-share-recipient">Changer</button></p>
+            ` : `
+              <input id="share-search-input" placeholder="Nom de l'étudiant·e..." value="${escapeHtml(searchQuery)}">
+              <div class="btn-row"><button class="btn btn-secondary" data-action="run-share-search">Chercher</button></div>
+              ${searchQuery ? (searchResults.length ? `<ul class="link-list" style="margin-top:8px;">${searchResults.map(r=>{
+                if(r.type==='child'){
+                  const ownerKeyR = notebookOwnerKey(r.parentEmail, r.memberId);
+                  return `<li><span>${escapeHtml(r.name)} <span style="color:var(--chalk-dim);font-size:11px;">(enfant de ${escapeHtml(r.parentName)})</span></span><span><button class="small-btn" data-action="pick-share-recipient" data-owner="${escapeHtml(ownerKeyR)}" data-label="${escapeHtml(r.name)}">Choisir</button></span></li>`;
+                }
+                const ownerKeyR = notebookOwnerKey(r.email, null);
+                return `<li><span>${escapeHtml(r.name)}</span><span><button class="small-btn" data-action="pick-share-recipient" data-owner="${escapeHtml(ownerKeyR)}" data-label="${escapeHtml(r.name)}">Choisir</button></span></li>`;
+              }).join('')}</ul>` : '<p class="muted" style="color:var(--chalk-dim);margin-top:8px;">Aucun résultat.</p>') : ''}
+            `}
+          `}
+          <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
+            <input type="checkbox" id="share-anonymous" style="width:auto;">
+            <span>Envoyer de façon anonyme</span>
+          </label>
+          <p class="muted" style="color:var(--chalk-dim);font-size:11px;">Une note anonyme est d’abord vérifiée par un·e gestionnaire avant d’être livrée (pour éviter les abus) — une note signée est livrée immédiatement.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="send-share" data-entry="${entryId}" data-owner="${escapeHtml(ownerKey)}">Envoyer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      ` : '<div class="modal"><p>Note introuvable.</p><div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div></div>';
+    } else if(m.type === 'received-items'){
+      const {ownerKey} = m.payload;
+      const items = receivedItemsForOwner(ownerKey);
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>📥 Reçu</h3>
+          ${items.length ? items.map(it=>`
+            <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+              ${sharedContentPreviewHtml(it)}
+              <div class="btn-row" style="margin-top:8px;">
+                <button class="small-btn" data-action="claim-shared-item" data-id="${it.id}" data-owner="${escapeHtml(ownerKey)}">Placer sur la page</button>
+              </div>
+            </div>
+          `).join('') : '<p class="muted" style="color:var(--chalk-dim);">Rien de nouveau pour l’instant.</p>'}
+          <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+        </div>
+      `;
     } else if(m.type === 'sticker-grant-picker'){
       const {email} = m.payload;
       const acct = findStudentAccount(email);
@@ -3881,7 +4032,7 @@
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Remboursement</h3>
           <p class="muted">${escapeHtml(mem.studentName)} — ${escapeHtml(mem.planName)}</p>
-          <p style="font-size:12px;color:var(--chalk-dim);">Ceci enregistre le remboursement et ajuste l\u2019accès dans l\u2019app. Le remboursement réel de l\u2019argent doit être fait séparément dans Stripe ou Square.</p>
+          <p style="font-size:12px;color:var(--chalk-dim);">Ceci enregistre le remboursement et ajuste l\u2019accès dans l\u2019app. Le remboursement réel de l\u2019argent doit être fait séparément dans Helcim.</p>
           <label>Type de remboursement</label>
           <select id="rf-type">
             <option value="complet">Complet</option>
@@ -4509,6 +4660,107 @@
       state.modal = null; closeModalDom();
       render();
       showToast('Autocollant ajouté.');
+    }
+    else if(action==='open-share'){
+      const entryId = e.currentTarget.dataset.id;
+      const ownerKey = e.currentTarget.dataset.owner;
+      state.shareRecipientType = 'coach';
+      state.shareSearchQuery = '';
+      state.shareSelectedRecipient = null;
+      state.modal = {type:'share-form', payload:{entryId, ownerKey}};
+      render();
+    }
+    else if(action==='set-share-recipient-type'){
+      state.shareRecipientType = e.currentTarget.dataset.value;
+      state.shareSearchQuery = '';
+      state.shareSelectedRecipient = null;
+      render();
+    }
+    else if(action==='run-share-search'){
+      const input = document.getElementById('share-search-input');
+      state.shareSearchQuery = input ? input.value.trim() : '';
+      render();
+    }
+    else if(action==='pick-share-recipient'){
+      const ownerKeyR = e.currentTarget.dataset.owner;
+      const label = e.currentTarget.dataset.label;
+      state.shareSelectedRecipient = {ownerKey: ownerKeyR, label};
+      render();
+    }
+    else if(action==='clear-share-recipient'){
+      state.shareSelectedRecipient = null;
+      render();
+    }
+    else if(action==='send-share'){
+      const entryId = e.currentTarget.dataset.entry;
+      const ownerKey = e.currentTarget.dataset.owner;
+      const entry = state.data.notebookEntries.find(n=>n.id===entryId);
+      if(!entry){ showToast('Note introuvable.'); return; }
+      const recipientType = state.shareRecipientType || 'coach';
+      let recipientManagerId = null, recipientOwnerKey = null;
+      if(recipientType==='coach'){
+        const sel = document.getElementById('share-manager-select');
+        recipientManagerId = sel ? sel.value : null;
+        if(!recipientManagerId){ showToast('Choisissez un coach.'); return; }
+      } else {
+        if(!state.shareSelectedRecipient){ showToast('Choisissez d’abord un·e étudiant·e dans les résultats de recherche.'); return; }
+        recipientOwnerKey = state.shareSelectedRecipient.ownerKey;
+        if(recipientOwnerKey === ownerKey){ showToast('Vous ne pouvez pas vous envoyer une note à vous-même.'); return; }
+      }
+      const anonymous = !!(document.getElementById('share-anonymous') && document.getElementById('share-anonymous').checked);
+      const content = sharedItemContentFromEntry(entry);
+      const item = Object.assign({}, content, {
+        id: uid(),
+        anonymous,
+        recipientType, recipientManagerId, recipientOwnerKey,
+        senderOwnerKey: ownerKey,
+        status: anonymous ? 'pending_review' : 'delivered',
+        createdAt: Date.now(), decidedAt: null,
+      });
+      state.data.sharedItems.push(item);
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast(anonymous ? 'Note envoyée — elle sera livrée dès qu’un·e gestionnaire l’aura approuvée.' : 'Note envoyée !');
+    }
+    else if(action==='open-received-items'){
+      const ownerKey = e.currentTarget.dataset.owner;
+      state.modal = {type:'received-items', payload:{ownerKey}};
+      render();
+    }
+    else if(action==='claim-shared-item'){
+      const itemId = e.currentTarget.dataset.id;
+      const ownerKey = e.currentTarget.dataset.owner;
+      const item = state.data.sharedItems.find(s=>s.id===itemId);
+      if(!item){ showToast('Introuvable.'); return; }
+      const nb = getOrCreateActiveNotebook(ownerKey);
+      const entry = Object.assign({}, item, {
+        id: uid(), ownerKey, notebookId: nb.id,
+        page: state.notebookActivePage||1,
+        x: 10+Math.round(Math.random()*40), y: 10+Math.round(Math.random()*40),
+        size: item.kind==='sticker' ? 60 : undefined, rotation: 0,
+        fontSize: item.kind==='text' ? 16 : undefined,
+        createdAt: Date.now(), shareId: item.id,
+      });
+      delete entry.anonymous; delete entry.recipientType; delete entry.recipientManagerId;
+      delete entry.recipientOwnerKey; delete entry.senderOwnerKey; delete entry.status; delete entry.decidedAt;
+      state.data.notebookEntries.push(entry);
+      item.status = 'claimed';
+      await persist();
+      render();
+      showToast('Ajouté à votre carnet.');
+    }
+    else if(action==='approve-shared-item'){
+      const item = state.data.sharedItems.find(s=>s.id===id);
+      if(item){ item.status = 'delivered'; item.decidedAt = Date.now(); await persist(); render(); showToast('Note approuvée et livrée.'); }
+    }
+    else if(action==='refuse-shared-item'){
+      const item = state.data.sharedItems.find(s=>s.id===id);
+      if(item){ item.status = 'refused'; item.decidedAt = Date.now(); await persist(); render(); showToast('Note refusée.'); }
+    }
+    else if(action==='archive-shared-item'){
+      const item = state.data.sharedItems.find(s=>s.id===id);
+      if(item){ item.status = 'archived'; await persist(); render(); showToast('Archivé.'); }
     }
     else if(action==='new-sticker'){
       pendingStickerImage = null;
@@ -5358,7 +5610,7 @@
       await persist();
       state.modal = null; closeModalDom();
       render();
-      showToast('Remboursement enregistré — pensez à le faire aussi dans Stripe/Square.');
+      showToast('Remboursement enregistré — pensez à le faire aussi dans Helcim.');
     }
     else if(action==='new-plan'){ state.modal = {type:'plan-form', payload:null}; render(); }
     else if(action==='edit-plan'){
@@ -5377,14 +5629,15 @@
       const creditsCount = Math.max(1, parseInt(document.getElementById('p-credits').value,10)||1);
       const durationDays = Math.max(1, parseInt(document.getElementById('p-days').value,10)||1);
       const price = document.getElementById('p-price').value.trim();
-      const paymentLink = document.getElementById('p-link').value.trim();
       const categories = Array.from(document.querySelectorAll('.p-cat:checked')).map(el=>el.value);
       if(!name){ showToast('Le nom de la formule est requis.'); return; }
       if(id){
+        // Note : "paymentLink" n'est plus modifiable ici (paiement Helcim intégré maintenant
+        // automatique) — on laisse volontairement la valeur existante (si présente) intacte.
         const p = state.data.membershipPlans.find(pl=>pl.id===id);
-        Object.assign(p, {name,type,creditsCount,durationDays,price,paymentLink,categories});
+        Object.assign(p, {name,type,creditsCount,durationDays,price,categories});
       } else {
-        state.data.membershipPlans.push({id:uid(),name,type,creditsCount,durationDays,price,paymentLink,categories});
+        state.data.membershipPlans.push({id:uid(),name,type,creditsCount,durationDays,price,paymentLink:'',categories});
       }
       await persist();
       state.modal = null; closeModalDom();
