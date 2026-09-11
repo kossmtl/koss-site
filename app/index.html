@@ -235,7 +235,20 @@
   select option{ color:#141413; background:#FFFBF8; }
   .pw-wrap{position:relative;}
   .pw-wrap input{padding-right:66px;}
-  .pw-toggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);padding:3px 8px;font-size:10px;}
+  .pw-toggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);padding:3px 8px;font-size:10px;background:var(--bg-tile);}
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
+  textarea:-webkit-autofill,
+  textarea:-webkit-autofill:hover,
+  textarea:-webkit-autofill:focus{
+    -webkit-text-fill-color: var(--chalk) !important;
+    caret-color: var(--chalk);
+    -webkit-box-shadow: 0 0 0px 1000px var(--bg-tile) inset !important;
+    box-shadow: 0 0 0px 1000px var(--bg-tile) inset !important;
+    transition: background-color 9999s ease-in-out 0s;
+  }
   .btn{
     font-family:var(--font-d);
     letter-spacing:0.3px;
@@ -745,6 +758,7 @@
   }
 
   let cropState = null;
+  let cropTargetManager = false; // true = la photo recadrée s'applique au gestionnaire connecté, pas à l'élève
   let pendingPostitPhoto = null;
   let pendingStickerImage = null;
 
@@ -1678,7 +1692,15 @@
     return acct || null;
   }
 
-  const POSTIT_PRESET_CATEGORIES = ['Garde','Position','Transitions','À travailler','À améliorer'];
+  // Catégories du carnet : entièrement créées par l'usager (plus de liste préétablie) — on
+  // suggère juste celles qu'il a déjà tapées, via une <datalist> sur le champ catégorie.
+  function userNotebookCategories(ownerKey){
+    const set = new Set();
+    state.data.notebookEntries.forEach(n=>{
+      if(n.ownerKey===ownerKey && !n.trashed && n.category && n.category.trim()) set.add(n.category.trim());
+    });
+    return Array.from(set).sort((a,b)=>a.localeCompare(b));
+  }
   const POSTIT_COLORS = ['#F2E27A','#F2A65A','#8FCBD9','#93B48F','#E8A9A0','#B79FDB','#FFFBF8'];
   const TEXTNOTE_FONTS = [
     {key:'marker', label:'Manuscrite (Sharpie)', css:"'Permanent Marker', cursive"},
@@ -2047,9 +2069,10 @@
     if(state.view === 'notebook') { attachNotebookDrag(); attachFreeHandles(); }
     if(state.view === 'notebook' && !state.notebookOpened){ attachCoverLogoDrag(); }
 
-    const photoFileInput = document.getElementById('acc-photo-file');
-    if(photoFileInput){
-      photoFileInput.addEventListener('change', (ev)=>{
+    const wirePhotoInput = (inputId, forManager)=>{
+      const input = document.getElementById(inputId);
+      if(!input) return;
+      input.addEventListener('change', (ev)=>{
         const f = ev.target.files[0];
         if(!f) return;
         const reader = new FileReader();
@@ -2061,6 +2084,7 @@
             const size = 260;
             const cover = Math.max(size/img.width, size/img.height);
             cropState = { img, scale:cover, minScale:cover, offsetX:0, offsetY:0, dragging:false, lastX:0, lastY:0 };
+            cropTargetManager = !!forManager;
             state.modal = {type:'crop-photo', payload:{}};
             render();
           };
@@ -2068,10 +2092,12 @@
         };
         reader.readAsDataURL(f);
       });
-    }
+    };
+    wirePhotoInput('acc-photo-file', false);
 
     closeModalDom();
     if(state.modal) renderModal();
+    wirePhotoInput('mgr-photo-file', true);
 
     document.querySelectorAll('.toast').forEach(t=>t.remove());
     if(state.toastMsg){
@@ -2087,7 +2113,26 @@
     const activeProfileId = acct ? (state.activeProfileId || null) : null;
     const activeName = acct ? getProfileName(acct, activeProfileId) : '';
     const profiles = acct ? getProfiles(acct) : [];
-    const accountControl = acct ? `
+    // En zone gestionnaire (Gérer), le rond de profil élève disparaît au profit de celui du
+    // gestionnaire connecté — avec son propre menu (compte gestionnaire + déconnexion).
+    const inManagerArea = state.adminUnlocked && (state.view==='admin' || state.view==='attendance');
+    const mgr = inManagerArea ? currentManager() : null;
+    const accountControl = mgr ? `
+      <div style="position:relative;">
+        <button class="tab-btn account-badge" data-action="toggle-manager-menu">
+          ${mgr.photo ? `<img src="${mgr.photo}" class="avatar-img">` : `<span class="avatar-fallback">${escapeHtml((mgr.name||'?').trim().charAt(0).toUpperCase())}</span>`}
+          <span>${escapeHtml(mgr.name)}${mgr.role==='super'?' (super)':''}</span>
+        </button>
+        ${state.managerMenuOpen ? `
+          <div class="account-menu">
+            <div class="account-menu-actions">
+              <button data-action="goto-manager-account">Gérer mon compte</button>
+              <button data-action="admin-logout">Me déconnecter</button>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    ` : acct ? `
       <div style="position:relative;">
         <button class="tab-btn account-badge" data-action="toggle-account-menu">
           ${acct.photo && !activeProfileId ? `<img src="${acct.photo}" class="avatar-img">` : `<span class="avatar-fallback">${escapeHtml((activeName||'?').trim().charAt(0).toUpperCase())}</span>`}
@@ -2364,7 +2409,7 @@
             <span>${escapeHtml(f.name)}${f.birthday?' <span style="color:var(--chalk-dim);font-size:11px;">· '+f.birthday+'</span>':''}</span>
             <span>
               <button class="small-btn" data-action="edit-family-member" data-id="${f.id}">Modifier</button>
-              <button class="small-btn" data-action="delete-family-member" data-id="${f.id}">Retirer</button>
+              <button class="small-btn" data-action="confirm-delete-family-member" data-id="${f.id}" data-name="${escapeHtml(f.name)}">Retirer</button>
             </span>
           </div>
         `).join('') : ''}
@@ -2470,7 +2515,6 @@
 
     const entries = state.data.notebookEntries.filter(n=>n.ownerKey===ownerKey && n.notebookId===activeNotebook.id && !n.trashed).sort((a,b)=>b.createdAt-a.createdAt);
     const usedCategories = Array.from(new Set(entries.map(n=>(n.category||'').trim()).filter(Boolean)));
-    const allCategories = Array.from(new Set([...POSTIT_PRESET_CATEGORIES, ...usedCategories]));
     const searchOpen = !!state.notebookSearchOpen;
     const searchQuery = state.notebookSearchQuery || '';
     const pageCount = activeNotebook.pageCount || 1;
@@ -2524,7 +2568,7 @@
       </div>
       <div style="margin-bottom:10px;">
         <button class="category-chip ${!state.notebookFilterCategory?'active':''}" data-action="filter-notebook-category" data-category="">Tous</button>
-        ${allCategories.map(cat=>`<button class="category-chip ${state.notebookFilterCategory===cat?'active':''}" data-action="filter-notebook-category" data-category="${escapeHtml(cat)}">${escapeHtml(cat)}</button>`).join('')}
+        ${usedCategories.map(cat=>`<button class="category-chip ${state.notebookFilterCategory===cat?'active':''}" data-action="filter-notebook-category" data-category="${escapeHtml(cat)}">${escapeHtml(cat)}</button>`).join('')}
       </div>
       ${searchResultsHtml}
       ${state.notebookFilterCategory ? `
@@ -3301,6 +3345,35 @@
           `}
         </div>
       `;
+    } else if(m.type === 'manager-account'){
+      const mgr = currentManager();
+      if(!mgr){
+        html = `<div class="modal"><button class="close-x" data-action="close-modal">✕</button><h3>Session introuvable</h3></div>`;
+      } else {
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Mon compte gestionnaire</h3>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+              ${mgr.photo ? `<img src="${mgr.photo}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;">` : `<span class="avatar-fallback" style="width:64px;height:64px;font-size:24px;">${escapeHtml((mgr.name||'?').trim().charAt(0).toUpperCase())}</span>`}
+              <div>
+                <input type="file" id="mgr-photo-file" accept="image/*">
+                ${mgr.photo ? `<div class="btn-row" style="margin-top:6px;"><button class="small-btn" data-action="remove-manager-photo">Retirer la photo</button></div>` : ''}
+              </div>
+            </div>
+            <label>Nom complet</label>
+            <input id="mgr-name" value="${escapeHtml(mgr.name||'')}">
+            <label style="margin-top:10px;">Courriel</label>
+            <input id="mgr-email" type="email" value="${escapeHtml(mgr.email||'')}" placeholder="courriel@exemple.com">
+            <label style="margin-top:10px;">Téléphone</label>
+            <input id="mgr-phone" type="tel" value="${escapeHtml(mgr.phone||'')}" placeholder="514-555-1234">
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="save-manager-info">Enregistrer</button>
+              <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
+            </div>
+          </div>
+        `;
+      }
     } else if(m.type === 'category-form'){
       html = `
         <div class="modal">
@@ -3410,8 +3483,21 @@
                 ${acct.familyMembers.map(f=>`<option value="${f.id}" ${m.payload.selectedProfileId===f.id?'selected':''}>${escapeHtml(f.name)}</option>`).join('')}
               </select>
             ` : ''}
+          ` : !m.payload.authChoice ? `
+            <p style="margin-top:10px;font-size:13px;">Pour réserver, dites-nous d\u2019abord :</p>
+            <div class="btn-row" style="flex-direction:column;gap:8px;">
+              <button class="btn btn-primary" data-action="choose-booking-auth" data-choice="existing" style="width:100%;">J\u2019ai déjà un compte</button>
+              <button class="btn btn-secondary" data-action="choose-booking-auth" data-choice="new" style="width:100%;">Je suis nouveau ici</button>
+            </div>
+          ` : m.payload.authChoice === 'existing' ? `
+            <p class="muted" style="margin-top:10px;"><a href="#" data-action="choose-booking-auth" data-choice="" style="color:var(--chalk-dim);">&larr; Retour</a></p>
+            <label>Courriel</label>
+            <input id="b-email" type="email" placeholder="votre@courriel.com">
+            <label>Mot de passe</label>
+            ${pwField('b-password', 'Votre mot de passe')}
           ` : `
-            <label style="margin-top:10px;">Prénom</label>
+            <p class="muted" style="margin-top:10px;"><a href="#" data-action="choose-booking-auth" data-choice="" style="color:var(--chalk-dim);">&larr; Retour</a></p>
+            <label>Prénom</label>
             <input id="b-firstname" placeholder="Prénom">
             <label>Nom</label>
             <input id="b-lastname" placeholder="Nom">
@@ -3423,12 +3509,18 @@
             ${pwField('b-password', "Créez-en un si c'est votre 1re visite")}
             <p style="font-size:11px;color:var(--chalk-dim);margin-top:4px;">Ce mot de passe protège votre compte, et vous resterez connecté pour vos prochaines réservations.</p>
           `}
+          ${(acct || m.payload.authChoice) ? `
           <div class="btn-row">
             <button class="btn btn-primary" data-action="submit-booking" data-class="${classId}" data-date="${dateIso}">
               ${full ? 'Rejoindre la liste d\u2019attente' : 'Réserver ma place'}
             </button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
+          ` : `
+          <div class="btn-row">
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+          `}
         </div>
       `;
     } else if(m.type === 'need-membership'){
@@ -3745,7 +3837,9 @@
       let addSectionHtml = '';
       if(warning){
         addSectionHtml = `
-          <p style="color:var(--amber);font-size:13px;margin-top:10px;">${escapeHtml(warning.name)} n\u2019a pas d\u2019abonnement actif pour la catégorie "${categoryLabel(c.category)}".</p>
+          <div style="border:2px solid var(--coral);background:rgba(226,114,91,0.15);border-radius:8px;padding:10px 12px;margin-top:10px;">
+            <p style="color:var(--coral);font-size:13px;font-weight:700;margin:0;">⚠ ${escapeHtml(warning.name)} n\u2019a pas d\u2019abonnement actif pour la catégorie "${categoryLabel(c.category)}".</p>
+          </div>
           <div class="btn-row">
             <button class="btn btn-danger" data-action="attendance-confirm-add">Ajouter quand même</button>
             <button class="btn btn-secondary" data-action="attendance-cancel-add">Ne pas ajouter</button>
@@ -3924,6 +4018,28 @@
             <p style="font-size:13px;">Première visite : ${firstVisit} · Dernière visite : ${lastVisit}<br>
             Nombre de visites : ${pastConfirmed.length} · Annulations : ${cancelCount}</p>
 
+            ${(()=>{
+              const notes = fm.notes || {};
+              return `
+              <label style="margin-top:14px;">Notes privées sur ${escapeHtml(fm.name)} (visible seulement par vous)</label>
+              <label style="margin-top:8px;font-size:12px;">Note sur l’abonnement</label>
+              <textarea id="cd-note-membership" rows="2">${escapeHtml(notes.membership||'')}</textarea>
+              <label style="margin-top:8px;font-size:12px;">Note de progression</label>
+              <textarea id="cd-note-progress" rows="2">${escapeHtml(notes.progress||'')}</textarea>
+              <label style="margin-top:8px;font-size:12px;">Note d’entraînement</label>
+              <textarea id="cd-note-training" rows="2">${escapeHtml(notes.training||'')}</textarea>
+              <label style="margin-top:8px;font-size:12px;">Note de compétition</label>
+              <textarea id="cd-note-competition" rows="2">${escapeHtml(notes.competition||'')}</textarea>
+              <label style="margin-top:8px;font-size:12px;">Note aux autres instructeurs</label>
+              <textarea id="cd-note-instructors" rows="2">${escapeHtml(notes.instructors||'')}</textarea>
+              <label style="margin-top:8px;font-size:12px;color:var(--coral);">Avis (attention)</label>
+              <textarea id="cd-note-avis" rows="2" style="border-color:var(--coral);color:var(--coral);">${escapeHtml(notes.avis||'')}</textarea>
+              <label style="margin-top:8px;font-size:12px;">Autres</label>
+              <textarea id="cd-note-other" rows="2">${escapeHtml(notes.other||'')}</textarea>
+              <div class="btn-row"><button class="btn btn-secondary" data-action="save-child-notes" data-parent-email="${escapeHtml(parentAcct.email)}" data-member-id="${fm.id}">Enregistrer les notes</button></div>
+              `;
+            })()}
+
             <label style="margin-top:14px;">Abonnements actifs (${activeMemberships.length})</label>
             ${activeMemberships.length ? activeMemberships.map(m2=>`<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m2.planName)} — ${membershipBadge(m2)} ${membershipDisplayStatus(m2)==='active' ? '· '+membershipDetail(m2) : ''}</div>`).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun abonnement actif.</p>'}
 
@@ -4084,7 +4200,6 @@
     } else if(m.type === 'postit-form'){
       const {ownerKey, entry, notebookId, pageCount} = m.payload;
       const category = entry ? entry.category : '';
-      const isPreset = POSTIT_PRESET_CATEGORIES.includes(category);
       const color = entry ? entry.color : POSTIT_COLORS[0];
       const nbId = entry ? entry.notebookId : notebookId;
       const nb = state.data.notebooks.find(x=>x.id===nbId);
@@ -4095,12 +4210,10 @@
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>${entry ? 'Modifier la note' : 'Nouvelle note'}</h3>
           <label>Catégorie</label>
-          <select id="postit-category-select">
-            <option value="">— Choisir —</option>
-            ${POSTIT_PRESET_CATEGORIES.map(c=>`<option value="${escapeHtml(c)}" ${category===c?'selected':''}>${escapeHtml(c)}</option>`).join('')}
-          </select>
-          <label style="margin-top:8px;">Ou tape ton propre mot-clé</label>
-          <input id="postit-category-custom" placeholder="ex. Étranglement" value="${!isPreset ? escapeHtml(category) : ''}">
+          <input id="postit-category-input" list="postit-category-list" placeholder="Tape ta catégorie (ex. Étranglement)" value="${escapeHtml(category)}">
+          <datalist id="postit-category-list">
+            ${userNotebookCategories(ownerKey).map(c=>`<option value="${escapeHtml(c)}">`).join('')}
+          </datalist>
           <label style="margin-top:10px;">Note</label>
           <textarea id="postit-text" rows="4">${entry ? escapeHtml(entry.text) : ''}</textarea>
           <label style="margin-top:10px;">Couleur</label>
@@ -4124,7 +4237,6 @@
     } else if(m.type === 'textnote-form'){
       const {ownerKey, entry, notebookId, pageCount} = m.payload;
       const category = entry ? entry.category : '';
-      const isPreset = POSTIT_PRESET_CATEGORIES.includes(category);
       const fontFamily = entry ? (entry.fontFamily||'marker') : 'marker';
       const color = entry ? (entry.color||TEXTNOTE_INK_COLORS[0]) : TEXTNOTE_INK_COLORS[0];
       const hAlign = entry ? (entry.hAlign||'left') : 'left';
@@ -4137,12 +4249,10 @@
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>${entry ? 'Modifier la note texte' : 'Nouvelle note texte'}</h3>
           <label>Catégorie</label>
-          <select id="textnote-category-select">
-            <option value="">— Choisir —</option>
-            ${POSTIT_PRESET_CATEGORIES.map(c=>`<option value="${escapeHtml(c)}" ${category===c?'selected':''}>${escapeHtml(c)}</option>`).join('')}
-          </select>
-          <label style="margin-top:8px;">Ou tape ton propre mot-clé</label>
-          <input id="textnote-category-custom" placeholder="ex. Étranglement" value="${!isPreset ? escapeHtml(category) : ''}">
+          <input id="textnote-category-input" list="textnote-category-list" placeholder="Tape ta catégorie (ex. Étranglement)" value="${escapeHtml(category)}">
+          <datalist id="textnote-category-list">
+            ${userNotebookCategories(ownerKey).map(c=>`<option value="${escapeHtml(c)}">`).join('')}
+          </datalist>
           <label style="margin-top:10px;">Texte</label>
           <textarea id="textnote-text" rows="4">${entry ? escapeHtml(entry.text) : ''}</textarea>
           <label style="margin-top:10px;">Police</label>
@@ -4467,9 +4577,22 @@
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Supprimer cet étudiant ?</h3>
-          <p class="muted">Ceci retire définitivement le compte, les abonnements et l\u2019historique de réservations de <strong style="color:var(--chalk);">${escapeHtml(email)}</strong>. Cette action est irréversible.</p>
+          <p class="muted">Ceci retire définitivement le compte, les abonnements et l\u2019historique de réservations de <strong style="color:var(--chalk);">${escapeHtml(email)}</strong>. <strong style="color:var(--coral);">Tout abonnement actif sera annulé et il n\u2019y aura aucun moyen de le recréer par la suite.</strong> Cette action est irréversible.</p>
           <div class="btn-row">
             <button class="btn btn-danger" data-action="confirm-delete-student-yes" data-email="${escapeHtml(email)}">Oui, supprimer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'confirm-delete-family-member'){
+      const {memberId, name} = m.payload;
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Retirer ${escapeHtml(name)} ?</h3>
+          <p class="muted"><strong style="color:var(--coral);">Tout abonnement actif de ${escapeHtml(name)} sera annulé et il n\u2019y aura aucun moyen de le recréer par la suite.</strong> Son historique de réservations restera dans nos dossiers, mais vous ne pourrez plus réserver ni gérer son abonnement une fois retiré. Cette action est irréversible.</p>
+          <div class="btn-row">
+            <button class="btn btn-danger" data-action="delete-family-member" data-id="${memberId}">Oui, retirer</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
         </div>
@@ -5043,6 +5166,29 @@
     }
     else if(action==='goto-account'){ state.view='account'; state.accountMenuOpen=false; render(); }
     else if(action==='toggle-account-menu'){ state.accountMenuOpen = !state.accountMenuOpen; render(); }
+    else if(action==='toggle-manager-menu'){ state.managerMenuOpen = !state.managerMenuOpen; render(); }
+    else if(action==='admin-logout'){
+      state.adminUnlocked = false;
+      state.currentManagerId = null;
+      state.managerMenuOpen = false;
+      state.view = 'student';
+      render();
+    }
+    else if(action==='goto-manager-account'){
+      state.managerMenuOpen = false;
+      state.modal = {type:'manager-account', payload:null};
+      render();
+    }
+    else if(action==='save-manager-info'){
+      const mgr = currentManager();
+      if(!mgr){ showToast('Session gestionnaire introuvable.'); return; }
+      mgr.name = document.getElementById('mgr-name').value.trim() || mgr.name;
+      mgr.email = document.getElementById('mgr-email').value.trim();
+      mgr.phone = document.getElementById('mgr-phone').value.trim();
+      await persist();
+      render();
+      showToast('Infos du compte enregistrées.');
+    }
     else if(action==='goto-admin'){ state.view = state.adminUnlocked ? 'admin' : 'admin-login'; render(); }
     else if(action==='goto-attendance'){ state.view = 'attendance'; render(); }
     else if(action==='open-notebook-cover'){ state.notebookOpened = true; render(); }
@@ -5153,14 +5299,12 @@
       const ownerKey = e.currentTarget.dataset.owner;
       const notebookId = e.currentTarget.dataset.notebook;
       const text = document.getElementById('textnote-text').value.trim();
-      const selectVal = document.getElementById('textnote-category-select').value;
-      const customVal = document.getElementById('textnote-category-custom').value.trim();
-      const category = customVal || selectVal;
+      const category = document.getElementById('textnote-category-input').value.trim();
       const fontFamily = document.getElementById('textnote-font').value;
       const color = document.getElementById('textnote-color-value').value;
       const hAlign = document.getElementById('textnote-halign-value').value || 'left';
       if(!text){ markInvalid('textnote-text'); showToast('La note ne peut pas être vide.'); return; }
-      if(!category){ markInvalid('textnote-category-custom'); showToast('Choisis ou tape une catégorie.'); return; }
+      if(!category){ markInvalid('textnote-category-input'); showToast('Choisis ou tape une catégorie.'); return; }
       if(id){
         const entry = state.data.notebookEntries.find(n=>n.id===id);
         if(entry){
@@ -5277,10 +5421,15 @@
     }
     else if(action==='restore-postit'){
       const entry = state.data.notebookEntries.find(n=>n.id===id);
-      if(entry) entry.trashed = false;
+      if(entry){
+        entry.trashed = false;
+        // Restaure sur la page actuellement affichée plutôt que sa page d'origine (demandé
+        // explicitement) — sinon la note réapparaît hors de vue, sur une page qu'on a peut-être oubliée.
+        entry.page = state.notebookActivePage || 1;
+      }
       await persist();
       render();
-      showToast('Remis sur la page.');
+      showToast('Remis sur la page actuelle.');
     }
     else if(action==='return-shared-to-origin'){
       const entry = state.data.notebookEntries.find(n=>n.id===id);
@@ -5430,12 +5579,10 @@
       const ownerKey = e.currentTarget.dataset.owner;
       const notebookId = e.currentTarget.dataset.notebook;
       const text = document.getElementById('postit-text').value.trim();
-      const selectVal = document.getElementById('postit-category-select').value;
-      const customVal = document.getElementById('postit-category-custom').value.trim();
-      const category = customVal || selectVal;
+      const category = document.getElementById('postit-category-input').value.trim();
       const color = document.getElementById('postit-color-value').value;
       if(!text){ markInvalid('postit-text'); showToast('La note ne peut pas être vide.'); return; }
-      if(!category){ markInvalid('postit-category-custom'); showToast('Choisis ou tape une catégorie.'); return; }
+      if(!category){ markInvalid('postit-category-input'); showToast('Choisis ou tape une catégorie.'); return; }
       if(id){
         const entry = state.data.notebookEntries.find(n=>n.id===id);
         if(entry){
@@ -5791,6 +5938,11 @@
       state.modal.payload.showParticipants = !state.modal.payload.showParticipants;
       render();
     }
+    else if(action==='choose-booking-auth'){
+      const choice = e.currentTarget.dataset.choice || null;
+      state.modal.payload.authChoice = choice;
+      render();
+    }
     else if(action==='submit-booking'){
       const classId = e.currentTarget.dataset.class;
       const dateIso = e.currentTarget.dataset.date;
@@ -5801,6 +5953,27 @@
         const profileId = profileSelect ? (profileSelect.value || null) : null;
         const bookingName = profileId ? getProfileName(sessAcct, profileId) : sessAcct.name;
         await proceedBooking(classId, dateIso, bookingName, sessAcct.email, false, profileId);
+        return;
+      }
+      if(state.modal.payload.authChoice === 'existing'){
+        const email = document.getElementById('b-email').value.trim();
+        const password = document.getElementById('b-password').value;
+        if(!email || !password){
+          markInvalid([!email?'b-email':null, !password?'b-password':null].filter(Boolean));
+          showToast('Courriel et mot de passe requis.'); return;
+        }
+        const existing = findStudentAccount(email);
+        if(!existing){
+          markInvalid('b-email');
+          showToast("Aucun compte trouvé avec ce courriel. Choisissez plutôt « Je suis nouveau ici ».");
+          return;
+        }
+        const auth = await verifyOrCreateAccount(email, existing.name, password, existing.firstName, existing.lastName);
+        if(!auth.ok){ markInvalid('b-password'); showToast('Mot de passe incorrect pour ce courriel.'); return; }
+        state.studentSession = {email};
+        await saveSessionToStorage(email);
+        try{ await storageBackend.set('my_profile', JSON.stringify({name:existing.name,email}), false); }catch(e){}
+        await proceedBooking(classId, dateIso, existing.name, email, false);
         return;
       }
       const firstName = document.getElementById('b-firstname').value.trim();
@@ -6286,6 +6459,24 @@
       render();
       showToast('Fiche enfant mise à jour.');
     }
+    else if(action==='save-child-notes'){
+      const parentEmail = e.currentTarget.dataset.parentEmail;
+      const memberId = e.currentTarget.dataset.memberId;
+      const acct = findStudentAccount(parentEmail);
+      const fm = acct ? (acct.familyMembers||[]).find(f=>f.id===memberId) : null;
+      if(!fm){ showToast('Fiche introuvable.'); return; }
+      fm.notes = {
+        membership: document.getElementById('cd-note-membership').value.trim(),
+        progress: document.getElementById('cd-note-progress').value.trim(),
+        training: document.getElementById('cd-note-training').value.trim(),
+        competition: document.getElementById('cd-note-competition').value.trim(),
+        instructors: document.getElementById('cd-note-instructors').value.trim(),
+        avis: document.getElementById('cd-note-avis').value.trim(),
+        other: document.getElementById('cd-note-other').value.trim(),
+      };
+      await persist();
+      showToast('Notes enregistrées.');
+    }
     else if(action==='open-sticker-grant-picker'){
       const email = e.currentTarget.dataset.email;
       state.modal = {type:'sticker-grant-picker', payload:{email}};
@@ -6333,12 +6524,17 @@
       if(!b || !b.attendanceNote){ showToast('Note introuvable.'); return; }
       const acct = findStudentAccount(b.studentEmail||'');
       if(!acct){ showToast('Aucun compte étudiant trouvé.'); return; }
-      if(!acct.notes) acct.notes = {};
+      // Si la réservation était pour un profil enfant (profileId), la note doit aller dans le
+      // dossier de CET enfant (fm.notes) — pas dans celui du parent, sinon elle se mélange avec
+      // les notes du parent et de ses autres enfants, et n'apparaît nulle part de visible.
+      const targetObj = b.profileId ? (acct.familyMembers||[]).find(f=>f.id===b.profileId) : acct;
+      if(!targetObj){ showToast('Fiche introuvable pour cette réservation.'); return; }
+      if(!targetObj.notes) targetObj.notes = {};
       const label = (NOTE_CATEGORY_FIELDS.find(f=>f.key===category)||{}).label || category;
       // On garde le nom de l'instructeur qui a pris la note originale (attendanceNoteAuthor)
       // dans le texte transféré, sinon cette info est perdue une fois la note déplacée au dossier.
       const stamp = (b.dateIso ? `[${b.dateIso}]` : '') + (b.attendanceNoteAuthor ? ` (${b.attendanceNoteAuthor})` : '') + ' ';
-      acct.notes[category] = acct.notes[category] ? (acct.notes[category] + '\n' + stamp + b.attendanceNote) : (stamp + b.attendanceNote);
+      targetObj.notes[category] = targetObj.notes[category] ? (targetObj.notes[category] + '\n' + stamp + b.attendanceNote) : (stamp + b.attendanceNote);
       b.attendanceNote = '';
       b.attendanceNoteAuthor = '';
       b.attendanceNoteAt = 0;
@@ -6876,12 +7072,34 @@
       render();
       showToast('Membre de la famille enregistré.');
     }
+    else if(action==='confirm-delete-family-member'){
+      const memberId = e.currentTarget.dataset.id;
+      const name = e.currentTarget.dataset.name;
+      state.modal = {type:'confirm-delete-family-member', payload:{memberId, name}};
+      render();
+    }
     else if(action==='delete-family-member'){
       const acct = findStudentAccount(state.studentSession.email);
+      // On annule (plutôt que supprimer) les abonnements de cet enfant : une fois le profil
+      // retiré, son profileId ne peut plus être retrouvé, donc l'abonnement ne pourrait plus
+      // jamais être géré ni recréé — l'annulation le rend au moins visible comme tel côté admin.
+      state.data.memberships.forEach(m=>{
+        if(m.studentEmail.toLowerCase()===acct.email.toLowerCase() && m.profileId===id && m.status!=='annulee'){
+          m.status = 'annulee';
+        }
+      });
       acct.familyMembers = (acct.familyMembers||[]).filter(f=>f.id!==id);
       await persist();
+      state.modal = null; closeModalDom();
       render();
-      showToast('Membre retiré.');
+      showToast('Membre retiré, abonnement(s) annulé(s).');
+    }
+    else if(action==='remove-manager-photo'){
+      const mgr = currentManager();
+      if(mgr) mgr.photo = '';
+      await persist();
+      render();
+      showToast('Photo retirée.');
     }
     else if(action==='remove-photo'){
       const acct = findStudentAccount(state.studentSession.email);
@@ -6904,11 +7122,17 @@
       const y = outSize/2 - h/2 + cropState.offsetY*ratio;
       octx.drawImage(cropState.img, x, y, w, h);
       const dataUrl = outCanvas.toDataURL('image/jpeg', 0.85);
-      const acct = state.studentSession ? findStudentAccount(state.studentSession.email) : null;
-      if(acct){
-        acct.photo = dataUrl;
-        await persist();
+      if(cropTargetManager){
+        const mgr = currentManager();
+        if(mgr){ mgr.photo = dataUrl; await persist(); }
+      } else {
+        const acct = state.studentSession ? findStudentAccount(state.studentSession.email) : null;
+        if(acct){
+          acct.photo = dataUrl;
+          await persist();
+        }
       }
+      cropTargetManager = false;
       cropState = null;
       state.modal = null; closeModalDom();
       render();
