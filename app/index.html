@@ -1781,6 +1781,9 @@
       return s ? Object.assign({}, s, {grantId:g.id, grantMessage:g.message||''}) : null;
     }).filter(Boolean);
   }
+  function giftedStickersForOwner(ownerKey){
+    return giftedStickersForStudent(parseOwnerKey(ownerKey).email);
+  }
   // Notes/post-its/autocollants partagés entre carnets (élève → coach ou élève → élève).
   // Une note "signée" est livrée immédiatement (statut 'delivered') ; une note "anonyme"
   // doit d'abord être approuvée par un·e gestionnaire (statut 'pending_review') — dans les
@@ -2563,7 +2566,7 @@
         <button class="small-btn" data-action="open-notebook-settings">⚙ Personnaliser</button>
         <button class="small-btn" data-action="new-notebook">+ Nouveau carnet</button>
         <button class="small-btn ${state.notebookEditMode?'active':''}" data-action="toggle-notebook-edit-mode" style="${state.notebookEditMode?'background:var(--amber);color:var(--ink);':''}">${state.notebookEditMode ? '✓ Mode édition' : '✎ Modifier le carnet'}</button>
-        <button class="small-btn" data-action="open-received-items" data-owner="${escapeHtml(ownerKey)}" style="${receivedItemsForOwner(ownerKey).length?'background:var(--amber);color:var(--ink);':''}">📥 Reçu${receivedItemsForOwner(ownerKey).length?' ('+receivedItemsForOwner(ownerKey).length+')':''}</button>
+        <button class="small-btn" data-action="open-received-items" data-owner="${escapeHtml(ownerKey)}" style="${(receivedItemsForOwner(ownerKey).length+giftedStickersForOwner(ownerKey).length)?'background:var(--amber);color:var(--ink);':''}">📥 Reçu${(receivedItemsForOwner(ownerKey).length+giftedStickersForOwner(ownerKey).length)?' ('+(receivedItemsForOwner(ownerKey).length+giftedStickersForOwner(ownerKey).length)+')':''}</button>
         <button class="small-btn" data-action="open-notebook-trash" data-owner="${escapeHtml(ownerKey)}">🗑 Corbeille${trashedItemsForOwner(ownerKey).length?' ('+trashedItemsForOwner(ownerKey).length+')':''}</button>
       </div>
       <div style="margin-bottom:10px;">
@@ -4370,6 +4373,7 @@
     } else if(m.type === 'received-items'){
       const {ownerKey} = m.payload;
       const items = receivedItemsForOwner(ownerKey);
+      const giftedStickers = giftedStickersForOwner(ownerKey);
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
@@ -4381,7 +4385,17 @@
                 <button class="small-btn" data-action="claim-shared-item" data-id="${it.id}" data-owner="${escapeHtml(ownerKey)}">Placer sur la page</button>
               </div>
             </div>
-          `).join('') : '<p class="muted" style="color:var(--chalk-dim);">Rien de nouveau pour l’instant.</p>'}
+          `).join('') : ''}
+          ${giftedStickers.length ? giftedStickers.map(s=>`
+            <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+              <img src="${s.image}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;"><div class="sname">🎁 ${escapeHtml(s.name)}</div>
+              ${s.grantMessage ? `<p style="font-style:italic;color:var(--chalk-dim);font-size:12px;">"${escapeHtml(s.grantMessage)}"</p>` : ''}
+              <div class="btn-row" style="margin-top:8px;">
+                <button class="small-btn" data-action="claim-gifted-sticker" data-grant="${s.grantId}" data-owner="${escapeHtml(ownerKey)}">Placer sur la page</button>
+              </div>
+            </div>
+          `).join('') : ''}
+          ${(!items.length && !giftedStickers.length) ? '<p class="muted" style="color:var(--chalk-dim);">Rien de nouveau pour l’instant.</p>' : ''}
           <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
         </div>
       `;
@@ -4399,7 +4413,7 @@
               <div class="btn-row" style="margin-top:8px;flex-wrap:wrap;">
                 <button class="small-btn" data-action="restore-postit" data-id="${it.id}">↩ Restaurer sur la page</button>
                 ${it.shareId ? `<button class="small-btn" data-action="return-shared-to-origin" data-id="${it.id}">📥 Remettre dans mes reçus</button>` : ''}
-                ${it.kind==='sticker' && it.grantId ? `<button class="small-btn" data-action="return-sticker-to-bank" data-id="${it.id}">🎁 Remettre dans la banque de cadeaux</button>` : ''}
+                ${it.kind==='sticker' && it.grantId ? `<button class="small-btn" data-action="return-sticker-to-bank" data-id="${it.id}">📥 Remettre dans mes reçus</button>` : ''}
                 <button class="small-btn" data-action="permanently-delete-postit" data-id="${it.id}" style="color:var(--coral);">Supprimer définitivement</button>
               </div>
             </div>
@@ -5451,7 +5465,7 @@
       }
       await persist();
       render();
-      showToast('Remis dans la banque de cadeaux.');
+      showToast('Remis dans vos reçus.');
     }
     else if(action==='permanently-delete-postit'){
       state.data.notebookEntries = state.data.notebookEntries.filter(n=>n.id!==id);
@@ -5477,6 +5491,25 @@
       delete entry.recipientOwnerKey; delete entry.senderOwnerKey; delete entry.status; delete entry.decidedAt;
       state.data.notebookEntries.push(entry);
       item.status = 'claimed';
+      await persist();
+      render();
+      showToast('Ajouté à votre carnet.');
+    }
+    else if(action==='claim-gifted-sticker'){
+      const grantId = e.currentTarget.dataset.grant;
+      const ownerKey = e.currentTarget.dataset.owner;
+      const grant = state.data.stickerGrants.find(g=>g.id===grantId);
+      if(!grant){ showToast('Introuvable.'); return; }
+      const sticker = state.data.stickers.find(s=>s.id===grant.stickerId);
+      if(!sticker){ showToast('Autocollant introuvable.'); return; }
+      const nb = getOrCreateActiveNotebook(ownerKey);
+      state.data.notebookEntries.push({
+        id: uid(), ownerKey, notebookId: nb.id, kind:'sticker', stickerId: sticker.id, grantId: grant.id,
+        page: state.notebookActivePage||1,
+        x: 10+Math.round(Math.random()*40), y: 10+Math.round(Math.random()*40),
+        size: 60, rotation: 0, createdAt: Date.now(),
+      });
+      grant.used = true;
       await persist();
       render();
       showToast('Ajouté à votre carnet.');
@@ -5951,6 +5984,11 @@
         if(!sessAcct){ state.studentSession = null; await clearSessionStorage(); showToast('Session expirée, reconnectez-vous.'); render(); return; }
         const profileSelect = document.getElementById('b-profile');
         const profileId = profileSelect ? (profileSelect.value || null) : null;
+        const cForCheck = state.data.classes.find(cl=>cl.id===classId);
+        if(cForCheck && cForCheck.category === 'enfants' && !profileId){
+          showToast("Impossible de réserver un cours d'enfant à partir du compte parent — ajoutez un enfant à votre compte et réservez au nom de l'enfant.");
+          return;
+        }
         const bookingName = profileId ? getProfileName(sessAcct, profileId) : sessAcct.name;
         await proceedBooking(classId, dateIso, bookingName, sessAcct.email, false, profileId);
         return;
