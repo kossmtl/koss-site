@@ -1089,10 +1089,29 @@
     }
     appendHelcimPayIframe(checkoutToken, true);
     const key = 'helcim-pay-js-' + checkoutToken;
-    const handler = (event)=>{
-      if(!event.data || event.data.eventName !== key) return;
-      if(event.data.eventStatus === 'HIDE') return; // fermeture visuelle seulement, pas un résultat final
+    let done = false;
+    // Helcim fournit removeHelcimPayIframe() spécifiquement pour fermer/retirer le module —
+    // s'y fier plutôt que d'espérer un nettoyage automatique (c'est l'absence de cet appel qui
+    // causait l'app "gelée" après un paiement : le module restait superposé, invisible mais
+    // toujours là, bloquant les clics, jusqu'à un rafraîchissement de la page).
+    const cleanup = ()=>{
       window.removeEventListener('message', handler);
+      try{
+        if(typeof removeHelcimPayIframe === 'function') removeHelcimPayIframe();
+        else { const el = document.getElementById('helcimPayIframe'); if(el) el.remove(); }
+      }catch(err){ console.error('Échec de fermeture du module de paiement Helcim:', err); }
+    };
+    const handler = (event)=>{
+      if(!event.data || event.data.eventName !== key || done) return;
+      if(event.data.eventStatus === 'HIDE'){
+        // Aucun SUCCESS/ABORTED reçu avant que l'élève ferme la fenêtre : on traite ça comme
+        // une annulation.
+        done = true;
+        cleanup();
+        onDone('ABORTED', null);
+        return;
+      }
+      done = true;
       let transaction = null;
       if(event.data.eventStatus === 'SUCCESS'){
         // eventMessage est une chaîne JSON de forme {data:{data:{...transaction...}, status, headers}}
@@ -1114,6 +1133,7 @@
           console.error('Impossible d’extraire transactionId de la réponse Helcim:', event.data);
         }
       }
+      cleanup();
       onDone(event.data.eventStatus, transaction);
     };
     window.addEventListener('message', handler);
