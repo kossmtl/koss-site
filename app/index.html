@@ -683,8 +683,18 @@
   };
   const RAINBOW_TINT = '#25262A';
   function categoryTint(key){ return CATEGORY_TINT[key] || null; }
+  // Extrait un montant numérique d'un prix affiché ("90 $", "119,00 $", "Gratuit", etc.)
+  // pour les totaux du rapport de ventes. Retourne 0 si rien d'exploitable n'est trouvé.
+  function parsePriceAmount(str){
+    if(!str) return 0;
+    const match = String(str).replace(/,/g,'.').match(/[\d]+(\.\d+)?/);
+    return match ? parseFloat(match[0]) : 0;
+  }
+  function allCategories(){
+    return CATEGORIES.concat((state.data && state.data.customCategories) || []);
+  }
   function categoryLabel(key){
-    const c = CATEGORIES.find(x=>x.key===key);
+    const c = allCategories().find(x=>x.key===key);
     return c ? c.label : key;
   }
   function capacityColor(pct){
@@ -859,9 +869,27 @@
       state.data.migratedIntroProgramV1 = true;
       changed = true;
     }
+    if(!state.data.migratedYogaDurationV1){
+      state.data.classes.forEach(c=>{
+        if(c.category==='yoga'){ c.durationMinutes = 90; }
+      });
+      state.data.migratedYogaDurationV1 = true;
+      changed = true;
+    }
     state.data.classes.forEach(c=>{
       if(!c.durationMinutes){ c.durationMinutes = 60; changed = true; }
     });
+    if(!state.data.customCategories){ state.data.customCategories = []; changed = true; }
+    // Nettoyage des brouillons d'abonnement abandonnés : "attente_paiement" est un état
+    // transitoire créé dès l'ouverture du paiement Helcim (pour avoir un id à lui donner) —
+    // s'il traîne encore après 2h, le paiement a été abandonné (fenêtre fermée, etc.) sans
+    // déclencher l'annulation normale, et il ne doit pas s'afficher comme "Paiement à faire".
+    {
+      const cutoff = Date.now() - 2*60*60*1000;
+      const before = state.data.memberships.length;
+      state.data.memberships = state.data.memberships.filter(m=> !(m.status==='attente_paiement' && (m.createdAt||0) < cutoff));
+      if(state.data.memberships.length !== before) changed = true;
+    }
     if(!state.data.migratedFreeClassesV1){
       state.data.classes.forEach(c=>{
         if(c.name && c.name.trim()==='Queers & Allies'){ c.free = true; }
@@ -1089,6 +1117,26 @@
       showToast("Erreur d'enregistrement, réessayez.");
       return false;
     }
+  }
+
+  // Helper générique pour télécharger un tableau de données en CSV — utilisé par les
+  // différents rapports admin (ventes, conversions intro, présence, etc.).
+  function downloadCsv(filename, columns, fieldLabels, rows){
+    const csvRows = [columns.map(k=>fieldLabels[k]||k).join(',')];
+    rows.forEach(r=>{
+      csvRows.push(columns.map(k=>`"${String(r[k]==null?'':r[k]).replace(/"/g,'""')}"`).join(','));
+    });
+    const csv = csvRows.join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('CSV téléchargé.');
   }
 
   function showToast(msg){
@@ -1360,14 +1408,15 @@
     showToast(full ? 'Ajout\u00e9 \u00e0 la liste d\u2019attente.' : (isDuplicateConfirmed ? 'Deuxi\u00e8me r\u00e9servation confirm\u00e9e !' : 'R\u00e9servation confirm\u00e9e !'));
   }
 
-  async function attendanceAddParticipant(name, email, noMembership){
+  async function attendanceAddParticipant(name, email, noMembership, profileId){
     const {classId, dateIso} = state.modal.payload;
     const c = state.data.classes.find(cl=>cl.id===classId);
     if(!c){ showToast('Ce cours n\u2019existe plus.'); return; }
-    const membership = (!noMembership && !c.free) ? activeMembershipForEmail(email, c.category) : null;
+    const membership = (!noMembership && !c.free) ? activeMembershipForEmail(email, c.category, profileId) : null;
     state.data.bookings.push({
       id: uid(), classId, dateIso,
       studentName:name, studentEmail:email||'',
+      profileId: profileId || null,
       status:'confirmee',
       createdAt: Date.now(),
       noMembership: !!noMembership,
@@ -1379,7 +1428,7 @@
     await persist();
     state.modal.payload.warning = null;
     state.modal.payload.showGuestForm = false;
-    state.modal.payload.searchResult = null;
+    state.modal.payload.searchResults = null;
     state.modal.payload.searchTried = false;
     state.modal.payload.searchQuery = '';
     render();
@@ -1521,6 +1570,18 @@
     if(m && m.type==='credits'){
       m.creditsRemaining = (m.creditsRemaining||0) + 1;
     }
+  }
+
+  // Vrai si ce profil (enfant ou adulte via profileId) a déjà eu un abonnement ou une
+  // réservation — sert à détecter la toute première réservation d'un enfant, pour
+  // afficher l'avertissement "avez-vous contacté le club ?" avant le paiement.
+  function childHasPriorActivity(email, profileId){
+    const e = (email||'').toLowerCase();
+    const pid = profileId || null;
+    const hasMembership = state.data.memberships.some(m=>m.studentEmail.toLowerCase()===e && (m.profileId||null)===pid);
+    if(hasMembership) return true;
+    const hasBooking = state.data.bookings.some(b=>b.studentEmail.toLowerCase()===e && (b.profileId||null)===pid);
+    return hasBooking;
   }
 
   function pendingMembershipForEmail(email){
@@ -1816,9 +1877,12 @@
       }
       const refundNote = m.refund ? `<br><span style="color:var(--coral);font-size:11px;">Remboursé ${m.refund.type==='complet'?'complet':'partiel'}${m.refund.amount?' · '+escapeHtml(m.refund.amount):''}</span>` : '';
       const hiddenNote = m.hiddenByAdmin ? ` <span style="color:var(--chalk-dim);font-size:11px;">(masqué)</span>` : '';
+      const nameLink = m.profileId
+        ? `<button class="small-btn" data-action="open-child-detail" data-parent-email="${escapeHtml(m.studentEmail)}" data-member-id="${escapeHtml(m.profileId)}" style="padding:0;border:none;background:none;text-decoration:underline;color:var(--chalk);font-weight:bold;">${escapeHtml(m.studentName)}</button>`
+        : `<button class="small-btn" data-action="open-student-detail" data-email="${escapeHtml(m.studentEmail)}" style="padding:0;border:none;background:none;text-decoration:underline;color:var(--chalk);font-weight:bold;">${escapeHtml(m.studentName)}</button>`;
       return `
         <tr>
-          <td>${escapeHtml(m.studentName)}<br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(m.studentEmail)}</span></td>
+          <td>${nameLink}<br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(m.studentEmail)}</span></td>
           <td>${escapeHtml(m.planName)}${m.grantedFree?' <span style="color:var(--chalk-dim);font-size:11px;">(offert)</span>':''}${hiddenNote}${refundNote}</td>
           <td>${ds==='active' ? membershipDetail(m) : '—'}</td>
           <td>${membershipBadge(m)}</td>
@@ -1843,7 +1907,7 @@
       if(hay.includes(q)) results.push({type:'account', email:a.email, name:a.name, phone:a.phone||''});
       (a.familyMembers||[]).forEach(f=>{
         if(normalizeStr(f.name||'').includes(q)){
-          results.push({type:'child', parentEmail:a.email, parentName:a.name, memberId:f.id, name:f.name});
+          results.push({type:'child', parentEmail:a.email, parentName:a.name, memberId:f.id, name:f.name, birthday:f.birthday||'', email:f.email||'', phone:f.phone||''});
         }
       });
     });
@@ -2231,7 +2295,10 @@
           <label>Mot de passe</label>
           ${pwField('acc-password', "Mot de passe")}
           <div class="btn-row"><button class="btn btn-secondary" data-action="student-login">Se connecter</button></div>
-          <p style="margin-top:18px;text-align:center;">
+          <p style="margin-top:10px;text-align:center;">
+            <button class="small-btn" data-action="open-reset-password">Mot de passe oublié ?</button>
+          </p>
+          <p style="margin-top:8px;text-align:center;">
             <button class="small-btn" data-action="toggle-create-account">Nouveau chez ${escapeHtml(state.data.config.name)} ? Créer un compte</button>
           </p>
         </div>
@@ -2553,6 +2620,7 @@
               <button class="btn btn-secondary" data-action="new-textnote" style="font-family:var(--font-b);">+ Texte</button>
               <button class="btn btn-secondary" data-action="open-sticker-picker" style="font-family:var(--font-b);">+ Autocollant</button>
               ${pageCount < MAX_NOTEBOOK_PAGES ? `<button class="btn btn-secondary" data-action="add-notebook-page" style="font-family:var(--font-b);">+ Page</button>` : ''}
+              ${pageCount > 1 ? `<button class="btn btn-secondary" data-action="delete-notebook-page" style="font-family:var(--font-b);">🗑 Supprimer la page</button>` : ''}
             </div>
             ${!pageEntries.length ? `<p style="font-family:var(--font-b);color:rgba(40,41,46,0.55);">Page ${activePage} vide — clique sur + Note, + Texte ou + Autocollant, ou glisse une note d’une autre page ici.</p>` : ''}
           </div>
@@ -2583,11 +2651,17 @@
   }
 
   function renderAttendance(){
+    // Les gestionnaires normaux ne voient que les cours d'aujourd'hui ; seul le super
+    // gestionnaire peut naviguer les autres semaines et voir l'historique complet.
+    const mgr = currentManager();
+    const isSuperMgr = !!(mgr && mgr.role==='super');
+    if(!isSuperMgr) state.weekOffset = 0;
     const dates = getWeekDates(state.weekOffset);
     let anyClass = false;
     let weekHasMorning = false;
     let weekHasAfternoon = false;
-    const dayData = dates.map((d,i)=>{
+    const today = todayIso();
+    let dayData = dates.map((d,i)=>{
       const dateIso = isoDate(d);
       const dayClasses = state.data.classes.filter(c=>c.dayOfWeek===i)
         .filter(c=> (!c.startDate || dateIso >= c.startDate) && (!c.endDate || dateIso <= c.endDate))
@@ -2599,6 +2673,10 @@
       if(afternoon.length) weekHasAfternoon = true;
       return {d, i, dateIso, dayClasses, morning, afternoon};
     });
+    if(!isSuperMgr){
+      dayData = dayData.filter(dd=>dd.dateIso===today);
+      anyClass = dayData.some(dd=>dd.dayClasses.length);
+    }
     const splitAmPm = weekHasMorning && weekHasAfternoon && window.innerWidth > 700;
     let cols = '';
     if(splitAmPm){
@@ -2633,13 +2711,15 @@
     return `
       <div class="btn-row" style="margin-top:0;margin-bottom:14px;"><button class="btn btn-secondary" data-action="goto-admin">← Retour à Gérer</button></div>
       <h3 style="font-family:var(--font-d);text-transform:uppercase;letter-spacing:0.01em;">Prise de présences</h3>
+      ${isSuperMgr ? `
       <div class="week-nav">
         <button data-action="week-prev"><span class="full-text">← Semaine préc.</span><span class="short-text">Semaine<br>← Préc.</span></button>
         <span class="week-label">${weekLabel(state.weekOffset)}</span>
         <button data-action="week-next"><span class="full-text">Semaine suiv. →</span><span class="short-text">Semaine<br>Suiv. →</span></button>
         ${state.weekOffset!==0 ? '<button data-action="week-today">Aujourd\'hui</button>' : ''}
       </div>
-      ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">Aucun cours programmé cette semaine.</div></div>`}
+      ` : `<p class="muted" style="color:var(--chalk-dim);">Cours d’aujourd’hui seulement.</p>`}
+      ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">${isSuperMgr ? 'Aucun cours programmé cette semaine.' : 'Aucun cours aujourd’hui.'}</div></div>`}
     `;
   }
 
@@ -2669,6 +2749,7 @@
       {key:'parents_enfants', label:'Parents Enfants'},
       {key:'yoga', label:'Yoga'},
       {key:'muay_thai', label:'Muay Thai'},
+      ...(state.data.customCategories||[]),
       {key:'ALL_UNLIMITED', label:'All Unlimited'},
     ];
     if(!state.expandedClassGroups) state.expandedClassGroups = {};
@@ -2815,7 +2896,7 @@
         if(s.type==='child'){
           return `
             <li>
-              <span><strong>${escapeHtml(s.name)}</strong><br><span style="color:var(--chalk-dim);font-size:11px;">Enfant de ${escapeHtml(s.parentName)}</span></span>
+              <span><strong>${escapeHtml(s.name)}</strong><br><span style="color:var(--chalk-dim);font-size:11px;">Enfant de ${escapeHtml(s.parentName)} · 🎂 ${escapeHtml(s.birthday||'—')} · ✉️ ${escapeHtml(s.email||'—')} · 📞 ${escapeHtml(s.phone||'—')}</span></span>
               <span>
                 <button class="small-btn" data-action="open-child-detail" data-parent-email="${escapeHtml(s.parentEmail)}" data-member-id="${s.memberId}">Voir la fiche</button>
               </span>
@@ -2951,6 +3032,15 @@
         ${searchResultsHtml}
       `)}
 
+      ${adminCard('advanced-reports', 'Rapports', `
+        <p class="muted" style="color:var(--chalk-dim);">Ventes, conversions intro-BJJ et présence.</p>
+        <div class="btn-row" style="margin-top:0;">
+          <button class="btn btn-secondary" data-action="open-sales-report">Rapport de ventes</button>
+          <button class="btn btn-secondary" data-action="open-intro-report">Conversions intro → abonnement</button>
+          <button class="btn btn-secondary" data-action="open-noshow-report">Rapport de présence</button>
+        </div>
+      `)}
+
       ${adminCard('plans', 'Formules d\u2019abonnement', `
         ${planRows || '<p class="muted" style="color:var(--chalk-dim);">Aucune formule. Ajoutez-en une ci-dessous.</p>'}
         <div class="btn-row">
@@ -2964,8 +3054,27 @@
         <div class="btn-row"><button class="btn btn-primary" data-action="new-class">+ Ajouter un cours</button></div>
       `)}
 
-      ${adminCard('stickers', `Autocollants (${state.data.stickers.length})`, `
-        ${state.data.stickers.length ? `<ul class="link-list">${state.data.stickers.map(s=>`
+      ${adminCard('categories', 'Catégories', `
+        <p class="muted" style="color:var(--chalk-dim);">Utilisées pour classer les cours et les formules d’abonnement.</p>
+        <ul class="link-list">
+          ${CATEGORIES.map(cat=>`<li><span>${escapeHtml(cat.label)}</span><span style="color:var(--chalk-dim);font-size:11px;">(catégorie de base)</span></li>`).join('')}
+          ${(state.data.customCategories||[]).map(cat=>`
+            <li>
+              <span>${escapeHtml(cat.label)}</span>
+              <span><button class="small-btn" data-action="delete-category" data-id="${cat.key}">Supprimer</button></span>
+            </li>
+          `).join('')}
+        </ul>
+        <div class="btn-row"><button class="btn btn-primary" data-action="new-category">+ Ajouter une catégorie</button></div>
+      `)}
+
+      ${adminCard('stickers', `Autocollants (${state.data.stickers.length})`, (()=>{
+        if(!state.expandedStickerGroups) state.expandedStickerGroups = {};
+        const q = normalizeStr(state.stickerSearchQuery||'');
+        const visible = q ? state.data.stickers.filter(s=>
+          normalizeStr(s.name||'').includes(q) || normalizeStr(categoryLabel(s.category)||'').includes(q)
+        ) : state.data.stickers;
+        const stickerLi = s => `
           <li>
             <span><img src="${s.image}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;vertical-align:middle;margin-right:8px;"><strong>${escapeHtml(s.name)}</strong> — ${s.availableToAll ? 'Tous les étudiants' : (s.assignedEmails && s.assignedEmails.length ? escapeHtml(s.assignedEmails.length+' étudiant(s)') : 'En banque (non assigné)')}</span>
             <span>
@@ -2973,9 +3082,31 @@
               <button class="small-btn" data-action="delete-sticker" data-id="${s.id}">Supprimer</button>
             </span>
           </li>
-        `).join('')}</ul>` : '<p class="muted" style="color:var(--chalk-dim);">Aucun autocollant. Ajoutez-en un ci-dessous.</p>'}
-        <div class="btn-row"><button class="btn btn-primary" data-action="new-sticker">+ Ajouter un autocollant</button></div>
-      `)}
+        `;
+        const groups = allCategories().map(cat=>({key:cat.key, label:cat.label}));
+        groups.push({key:'', label:'Sans catégorie'});
+        const groupRows = groups.map(g=>{
+          const items = visible.filter(s=>(s.category||'')===g.key);
+          if(!items.length) return '';
+          const isOpen = !!state.expandedStickerGroups[g.key] || !!q;
+          return `
+            <div style="margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+              <button type="button" data-action="toggle-admin-sticker-group" data-group="${escapeHtml(g.key)}"
+                style="width:100%;display:flex;justify-content:space-between;align-items:center;border:none;border-radius:0;background:var(--bg-tile);color:var(--chalk);padding:10px 12px;cursor:pointer;font-family:var(--font-d);font-size:13px;text-transform:uppercase;letter-spacing:0.02em;">
+                <span>${escapeHtml(g.label)} (${items.length})</span><span>${isOpen ? '▲' : '▼'}</span>
+              </button>
+              ${isOpen ? `<ul class="link-list" style="padding:6px 12px;margin:0;">${items.map(stickerLi).join('')}</ul>` : ''}
+            </div>
+          `;
+        }).join('');
+        return `
+          <label>Rechercher un autocollant (nom ou catégorie)</label>
+          <input id="sticker-search-input" placeholder="Rechercher..." value="${escapeHtml(state.stickerSearchQuery||'')}">
+          <div class="btn-row"><button class="btn btn-secondary" data-action="run-sticker-search">Rechercher</button></div>
+          ${state.data.stickers.length ? (groupRows || '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucun résultat.</p>') : '<p class="muted" style="color:var(--chalk-dim);">Aucun autocollant. Ajoutez-en un ci-dessous.</p>'}
+          <div class="btn-row"><button class="btn btn-primary" data-action="new-sticker">+ Ajouter un autocollant</button></div>
+        `;
+      })())}
 
       ${adminCard('all-bookings', `Réservations effectuées aujourd\u2019hui (${upcomingBookings.length})`, `
         ${allRows ? `<table><tr><th>Étudiant</th><th>Cours</th><th>Date du cours</th><th>Statut</th><th></th></tr>${allRows}</table>`
@@ -3021,6 +3152,168 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'sales-report'){
+      const p = m.payload || {};
+      if(p.results){
+        const {rows, totals} = p.results;
+        html = `
+          <div class="modal" style="max-width:90vw;width:760px;">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Rapport de ventes — ${rows.length} vente(s)</h3>
+            <table style="margin-bottom:10px;">
+              <tr><th>Catégorie</th><th>Nb de ventes</th><th>Montant total</th></tr>
+              ${totals.map(t=>`<tr><td>${escapeHtml(t.label)}</td><td>${t.count}</td><td>${t.amount.toFixed(2)} $</td></tr>`).join('')}
+            </table>
+            <div style="max-height:45vh;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+              <table style="margin:0;">
+                <tr><th>Étudiant</th><th>Catégorie</th><th>Formule</th><th>Montant payé</th><th>Date d’achat</th><th>Date de début</th><th>Date de fin</th></tr>
+                ${rows.map(r=>`<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.category)}</td><td>${escapeHtml(r.planName)}</td><td>${escapeHtml(r.amountDisplay)}</td><td>${escapeHtml(r.purchaseDate)}</td><td>${escapeHtml(r.startDate)}</td><td>${escapeHtml(r.endDate)}</td></tr>`).join('')}
+              </table>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="download-sales-report-csv">Télécharger (CSV)</button>
+              <button class="btn btn-secondary" data-action="open-sales-report">← Changer les filtres</button>
+              <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
+            </div>
+          </div>
+        `;
+      } else {
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Rapport de ventes</h3>
+            <label>Catégorie</label>
+            <select id="sr-category">
+              <option value="" ${!p.category?'selected':''}>Toutes les catégories</option>
+              ${allCategories().map(c=>`<option value="${c.key}" ${p.category===c.key?'selected':''}>${escapeHtml(c.label)}</option>`).join('')}
+            </select>
+            <div class="row">
+              <div><label>Du</label><input id="sr-from" type="date" value="${p.from||''}"></div>
+              <div><label>Au</label><input id="sr-to" type="date" value="${p.to||todayIso()}"></div>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="run-sales-report">Générer</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          </div>
+        `;
+      }
+    } else if(m.type === 'intro-report'){
+      const p = m.payload || {};
+      if(p.results){
+        const rows = p.results;
+        html = `
+          <div class="modal" style="max-width:90vw;width:820px;">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Conversions intro → abonnement — ${rows.length} acheteur(s) intro</h3>
+            <div style="max-height:55vh;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+              <table style="margin:0;">
+                <tr><th>Étudiant</th><th>Courriel</th><th>Date intro</th><th>Abonnement suivant</th><th>Nb présences depuis</th><th>Cours le plus visité</th></tr>
+                ${rows.map(r=>`<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.introDate)}</td><td style="${r.nextPlanName?'':'color:var(--coral);'}">${escapeHtml(r.nextPlanName||'Aucun (pas repris d’abonnement)')}</td><td>${r.visitCount}</td><td>${escapeHtml(r.topClass||'—')}</td></tr>`).join('')}
+              </table>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="download-intro-report-csv">Télécharger (CSV)</button>
+              <button class="btn btn-secondary" data-action="open-intro-report">← Changer la période</button>
+              <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
+            </div>
+          </div>
+        `;
+      } else {
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Conversions intro → abonnement</h3>
+            <p class="muted">Qui a acheté un programme Intro au BJJ dans la période choisie, et ce qu’ils ont fait ensuite.</p>
+            <label>Achats intro depuis</label>
+            <select id="ir-months">
+              <option value="1" ${p.months==='1'?'selected':''}>Le dernier mois</option>
+              <option value="3" ${!p.months||p.months==='3'?'selected':''}>Les 3 derniers mois</option>
+              <option value="6" ${p.months==='6'?'selected':''}>Les 6 derniers mois</option>
+            </select>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="run-intro-report">Générer</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          </div>
+        `;
+      }
+    } else if(m.type === 'noshow-report'){
+      const p = m.payload || {};
+      if(p.results){
+        const rows = p.results;
+        html = `
+          <div class="modal" style="max-width:90vw;width:700px;">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Rapport de présence — ${rows.length} étudiant(s)</h3>
+            <div style="max-height:55vh;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+              <table style="margin:0;">
+                <tr><th>Étudiant</th><th>Courriel</th><th>Dernière visite</th><th>Absent depuis</th></tr>
+                ${rows.map(r=>`<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.lastVisit||'Jamais venu')}</td><td>${r.daysSince==null?'—':r.daysSince+' jours'}</td></tr>`).join('')}
+              </table>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="download-noshow-report-csv">Télécharger (CSV)</button>
+              <button class="btn btn-secondary" data-action="open-noshow-report">← Changer le seuil</button>
+              <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
+            </div>
+          </div>
+        `;
+      } else {
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Rapport de présence</h3>
+            <p class="muted">Étudiants ayant un abonnement actif mais absents depuis un moment (ou jamais venus).</p>
+            <label>Absent depuis au moins (jours)</label>
+            <input id="ns-mindays" type="number" min="0" value="${p.minDays||30}">
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="run-noshow-report">Générer</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          </div>
+        `;
+      }
+    } else if(m.type === 'reset-password'){
+      const {step, email} = m.payload || {};
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Réinitialiser le mot de passe</h3>
+          ${step==='newpw' ? `
+            <p class="muted">Identité confirmée pour ${escapeHtml(email)}. Choisissez un nouveau mot de passe.</p>
+            ${pwField('rp-new-password', 'Nouveau mot de passe')}
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="submit-reset-password" data-email="${escapeHtml(email)}">Enregistrer le nouveau mot de passe</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          ` : `
+            <p class="muted">Pour vérifier votre identité, entrez votre courriel et le numéro de téléphone associé à votre compte.</p>
+            <label>Courriel</label>
+            <input id="rp-email" type="email" placeholder="votre@courriel.com">
+            <label>Téléphone associé au compte</label>
+            <input id="rp-phone" type="tel" placeholder="514-555-1234">
+            <p style="font-size:11px;color:var(--chalk-dim);margin-top:6px;">Si vous n’avez pas de téléphone enregistré ou que ça ne fonctionne pas, contactez le studio directement.</p>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="verify-reset-password">Continuer</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          `}
+        </div>
+      `;
+    } else if(m.type === 'category-form'){
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Nouvelle catégorie</h3>
+          <label>Nom de la catégorie</label>
+          <input id="cat-label" placeholder="Ex. Kickboxing">
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="save-category">Enregistrer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
     } else if(m.type === 'class-form'){
       const c = m.payload || {name:'',dayOfWeek:0,time:'18:00',capacity:16,price:'',category:'bjj_adulte'};
       html = `
@@ -3040,7 +3333,8 @@
             </div>
           </div>
           <label>Catégorie</label>
-          <select id="f-category">${CATEGORIES.map(cat=>`<option value="${cat.key}" ${cat.key===c.category?'selected':''}>${cat.label}</option>`).join('')}</select>
+          <select id="f-category">${allCategories().map(cat=>`<option value="${cat.key}" ${cat.key===c.category?'selected':''}>${cat.label}</option>`).join('')}</select>
+          <p style="font-size:11px;color:var(--chalk-dim);margin:2px 0 0;">Catégorie manquante ? Fermez cette fenêtre, ouvrez la carte « Catégories » plus bas pour en ajouter une, puis revenez ici.</p>
           <div class="row">
             <div>
               <label>Capacité</label>
@@ -3051,6 +3345,8 @@
               <input id="f-price" value="${escapeHtml(c.price||'')}" placeholder="25 $">
             </div>
           </div>
+          <label>Durée (minutes)</label>
+          <input id="f-duration" type="number" min="1" value="${c.durationMinutes||60}">
           <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
             <input type="checkbox" id="f-free" style="width:auto;" ${c.free?'checked':''}>
             <span style="color:var(--chalk);font-size:13px;">Cours gratuit — réservable sans abonnement</span>
@@ -3152,6 +3448,7 @@
         {key:'parents_enfants', label:'Parents Enfants'},
         {key:'yoga', label:'Yoga'},
         {key:'muay_thai', label:'Muay Thai'},
+        ...(state.data.customCategories||[]),
         {key:'ALL_UNLIMITED', label:'All Unlimited', desc:'Accès à tous les cours, BJJ, Muay Thai et Yoga'},
       ];
       const groupOf = p => {
@@ -3294,15 +3591,22 @@
         </div>
       `;
     } else if(m.type === 'buy-membership'){
-      const {plan, name, email, isNewAccount, introStart, introEnd, introPrice, profileId, classId, dateIso} = m.payload;
+      const {plan, name, email, isNewAccount, introStart, introEnd, introPrice, profileId, classId, dateIso, contactConfirmed} = m.payload;
       const displayPrice = introPrice!=null ? `${introPrice} $` : plan.price;
+      const needsContactGate = !!profileId && !contactConfirmed && !childHasPriorActivity(email, profileId);
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>${escapeHtml(plan.name)}</h3>
           <p class="muted">${plan.type==='illimite' ? plan.durationDays+' jours illimité' : plan.creditsCount+' cours'} · ${escapeHtml(displayPrice)}${introStart?` · Programme du ${formatShortDate(introStart)}`:''}</p>
+          ${needsContactGate ? `
+            <div style="border:1px solid var(--amber);border-radius:8px;padding:12px;margin-top:10px;">
+              <p style="font-size:13px;color:var(--chalk);margin:0 0 10px;">Avez-vous contacté le club avant de procéder au paiement ? Un contact téléphonique ou par courriel est obligatoire avant d’inscrire votre enfant au cours d’essai. Le cours d’essai est obligatoire, à la date mentionnée sous l’onglet Cours d’essai pour enfants. Aucun remboursement n’est offert en cas d’absence.</p>
+              <button class="btn btn-primary" data-action="confirm-contact-club">✓ J’ai contacté le club, continuer vers le paiement</button>
+            </div>
+          ` : `
           ${introStart ? `
-            <p style="font-size:12px;color:var(--chalk-dim);">Aucun remboursement n\u2019est offert. Un crédit complet est donné si l\u2019annulation est demandée au moins 21 jours avant le début du programme. Après cette date, comme les places sont limitées, un crédit partiel de 50% de la valeur de l\u2019achat sera offert.</p>
+            <p style="font-size:12px;color:var(--chalk-dim);">Aucun remboursement n’est offert. Un crédit complet est donné si l’annulation est demandée au moins 21 jours avant le début du programme. Après cette date, comme les places sont limitées, un crédit partiel de 50% de la valeur de l’achat sera offert.</p>
           ` : ''}
           ${introStart ? `
             <p style="font-size:13px;">Réglez le paiement pour activer votre inscription :</p>
@@ -3324,6 +3628,11 @@
               ${plan.paymentLink ? `<a href="${escapeHtml(plan.paymentLink)}" target="_blank" rel="noopener">Utilisez ce lien à la place</a>, puis` : 'Contactez le studio, ou'}
               <button class="small-btn" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}">déclarez votre paiement manuellement</button>.
             </p>
+            <p style="font-size:12px;color:var(--chalk-dim);margin-top:10px;">Vous préférez payer sur place, en argent comptant ?
+              <button class="small-btn" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}">Je paierai sur place</button>
+              — votre abonnement apparaîtra « à confirmer » et sera activé une fois le paiement reçu.
+            </p>
+          `}
           `}
         </div>
       `;
@@ -3354,13 +3663,14 @@
           <input id="p-price" value="${escapeHtml(p.price||'')}" placeholder="90 $">
           <label style="margin-top:14px;">Catégories débloquées</label>
           <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
-            ${CATEGORIES.map(cat=>`
+            ${allCategories().map(cat=>`
               <label style="display:flex;align-items:center;gap:8px;">
                 <input type="checkbox" class="p-cat" value="${cat.key}" style="width:auto;" ${p.categories&&p.categories.includes(cat.key)?'checked':''}>
                 <span style="color:var(--chalk);font-size:13px;">${cat.label}</span>
               </label>
             `).join('')}
           </div>
+          <p style="font-size:11px;color:var(--chalk-dim);margin:6px 0 0;">Catégorie manquante ? Fermez cette fenêtre, ouvrez la carte « Catégories » plus bas pour en ajouter une, puis revenez ici.</p>
           <div class="btn-row">
             <button class="btn btn-primary" data-action="save-plan" data-id="${p.id||''}">Enregistrer</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
@@ -3414,7 +3724,7 @@
         </div>
       `;
     } else if(m.type === 'attendance'){
-      const {classId, dateIso, searchQuery, searchResult, searchTried, showGuestForm, warning} = m.payload;
+      const {classId, dateIso, searchQuery, searchResults, searchTried, showGuestForm, warning} = m.payload;
       const c = state.data.classes.find(cl=>cl.id===classId);
       const participants = state.data.bookings.filter(b=>b.classId===classId && b.dateIso===dateIso && b.status==='confirmee');
       const waitlist = state.data.bookings.filter(b=>b.classId===classId && b.dateIso===dateIso && b.status==='liste_attente');
@@ -3453,20 +3763,35 @@
             <button class="btn btn-secondary" data-action="attendance-cancel-add">Annuler</button>
           </div>
         `;
-      } else if(searchResult){
+      } else if(searchResults && searchResults.length){
         addSectionHtml = `
-          <p class="muted" style="margin-top:10px;">Trouvé : <strong style="color:var(--chalk);">${escapeHtml(searchResult.name)}</strong> (${escapeHtml(searchResult.email)})</p>
-          <div class="btn-row">
-            <button class="btn btn-primary" data-action="attendance-try-add" data-name="${escapeHtml(searchResult.name)}" data-email="${escapeHtml(searchResult.email)}">Ajouter ce participant</button>
-            <button class="btn btn-secondary" data-action="attendance-cancel-add">Annuler</button>
-          </div>
+          <p class="muted" style="margin-top:10px;">${searchResults.length} résultat(s) pour "${escapeHtml(searchQuery||'')}" :</p>
+          <ul class="link-list">
+            ${searchResults.map(s=>{
+              if(s.type==='child'){
+                return `
+                  <li>
+                    <span><strong>${escapeHtml(s.name)}</strong><br><span style="color:var(--chalk-dim);font-size:11px;">Enfant de ${escapeHtml(s.parentName)}</span></span>
+                    <button class="small-btn" data-action="attendance-try-add" data-name="${escapeHtml(s.name)}" data-email="${escapeHtml(s.parentEmail)}" data-profile="${s.memberId}">Ajouter</button>
+                  </li>
+                `;
+              }
+              return `
+                <li>
+                  <span><strong>${escapeHtml(s.name)}</strong><br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(s.email)}</span></span>
+                  <button class="small-btn" data-action="attendance-try-add" data-name="${escapeHtml(s.name)}" data-email="${escapeHtml(s.email)}">Ajouter</button>
+                </li>
+              `;
+            }).join('')}
+          </ul>
+          <div class="btn-row"><button class="btn btn-secondary" data-action="attendance-cancel-add">Annuler</button></div>
         `;
       } else {
         addSectionHtml = `
           <label style="margin-top:10px;">Ajouter un participant</label>
-          <input id="att-search" placeholder="Nom complet, courriel ou téléphone" value="${escapeHtml(searchQuery||'')}">
+          <input id="att-search" placeholder="Nom, prénom, courriel ou téléphone (aussi pour les enfants)" value="${escapeHtml(searchQuery||'')}">
           <div class="btn-row"><button class="btn btn-secondary" data-action="attendance-search">Rechercher</button></div>
-          ${searchTried && !searchResult ? `<p class="muted" style="color:var(--chalk-dim);">Aucun compte trouvé — <button class="small-btn" data-action="attendance-show-guest-form">ajouter comme invité</button></p>` : ''}
+          ${searchTried && (!searchResults || !searchResults.length) ? `<p class="muted" style="color:var(--chalk-dim);">Aucun compte trouvé — <button class="small-btn" data-action="attendance-show-guest-form">ajouter comme invité</button></p>` : ''}
         `;
       }
 
@@ -3582,6 +3907,12 @@
             <button class="close-x" data-action="close-modal">✕</button>
             <h3>${escapeHtml(fm.name)}</h3>
             <p class="muted">Enfant de <span style="color:var(--chalk);cursor:pointer;text-decoration:underline;" data-action="open-student-detail" data-email="${escapeHtml(parentAcct.email)}">${escapeHtml(parentAcct.name)}</span>${parentAcct.phone?' · '+escapeHtml(parentAcct.phone):''}</p>
+
+            <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
+              <p style="font-size:13px;margin:0;color:var(--chalk);">🎂 Date de naissance : <strong>${fm.birthday||'—'}</strong></p>
+              <p style="font-size:13px;margin:4px 0 0;color:var(--chalk);">✉️ Courriel (urgence) : <strong>${escapeHtml(fm.email||'—')}</strong></p>
+              <p style="font-size:13px;margin:4px 0 0;color:var(--chalk);">📞 Téléphone (urgence) : <strong>${escapeHtml(fm.phone||'—')}</strong></p>
+            </div>
 
             <label style="margin-top:14px;">Date de fête</label>
             <input id="cd-birthday" type="date" value="${fm.birthday||''}">
@@ -3729,7 +4060,12 @@
         <div class="modal" style="max-width:420px;">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Générer un rapport</h3>
-          <p class="muted">Choisissez les colonnes à inclure.</p>
+          <label>Filtrer par formule d’abonnement (actif)</label>
+          <select id="report-plan-filter">
+            <option value="">Tous les étudiants</option>
+            ${state.data.membershipPlans.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
+          </select>
+          <p class="muted" style="margin-top:10px;">Choisissez les colonnes à inclure.</p>
           <div style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;">
             ${fields.map(f=>`
               <label style="display:flex;align-items:center;gap:8px;">
@@ -3996,6 +4332,11 @@
           <h3>${entry ? 'Modifier l’autocollant' : 'Nouvel autocollant'}</h3>
           <label>Nom</label>
           <input id="sticker-name" value="${entry?escapeHtml(entry.name):''}" placeholder="ex. Ceinture noire">
+          <label style="margin-top:10px;">Catégorie</label>
+          <select id="sticker-category">
+            <option value="" ${!entry||!entry.category?'selected':''}>Sans catégorie</option>
+            ${allCategories().map(cat=>`<option value="${cat.key}" ${entry&&entry.category===cat.key?'selected':''}>${escapeHtml(cat.label)}</option>`).join('')}
+          </select>
           <label style="margin-top:10px;">Image</label>
           <input type="file" id="sticker-image-file" accept="image/*">
           ${entry && entry.image ? `<img src="${entry.image}" style="max-width:80px;margin-top:6px;border-radius:6px;display:block;">` : ''}
@@ -4176,7 +4517,7 @@
           `}
           <label style="margin-top:14px;">Catégories débloquées</label>
           <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
-            ${CATEGORIES.map(cat=>`
+            ${allCategories().map(cat=>`
               <label style="display:flex;align-items:center;gap:8px;">
                 <input type="checkbox" class="em-cat" value="${cat.key}" style="width:auto;" ${(mem.categories||[]).includes(cat.key)?'checked':''}>
                 <span style="color:var(--chalk);font-size:13px;">${cat.label}</span>
@@ -4760,6 +5101,27 @@
       render();
       showToast('Page ajoutée.');
     }
+    else if(action==='delete-notebook-page'){
+      const acct = findStudentAccount(state.studentSession.email);
+      const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
+      const nb = getOrCreateActiveNotebook(ownerKey);
+      const pageCount = nb.pageCount || 1;
+      if(pageCount <= 1){ showToast('Un carnet doit garder au moins une page.'); return; }
+      const targetPage = Math.min(state.notebookActivePage || 1, pageCount);
+      // Les notes de la page supprimée vont à la corbeille (récupérables) plutôt que d'être
+      // effacées ; les pages suivantes glissent d'un cran pour ne pas laisser de trou.
+      state.data.notebookEntries.forEach(n=>{
+        if(n.ownerKey!==ownerKey || n.notebookId!==nb.id) return;
+        const p = n.page || 1;
+        if(p===targetPage){ n.trashed = true; n.trashedAt = Date.now(); }
+        else if(p>targetPage){ n.page = p - 1; }
+      });
+      nb.pageCount = pageCount - 1;
+      state.notebookActivePage = Math.min(targetPage, nb.pageCount);
+      await persist();
+      render();
+      showToast('Page supprimée — les notes qu’elle contenait sont dans la corbeille.');
+    }
     else if(action==='new-postit'){
       pendingPostitPhoto = null;
       const acct = findStudentAccount(state.studentSession.email);
@@ -5041,10 +5403,11 @@
       if(!image){ showToast('Ajoute une image pour cet autocollant.'); return; }
       const pendingAll = state.modal.payload.pendingAll;
       const assignedEmails = pendingAll ? [] : state.modal.payload.pendingAssigned.map(a=>a.email.toLowerCase());
+      const category = document.getElementById('sticker-category').value;
       if(existing){
-        existing.name = name; existing.image = image; existing.assignedEmails = assignedEmails; existing.availableToAll = pendingAll;
+        existing.name = name; existing.image = image; existing.assignedEmails = assignedEmails; existing.availableToAll = pendingAll; existing.category = category;
       } else {
-        state.data.stickers.push({id:uid(), name, image, assignedEmails, availableToAll:pendingAll, createdAt:Date.now()});
+        state.data.stickers.push({id:uid(), name, image, assignedEmails, availableToAll:pendingAll, category, createdAt:Date.now()});
       }
       pendingStickerImage = null;
       await persist();
@@ -5174,6 +5537,194 @@
       }
     }
 
+    else if(action==='open-reset-password'){
+      state.modal = {type:'reset-password', payload:{step:'verify'}};
+      render();
+    }
+    else if(action==='verify-reset-password'){
+      const email = document.getElementById('rp-email').value.trim();
+      const phone = document.getElementById('rp-phone').value.trim();
+      if(!email || !phone){ showToast('Courriel et téléphone requis.'); return; }
+      const acct = findStudentAccount(email);
+      const digitsIn = phone.replace(/\D/g,'');
+      const digitsAcct = (acct && acct.phone) ? acct.phone.replace(/\D/g,'') : '';
+      if(!acct || !digitsAcct || digitsAcct !== digitsIn){
+        showToast('Identité impossible à vérifier avec ces informations. Contactez le studio.');
+        return;
+      }
+      state.modal = {type:'reset-password', payload:{step:'newpw', email:acct.email}};
+      render();
+    }
+    else if(action==='submit-reset-password'){
+      const email = e.currentTarget.dataset.email;
+      const newPw = document.getElementById('rp-new-password').value;
+      if(!newPw || newPw.length < 4){ markInvalid('rp-new-password'); showToast('Choisissez un mot de passe (4 caractères minimum).'); return; }
+      const acct = findStudentAccount(email);
+      if(!acct){ showToast('Compte introuvable.'); return; }
+      acct.hash = await hashPassword(newPw);
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Mot de passe réinitialisé — vous pouvez vous connecter.');
+    }
+    else if(action==='open-sales-report'){
+      const prev = (state.modal && state.modal.type==='sales-report') ? state.modal.payload : null;
+      state.modal = {type:'sales-report', payload:{category:prev&&prev.category||'', from:prev&&prev.from||'', to:prev&&prev.to||todayIso()}};
+      render();
+    }
+    else if(action==='run-sales-report'){
+      const category = document.getElementById('sr-category').value;
+      const from = document.getElementById('sr-from').value || '0000-01-01';
+      const to = document.getElementById('sr-to').value || '9999-12-31';
+      const sold = state.data.memberships.filter(m=> m.status!=='attente_paiement' && m.status!=='annulee');
+      const inRange = sold.filter(m=>{
+        const d = isoDate(new Date(m.createdAt));
+        return d>=from && d<=to;
+      });
+      const filtered = category ? inRange.filter(m=>(m.categories||[]).includes(category)) : inRange;
+      const rows = filtered.map(m=>{
+        const plan = state.data.membershipPlans.find(p=>p.id===m.planId);
+        const amountStr = m.planPrice || (plan?plan.price:'') || '';
+        const amount = parsePriceAmount(amountStr);
+        const cats = m.categories||[];
+        return {
+          studentName: m.studentName, category: cats.length>1 ? 'Plusieurs' : (cats[0]?categoryLabel(cats[0]):'—'),
+          _categoryKey: cats.length===1 ? cats[0] : (cats.length>1 ? 'ALL_UNLIMITED' : ''),
+          planName: m.planName, amountDisplay: amountStr||'—', amount,
+          purchaseDate: isoDate(new Date(m.createdAt)), startDate: m.startDate||'', endDate: m.endDate||''
+        };
+      });
+      const totalsMap = new Map();
+      rows.forEach(r=>{
+        const key = r._categoryKey || 'none';
+        if(!totalsMap.has(key)) totalsMap.set(key, {label: r.category, count:0, amount:0});
+        const t = totalsMap.get(key);
+        t.count++; t.amount += r.amount;
+      });
+      const totals = Array.from(totalsMap.values());
+      state.modal = {type:'sales-report', payload:{category, from:document.getElementById('sr-from').value, to:document.getElementById('sr-to').value, results:{rows, totals}}};
+      render();
+    }
+    else if(action==='download-sales-report-csv'){
+      const {rows} = state.modal.payload.results;
+      downloadCsv(`rapport-ventes-${todayIso()}.csv`,
+        ['studentName','category','planName','amountDisplay','purchaseDate','startDate','endDate'],
+        {studentName:'Étudiant', category:'Catégorie', planName:'Formule', amountDisplay:'Montant payé', purchaseDate:'Date d’achat', startDate:'Date de début', endDate:'Date de fin'},
+        rows);
+    }
+    else if(action==='open-intro-report'){
+      const prev = (state.modal && state.modal.type==='intro-report') ? state.modal.payload : null;
+      state.modal = {type:'intro-report', payload:{months:prev&&prev.months||'3'}};
+      render();
+    }
+    else if(action==='run-intro-report'){
+      const months = document.getElementById('ir-months').value;
+      const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - parseInt(months,10));
+      const cutoffIso = isoDate(cutoff);
+      const today = todayIso();
+      const introMemberships = state.data.memberships.filter(m=>{
+        const plan = state.data.membershipPlans.find(p=>p.id===m.planId);
+        if(!plan || !plan.isIntroProgram) return false;
+        if(m.status==='attente_paiement' || m.status==='annulee') return false;
+        return isoDate(new Date(m.createdAt)) >= cutoffIso;
+      });
+      const rows = introMemberships.map(m=>{
+        const pid = m.profileId || null;
+        const next = state.data.memberships
+          .filter(m2=> m2.id!==m.id && m2.studentEmail.toLowerCase()===m.studentEmail.toLowerCase() && (m2.profileId||null)===pid
+            && m2.createdAt > m.createdAt && m2.status!=='attente_paiement' && m2.status!=='annulee'
+            && !((state.data.membershipPlans.find(p=>p.id===m2.planId)||{}).isIntroProgram))
+          .sort((a,b)=>a.createdAt-b.createdAt)[0];
+        const introDateIso = isoDate(new Date(m.createdAt));
+        const relevantBookings = state.data.bookings.filter(b=>
+          b.studentEmail.toLowerCase()===m.studentEmail.toLowerCase() && (b.profileId||null)===pid
+          && b.status==='confirmee' && b.dateIso >= introDateIso && b.dateIso <= today
+        );
+        const byClass = new Map();
+        relevantBookings.forEach(b=>{ byClass.set(b.classId, (byClass.get(b.classId)||0)+1); });
+        let topClass = '', topCount = 0;
+        byClass.forEach((count, classId)=>{
+          if(count>topCount){ topCount = count; const c = state.data.classes.find(cl=>cl.id===classId); topClass = c?c.name:''; }
+        });
+        return {
+          studentName: m.studentName, email: m.studentEmail, introDate: introDateIso,
+          nextPlanName: next ? next.planName : '', visitCount: relevantBookings.length, topClass
+        };
+      });
+      state.modal = {type:'intro-report', payload:{months, results:rows}};
+      render();
+    }
+    else if(action==='download-intro-report-csv'){
+      const rows = state.modal.payload.results;
+      downloadCsv(`rapport-conversions-intro-${todayIso()}.csv`,
+        ['studentName','email','introDate','nextPlanName','visitCount','topClass'],
+        {studentName:'Étudiant', email:'Courriel', introDate:'Date intro', nextPlanName:'Abonnement suivant', visitCount:'Nb présences', topClass:'Cours le plus visité'},
+        rows);
+    }
+    else if(action==='open-noshow-report'){
+      const prev = (state.modal && state.modal.type==='noshow-report') ? state.modal.payload : null;
+      state.modal = {type:'noshow-report', payload:{minDays:prev&&prev.minDays||30}};
+      render();
+    }
+    else if(action==='run-noshow-report'){
+      const minDays = parseInt(document.getElementById('ns-mindays').value,10) || 0;
+      const today = todayIso();
+      const todayDate = new Date(today+'T00:00:00');
+      const profiles = [];
+      state.data.studentAccounts.forEach(acct=>{
+        profiles.push({email:acct.email, profileId:null, name:acct.name});
+        (acct.familyMembers||[]).forEach(f=> profiles.push({email:acct.email, profileId:f.id, name:f.name}));
+      });
+      const rows = [];
+      profiles.forEach(pr=>{
+        const hasMembership = state.data.memberships.some(m=>m.studentEmail.toLowerCase()===pr.email.toLowerCase() && (m.profileId||null)===pr.profileId);
+        const bookings = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===pr.email.toLowerCase() && (b.profileId||null)===pr.profileId && b.status==='confirmee' && b.dateIso<=today);
+        if(!hasMembership && !bookings.length) return;
+        const visitDates = bookings.map(b=>b.dateIso).sort();
+        const lastVisit = visitDates[visitDates.length-1] || null;
+        let daysSince = null;
+        if(lastVisit){
+          const d = new Date(lastVisit+'T00:00:00');
+          daysSince = Math.round((todayDate - d) / 86400000);
+        }
+        if(daysSince===null || daysSince>=minDays){
+          rows.push({studentName:pr.name, email:pr.email, lastVisit, daysSince});
+        }
+      });
+      rows.sort((a,b)=>{
+        if(a.daysSince===null && b.daysSince===null) return 0;
+        if(a.daysSince===null) return -1;
+        if(b.daysSince===null) return 1;
+        return b.daysSince - a.daysSince;
+      });
+      state.modal = {type:'noshow-report', payload:{minDays, results:rows}};
+      render();
+    }
+    else if(action==='download-noshow-report-csv'){
+      const rows = state.modal.payload.results;
+      downloadCsv(`rapport-presence-${todayIso()}.csv`,
+        ['studentName','email','lastVisit','daysSince'],
+        {studentName:'Étudiant', email:'Courriel', lastVisit:'Dernière visite', daysSince:'Jours absent'},
+        rows.map(r=>({...r, lastVisit:r.lastVisit||'Jamais venu', daysSince: r.daysSince==null?'':r.daysSince})));
+    }
+    else if(action==='new-category'){ state.modal = {type:'category-form', payload:null}; render(); }
+    else if(action==='save-category'){
+      const label = document.getElementById('cat-label').value.trim();
+      if(!label){ showToast('Le nom de la catégorie est requis.'); return; }
+      const key = 'cat_' + normalizeStr(label).replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'') + '_' + uid().slice(0,4);
+      if(!state.data.customCategories) state.data.customCategories = [];
+      state.data.customCategories.push({key, label});
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Catégorie ajoutée.');
+    }
+    else if(action==='delete-category'){
+      state.data.customCategories = (state.data.customCategories||[]).filter(c=>c.key!==id);
+      await persist();
+      render();
+      showToast('Catégorie supprimée.');
+    }
     else if(action==='new-class'){ state.modal = {type:'class-form', payload:null}; render(); }
     else if(action==='edit-class'){
       const c = state.data.classes.find(cl=>cl.id===id);
@@ -5196,12 +5747,13 @@
       const description = document.getElementById('f-description').value.trim();
       const startDate = document.getElementById('f-start-date').value || null;
       const endDate = document.getElementById('f-end-date').value || null;
+      const durationMinutes = Math.max(1, parseInt(document.getElementById('f-duration').value,10) || 60);
       if(!name){ showToast('Le nom du cours est requis.'); return; }
       if(id){
         const c = state.data.classes.find(cl=>cl.id===id);
-        Object.assign(c, {name,dayOfWeek,time,category,capacity,price,free,description,startDate,endDate});
+        Object.assign(c, {name,dayOfWeek,time,category,capacity,price,free,description,startDate,endDate,durationMinutes});
       } else {
-        state.data.classes.push({id:uid(),name,dayOfWeek,time,category,capacity,price,free,description,startDate,endDate});
+        state.data.classes.push({id:uid(),name,dayOfWeek,time,category,capacity,price,free,description,startDate,endDate,durationMinutes});
       }
       await persist();
       state.modal = null; closeModalDom();
@@ -5420,6 +5972,14 @@
             if(isNew){ state.modal = {type:'ask-phone', payload:{email}}; render(); }
           } else if(status==='ABORTED'){
             btn.disabled = false; btn.textContent = originalLabel;
+            // Le paiement a été ouvert (donc un abonnement "attente_paiement" a été créé pour
+            // avoir un id à envoyer à Helcim) mais annulé avant d'être complété — on retire ce
+            // brouillon pour ne pas laisser un faux "Paiement à faire" sur le compte.
+            const stillPending = state.data.memberships.find(mm=>mm.id===m.id && mm.status==='attente_paiement');
+            if(stillPending){
+              state.data.memberships = state.data.memberships.filter(mm=>mm.id!==m.id);
+              await persist();
+            }
             showToast('Paiement annulé.');
           } else {
             btn.disabled = false; btn.textContent = originalLabel;
@@ -5432,6 +5992,11 @@
         if(fallback) fallback.style.display = 'block';
         showToast('Le paiement en ligne intégré est momentanément indisponible.');
       }
+    }
+
+    else if(action==='confirm-contact-club'){
+      if(state.modal && state.modal.payload) state.modal.payload.contactConfirmed = true;
+      render();
     }
 
     else if(action==='confirm-purchase'){
@@ -5622,6 +6187,16 @@
       state.expandedPlanGroups[key] = !state.expandedPlanGroups[key];
       render();
     }
+    else if(action==='toggle-admin-sticker-group'){
+      const key = e.currentTarget.dataset.group;
+      if(!state.expandedStickerGroups) state.expandedStickerGroups = {};
+      state.expandedStickerGroups[key] = !state.expandedStickerGroups[key];
+      render();
+    }
+    else if(action==='run-sticker-search'){
+      state.stickerSearchQuery = document.getElementById('sticker-search-input').value.trim();
+      render();
+    }
     else if(action==='run-membership-search'){
       state.membershipSearchQuery = document.getElementById('membership-search-input').value.trim();
       render();
@@ -5630,8 +6205,9 @@
     else if(action==='generate-report'){
       const checked = Array.from(document.querySelectorAll('.report-field:checked')).map(el=>el.value);
       if(!checked.length){ showToast('Choisissez au moins une colonne.'); return; }
+      const planFilterId = document.getElementById('report-plan-filter').value;
       const today = todayIso();
-      const reportRows = state.data.studentAccounts.map(acct=>{
+      let reportRows = state.data.studentAccounts.map(acct=>{
         const email = acct.email;
         const nameParts = (acct.name||'').trim().split(/\s+/);
         const derivedFirst = acct.firstName || nameParts[0] || '';
@@ -5643,6 +6219,7 @@
         const activeM = memberships.filter(m2=>membershipDisplayStatus(m2)==='active');
         const pastM = memberships.filter(m2=>membershipDisplayStatus(m2)!=='active');
         return {
+          _hasFilterPlan: activeM.some(m2=>m2.planId===planFilterId),
           lastName: derivedLast, firstName: derivedFirst, email: email,
           registeredDate: acct.createdAt ? isoDate(new Date(acct.createdAt)) : '',
           firstVisit: visitDates[0]||'', lastVisit: visitDates[visitDates.length-1]||'',
@@ -5653,6 +6230,8 @@
           birthday: acct.birthday||''
         };
       });
+      if(planFilterId) reportRows = reportRows.filter(r=>r._hasFilterPlan);
+      reportRows.forEach(r=>delete r._hasFilterPlan);
       state.modal = {type:'report-builder', payload:{results:{columns:checked, rows:reportRows}}};
       render();
     }
@@ -5756,7 +6335,9 @@
       if(!acct){ showToast('Aucun compte étudiant trouvé.'); return; }
       if(!acct.notes) acct.notes = {};
       const label = (NOTE_CATEGORY_FIELDS.find(f=>f.key===category)||{}).label || category;
-      const stamp = b.dateIso ? `[${b.dateIso}] ` : '';
+      // On garde le nom de l'instructeur qui a pris la note originale (attendanceNoteAuthor)
+      // dans le texte transféré, sinon cette info est perdue une fois la note déplacée au dossier.
+      const stamp = (b.dateIso ? `[${b.dateIso}]` : '') + (b.attendanceNoteAuthor ? ` (${b.attendanceNoteAuthor})` : '') + ' ';
       acct.notes[category] = acct.notes[category] ? (acct.notes[category] + '\n' + stamp + b.attendanceNote) : (stamp + b.attendanceNote);
       b.attendanceNote = '';
       b.attendanceNoteAuthor = '';
@@ -5769,10 +6350,10 @@
     else if(action==='manage-memberships'){ state.modal = {type:'manage-memberships', payload:null}; render(); }
     else if(action==='attendance-search'){
       const val = document.getElementById('att-search').value.trim();
-      const found = findAccountByQuery(val);
+      const found = searchStudentAccounts(val);
       state.modal.payload.searchQuery = val;
       state.modal.payload.searchTried = true;
-      state.modal.payload.searchResult = found;
+      state.modal.payload.searchResults = found;
       render();
     }
     else if(action==='attendance-show-guest-form'){
@@ -5782,15 +6363,16 @@
     else if(action==='attendance-try-add'){
       const name = e.currentTarget.dataset.name;
       const email = e.currentTarget.dataset.email;
+      const profileId = e.currentTarget.dataset.profile || null;
       const {classId} = state.modal.payload;
       const c = state.data.classes.find(cl=>cl.id===classId);
-      const membership = c.free ? {type:'free'} : activeMembershipForEmail(email, c.category);
+      const membership = c.free ? {type:'free'} : activeMembershipForEmail(email, c.category, profileId);
       if(!c.free && !membership){
-        state.modal.payload.warning = {name, email};
+        state.modal.payload.warning = {name, email, profileId};
         render();
         return;
       }
-      await attendanceAddParticipant(name, email, false);
+      await attendanceAddParticipant(name, email, false, profileId);
     }
     else if(action==='attendance-try-add-guest'){
       const name = document.getElementById('att-guest-name').value.trim();
@@ -5800,13 +6382,13 @@
       render();
     }
     else if(action==='attendance-confirm-add'){
-      const {name, email} = state.modal.payload.warning;
-      await attendanceAddParticipant(name, email, true);
+      const {name, email, profileId} = state.modal.payload.warning;
+      await attendanceAddParticipant(name, email, true, profileId);
     }
     else if(action==='attendance-cancel-add'){
       state.modal.payload.warning = null;
       state.modal.payload.showGuestForm = false;
-      state.modal.payload.searchResult = null;
+      state.modal.payload.searchResults = null;
       state.modal.payload.searchTried = false;
       render();
     }
