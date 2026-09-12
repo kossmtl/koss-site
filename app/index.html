@@ -813,6 +813,7 @@
     shareRecipientType: 'coach',
     shareSearchQuery: '',
     shareSelectedRecipient: null,
+    lastSyncedData: null, // dernière copie connue comme identique au serveur, sert de base pour la fusion
   };
 
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -832,6 +833,7 @@
     try{
       const res = await storageBackend.get(STORAGE_KEY, true);
       state.data = JSON.parse(res.value);
+      state.lastSyncedData = deepClone(state.data);
     }catch(e){
       state.data = defaultData();
       await persist();
@@ -1155,8 +1157,89 @@
     ];
   }
 
+  // --- Fusion à 3 voies -------------------------------------------------
+  // Le fichier de données est un seul gros objet partagé par tous les appareils.
+  // Sans fusion, la dernière fenêtre qui sauvegarde écrase tout ce que les autres
+  // ont changé entre-temps (ex : une note signalée/supprimée par l'admin réapparaît
+  // parce que la fenêtre élève, qui avait encore l'ancienne copie, sauvegarde après).
+  // "base" = dernière copie qu'on sait identique au serveur, "local" = nos changements,
+  // "remote" = ce qui est sur le serveur maintenant (fait par d'autres fenêtres/appareils).
+  function deepClone(obj){ return obj == null ? obj : JSON.parse(JSON.stringify(obj)); }
+
+  function mergeArrayById(base, local, remote){
+    base = Array.isArray(base) ? base : [];
+    local = Array.isArray(local) ? local : [];
+    remote = Array.isArray(remote) ? remote : [];
+    const hasIds = (local.length===0 || local.every(x=>x && typeof x==='object' && 'id' in x))
+                && (remote.length===0 || remote.every(x=>x && typeof x==='object' && 'id' in x));
+    if(!hasIds){
+      // Pas d'id fiable pour fusionner élément par élément : si on a changé la liste
+      // localement, on garde notre version, sinon on prend celle du serveur.
+      return JSON.stringify(local) !== JSON.stringify(base) ? local : remote;
+    }
+    const byId = arr => { const m = new Map(); arr.forEach(x=>{ if(x && x.id!=null) m.set(x.id, x); }); return m; };
+    const baseMap = byId(base), localMap = byId(local), remoteMap = byId(remote);
+    const order = [];
+    const seen = new Set();
+    remote.forEach(x=>{ if(x && x.id!=null && !seen.has(x.id)){ order.push(x.id); seen.add(x.id); } });
+    local.forEach(x=>{ if(x && x.id!=null && !seen.has(x.id)){ order.push(x.id); seen.add(x.id); } });
+    const out = [];
+    order.forEach(id=>{
+      const inBase = baseMap.has(id), inLocal = localMap.has(id), inRemote = remoteMap.has(id);
+      if(inLocal && inRemote){
+        const localVal = localMap.get(id), remoteVal = remoteMap.get(id), baseVal = baseMap.get(id);
+        const localChanged = !inBase || JSON.stringify(localVal) !== JSON.stringify(baseVal);
+        const remoteChanged = !inBase || JSON.stringify(remoteVal) !== JSON.stringify(baseVal);
+        if(localChanged) out.push(localVal);
+        else if(remoteChanged) out.push(remoteVal);
+        else out.push(localVal);
+      } else if(inLocal && !inRemote){
+        if(inBase){ /* supprimé ailleurs entre-temps : on respecte la suppression */ }
+        else out.push(localMap.get(id)); // ajout local pas encore vu par le serveur
+      } else if(!inLocal && inRemote){
+        if(inBase){ /* on l'a supprimé localement : on respecte notre suppression */ }
+        else out.push(remoteMap.get(id)); // ajout fait ailleurs qu'on n'a pas encore
+      }
+    });
+    return out;
+  }
+
+  function mergeAppData(base, local, remote){
+    base = base || {}; local = local || {}; remote = remote || {};
+    const keys = new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(remote)]);
+    const out = {};
+    keys.forEach(key=>{
+      const b = base[key], l = local[key], r = remote[key];
+      if(Array.isArray(l) || Array.isArray(r) || Array.isArray(b)){
+        out[key] = mergeArrayById(b, l, r);
+      } else if(l && typeof l === 'object' && !Array.isArray(l) && r && typeof r === 'object'){
+        // objet simple (ex: config) : on part du serveur puis on repasse par-dessus
+        // chaque champ qu'on a nous-même changé localement.
+        const merged = Object.assign({}, r);
+        Object.keys(l).forEach(k=>{
+          const changedLocally = !b || JSON.stringify(l[k]) !== JSON.stringify(b[k]);
+          if(changedLocally) merged[k] = l[k];
+        });
+        out[key] = merged;
+      } else {
+        const changedLocally = JSON.stringify(l) !== JSON.stringify(b);
+        out[key] = changedLocally ? l : r;
+      }
+    });
+    return out;
+  }
+
   async function persist(){
-    const payload = JSON.stringify(state.data);
+    let toWrite = state.data;
+    try{
+      const res = await storageBackend.get(STORAGE_KEY, true);
+      const remote = JSON.parse(res.value);
+      const base = state.lastSyncedData || remote;
+      toWrite = mergeAppData(base, state.data, remote);
+    }catch(mergeErr){
+      // Pas de copie serveur lisible (ex: tout premier enregistrement) : on écrit tel quel.
+    }
+    const payload = JSON.stringify(toWrite);
     if(payload.length > 3000000){
       console.error('Erreur de sauvegarde: payload trop volumineux', payload.length);
       showToast("Enregistrement impossible : trop de données (images trop volumineuses). Retire une image et réessaie.");
@@ -1164,6 +1247,8 @@
     }
     try{
       await storageBackend.set(STORAGE_KEY, payload, true);
+      state.data = toWrite;
+      state.lastSyncedData = deepClone(toWrite);
       return true;
     }catch(e){
       console.error('Erreur de sauvegarde', e);
@@ -1171,6 +1256,26 @@
       return false;
     }
   }
+
+  // Récupère périodiquement les changements faits ailleurs (autre appareil/fenêtre)
+  // et les fusionne dans l'état local, pour que l'admin (ou l'élève) voie les nouveautés
+  // sans devoir recharger la page manuellement.
+  async function refreshFromRemote(){
+    if(state.modal) return; // on ne dérange pas une saisie en cours
+    try{
+      const res = await storageBackend.get(STORAGE_KEY, true);
+      const remote = JSON.parse(res.value);
+      const base = state.lastSyncedData || remote;
+      const merged = mergeAppData(base, state.data, remote);
+      const changed = JSON.stringify(merged) !== JSON.stringify(state.data);
+      state.data = merged;
+      state.lastSyncedData = deepClone(merged);
+      if(changed && !state.modal) render();
+    }catch(e){
+      // silencieux : on réessaiera au prochain intervalle
+    }
+  }
+  setInterval(refreshFromRemote, 12000);
 
   // Helper générique pour télécharger un tableau de données en CSV — utilisé par les
   // différents rapports admin (ventes, conversions intro, présence, etc.).
@@ -1751,6 +1856,22 @@
     {key:'handwriting', label:'Écriture manuscrite', css:"'Caveat', cursive"},
   ];
   const TEXTNOTE_INK_COLORS = ['#28292E','#7A3B12','#1D5C43','#8B1E3F','#2A4B7C'];
+  // Palettes de couleurs d'encre pour les notes texte du carnet (choisies par
+  // l'usager, mémorisées par carnet dans nb.inkPalette — défaut 'pastel').
+  const TEXTNOTE_PALETTES = [
+    {key:'pastel', label:'Pastel doux', colors:['#C97B84','#E8A87C','#E3C567','#A8C08A','#8FCBD9','#A6B9D9','#B9A6D9','#D9A6C9','#C9B79F','#9FB8B0']},
+    {key:'vif', label:'Vif', colors:['#E4573D','#E8912D','#D9B92D','#7FB83D','#2DB894','#2D8FE8','#5A5FE8','#A83DE8','#E83DA8','#E83D5F']},
+    {key:'classique', label:'Classique', colors:['#000000','#1D3B7A','#1D5C3D','#7A1D2D','#5C3A1D','#1D5C6B','#4A1D5C','#7A5C1D','#3D5C1D','#5C1D3A']},
+    {key:'melange', label:'Mélange', colors:['#E8A87C','#E4573D','#1D5C3D','#8FCBD9','#A83DE8','#7A3B12','#E3C567','#0B1D3A','#E83D5F','#9C9C9C']},
+    {key:'contrastes', label:'Contrastes', colors:['#F2C6A0','#3D1D5C','#A8D8C4','#5C1D1D','#F2E6A0','#1D3D5C','#D9A0C6','#1D5C2E','#A0C6F2','#5C3D1D']},
+  ];
+  function textnotePaletteColors(key){
+    const p = TEXTNOTE_PALETTES.find(p=>p.key===key);
+    return p ? p.colors : TEXTNOTE_PALETTES[0].colors;
+  }
+  function renderTextnoteSwatchesHtml(colors, selected){
+    return colors.map(col=>`<span class="textnote-color-swatch" data-color="${col}" style="width:26px;height:26px;border-radius:4px;background:${col};cursor:pointer;border:2px solid ${selected===col?'var(--amber)':'transparent'};display:inline-block;"></span>`).join('');
+  }
   function textnoteFontCss(key){ return (TEXTNOTE_FONTS.find(f=>f.key===key)||TEXTNOTE_FONTS[0]).css; }
   const NOTEBOOK_TEXTURES = [
     {key:'uni', label:'Uni'},
@@ -2119,16 +2240,18 @@
 
     // Accent personnalisé de Gérer : n'affecte que #app pendant qu'on est dans
     // les vues admin/présences déverrouillées, choisi par le gestionnaire
-    // connecté dans son compte. Le reste du site (élève, accueil) garde le
-    // --amber par défaut défini sur :root.
+    // connecté dans son compte. Le reste du site (élève, accueil) garde les
+    // couleurs par défaut définies sur :root. Le fond général (--bg) reste
+    // neutre — seule la couleur des encadrés (--bg-panel, la carte .card)
+    // reçoit la teinte, pas le fond de toute la page.
     const inManagerAreaNow = state.adminUnlocked && (state.view==='admin' || state.view==='attendance');
     if(inManagerAreaNow){
       const accentHex = managerAccentHex(currentManager());
       app.style.setProperty('--amber', accentHex);
-      app.style.setProperty('--bg', mixHexColors('#28292E', accentHex, MANAGER_BG_TINT_PCT));
+      app.style.setProperty('--bg-panel', mixHexColors('#35363C', accentHex, MANAGER_BG_TINT_PCT));
     } else {
       app.style.removeProperty('--amber');
-      app.style.removeProperty('--bg');
+      app.style.removeProperty('--bg-panel');
     }
 
     attachHandlers();
@@ -3977,11 +4100,12 @@
       let addSectionHtml = '';
       if(warning){
         addSectionHtml = `
-          <div style="border:2px solid var(--coral);background:rgba(226,114,91,0.15);border-radius:8px;padding:10px 12px;margin-top:10px;">
-            <p style="color:var(--coral);font-size:13px;font-weight:700;margin:0;">⚠ ${escapeHtml(warning.name)} n\u2019a pas d\u2019abonnement actif pour la catégorie "${categoryLabel(c.category)}".</p>
+          <div style="display:flex;align-items:flex-start;gap:9px;background:rgba(226,114,91,0.22);border:1px solid var(--coral);border-radius:8px;padding:10px 11px;margin-top:12px;">
+            <span style="font-size:16px;line-height:1;flex-shrink:0;">🚫</span>
+            <p style="color:#FFD9CE;font-size:12.5px;font-weight:600;line-height:1.4;margin:0;">${escapeHtml(warning.name)} n\u2019a pas d\u2019abonnement actif pour la cat\u00e9gorie \u00ab ${categoryLabel(c.category)} \u00bb.</p>
           </div>
           <div class="btn-row">
-            <button class="btn btn-danger" data-action="attendance-confirm-add">Ajouter quand même</button>
+            <button class="btn btn-danger" data-action="attendance-confirm-add">Ajouter quand m\u00eame</button>
             <button class="btn btn-secondary" data-action="attendance-cancel-add">Ne pas ajouter</button>
           </div>
         `;
@@ -4029,8 +4153,9 @@
         `;
       }
 
+      const warnStyle = warning ? 'background:#3A2B28;border-color:var(--coral);box-shadow:0 0 0 3px rgba(226,114,91,0.18);' : '';
       html = `
-        <div class="modal" style="max-width:460px;">
+        <div class="modal" style="max-width:460px;${warnStyle}">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>${escapeHtml(c.name)}</h3>
           <p class="muted">${DAYS[c.dayOfWeek]} ${c.time} · ${dateIso}</p>
@@ -4378,10 +4503,12 @@
       const {ownerKey, entry, notebookId, pageCount} = m.payload;
       const category = entry ? entry.category : '';
       const fontFamily = entry ? (entry.fontFamily||'marker') : 'marker';
-      const color = entry ? (entry.color||TEXTNOTE_INK_COLORS[0]) : TEXTNOTE_INK_COLORS[0];
-      const hAlign = entry ? (entry.hAlign||'left') : 'left';
       const nbId = entry ? entry.notebookId : notebookId;
       const nb = state.data.notebooks.find(x=>x.id===nbId);
+      const paletteKey = (nb && nb.inkPalette) || 'pastel';
+      const paletteColors = textnotePaletteColors(paletteKey);
+      const color = entry ? (entry.color||paletteColors[0]) : paletteColors[0];
+      const hAlign = entry ? (entry.hAlign||'left') : 'left';
       const maxPage = (nb && nb.pageCount) || pageCount || 1;
       const currentPage = entry ? (entry.page||1) : (state.notebookActivePage||1);
       html = `
@@ -4399,9 +4526,14 @@
           <select id="textnote-font">
             ${TEXTNOTE_FONTS.map(f=>`<option value="${f.key}" style="font-family:${f.css};font-size:16px;" ${fontFamily===f.key?'selected':''}>${escapeHtml(f.label)}</option>`).join('')}
           </select>
+          <label style="margin-top:10px;">Palette de couleurs</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;" id="textnote-palette-row">
+            ${TEXTNOTE_PALETTES.map(p=>`<button type="button" class="small-btn textnote-palette-btn" data-palette="${p.key}" style="${p.key===paletteKey?'background:var(--amber);color:var(--ink);':''}">${escapeHtml(p.label)}</button>`).join('')}
+          </div>
+          <input type="hidden" id="textnote-palette-value" value="${paletteKey}">
           <label style="margin-top:10px;">Couleur du texte</label>
-          <div style="display:flex;gap:8px;margin:6px 0;">
-            ${TEXTNOTE_INK_COLORS.map(col=>`<span class="textnote-color-swatch" data-color="${col}" style="width:26px;height:26px;border-radius:4px;background:${col};cursor:pointer;border:2px solid ${color===col?'var(--amber)':'transparent'};display:inline-block;"></span>`).join('')}
+          <div style="display:flex;gap:8px;margin:6px 0;flex-wrap:wrap;" id="textnote-swatch-row">
+            ${renderTextnoteSwatchesHtml(paletteColors, color)}
           </div>
           <input type="hidden" id="textnote-color-value" value="${color}">
           <label style="margin-top:10px;">Alignement du texte</label>
@@ -4939,13 +5071,31 @@
       }
     }
     if(m.type === 'textnote-form'){
-      const swatches = backdrop.querySelectorAll('.textnote-color-swatch');
       const hiddenInput = backdrop.querySelector('#textnote-color-value');
-      swatches.forEach(sw=>{
-        sw.addEventListener('click', ()=>{
-          hiddenInput.value = sw.dataset.color;
-          swatches.forEach(s=>s.style.borderColor='transparent');
-          sw.style.borderColor = 'var(--amber)';
+      const swatchRow = backdrop.querySelector('#textnote-swatch-row');
+      function wireTextnoteSwatches(){
+        const swatches = swatchRow.querySelectorAll('.textnote-color-swatch');
+        swatches.forEach(sw=>{
+          sw.addEventListener('click', ()=>{
+            hiddenInput.value = sw.dataset.color;
+            swatches.forEach(s=>s.style.borderColor='transparent');
+            sw.style.borderColor = 'var(--amber)';
+          });
+        });
+      }
+      wireTextnoteSwatches();
+      const paletteBtns = backdrop.querySelectorAll('.textnote-palette-btn');
+      const paletteHidden = backdrop.querySelector('#textnote-palette-value');
+      paletteBtns.forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const key = btn.dataset.palette;
+          paletteHidden.value = key;
+          paletteBtns.forEach(b=>{ b.style.background=''; b.style.color=''; });
+          btn.style.background = 'var(--amber)'; btn.style.color = 'var(--ink)';
+          const colors = textnotePaletteColors(key);
+          hiddenInput.value = colors[0];
+          swatchRow.innerHTML = renderTextnoteSwatchesHtml(colors, colors[0]);
+          wireTextnoteSwatches();
         });
       });
       const alignBtns = backdrop.querySelectorAll('.textnote-align-btn');
@@ -5461,6 +5611,8 @@
       const fontFamily = document.getElementById('textnote-font').value;
       const color = document.getElementById('textnote-color-value').value;
       const hAlign = document.getElementById('textnote-halign-value').value || 'left';
+      const paletteEl = document.getElementById('textnote-palette-value');
+      const inkPalette = paletteEl ? paletteEl.value : 'pastel';
       if(!text){ markInvalid('textnote-text'); showToast('La note ne peut pas être vide.'); return; }
       if(!category){ markInvalid('textnote-category-input'); showToast('Choisis ou tape une catégorie.'); return; }
       if(id){
@@ -5475,9 +5627,13 @@
             p = Math.max(1, Math.min(maxPage, p));
             entry.page = p;
           }
+          const nbForPalette = state.data.notebooks.find(x=>x.id===entry.notebookId);
+          if(nbForPalette) nbForPalette.inkPalette = inkPalette;
         }
       } else {
         state.data.notebookEntries.push({id:uid(), ownerKey, notebookId, kind:'text', page: state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), text, category, fontFamily, fontSize:16, rotation:0, color, hAlign, createdAt:Date.now()});
+        const nbForPalette = state.data.notebooks.find(x=>x.id===notebookId);
+        if(nbForPalette) nbForPalette.inkPalette = inkPalette;
       }
       await persist();
       state.modal = null; closeModalDom();
