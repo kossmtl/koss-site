@@ -222,6 +222,7 @@
     font-size:14px;
   }
   input:focus,select:focus,textarea:focus{outline:2px solid var(--amber);outline-offset:1px;}
+  .nb-switch-select{width:auto;max-width:180px;flex:0 1 auto;}
   /* Les <option> d'un <select> s'ouvrent avec un fond natif blanc (contrôlé par l'OS/le
      navigateur, pas par notre thème sombre) — sans cette règle ils héritent du texte clair
      défini ci-dessus et deviennent illisibles (texte blanc sur fond blanc) une fois le menu
@@ -339,6 +340,7 @@
     touch-action:none;
     user-select:none;
     line-height:1;
+    transform:translateX(-50%);
   }
   .koss-logo-wrap.dragging{opacity:0.85;}
   .koss-logo-main{
@@ -1166,28 +1168,32 @@
   // "remote" = ce qui est sur le serveur maintenant (fait par d'autres fenêtres/appareils).
   function deepClone(obj){ return obj == null ? obj : JSON.parse(JSON.stringify(obj)); }
 
-  function mergeArrayById(base, local, remote){
+  // Certaines collections n'ont pas de champ "id" (ex: studentAccounts, identifié par
+  // courriel) — keyFn permet de fusionner ces listes-là aussi élément par élément plutôt
+  // que de risquer d'écraser toute la liste (ex: une nouvelle inscription qui disparaît).
+  function mergeArrayById(base, local, remote, keyFn){
     base = Array.isArray(base) ? base : [];
     local = Array.isArray(local) ? local : [];
     remote = Array.isArray(remote) ? remote : [];
-    const hasIds = (local.length===0 || local.every(x=>x && typeof x==='object' && 'id' in x))
-                && (remote.length===0 || remote.every(x=>x && typeof x==='object' && 'id' in x));
-    if(!hasIds){
-      // Pas d'id fiable pour fusionner élément par élément : si on a changé la liste
+    const getKey = keyFn || (x=> (x && x.id!=null) ? x.id : null);
+    const hasKeys = (local.length===0 || local.every(x=>x && typeof x==='object' && getKey(x)!=null))
+                 && (remote.length===0 || remote.every(x=>x && typeof x==='object' && getKey(x)!=null));
+    if(!hasKeys){
+      // Pas de clé fiable pour fusionner élément par élément : si on a changé la liste
       // localement, on garde notre version, sinon on prend celle du serveur.
       return JSON.stringify(local) !== JSON.stringify(base) ? local : remote;
     }
-    const byId = arr => { const m = new Map(); arr.forEach(x=>{ if(x && x.id!=null) m.set(x.id, x); }); return m; };
-    const baseMap = byId(base), localMap = byId(local), remoteMap = byId(remote);
+    const byKey = arr => { const m = new Map(); arr.forEach(x=>{ const k=getKey(x); if(k!=null) m.set(k, x); }); return m; };
+    const baseMap = byKey(base), localMap = byKey(local), remoteMap = byKey(remote);
     const order = [];
     const seen = new Set();
-    remote.forEach(x=>{ if(x && x.id!=null && !seen.has(x.id)){ order.push(x.id); seen.add(x.id); } });
-    local.forEach(x=>{ if(x && x.id!=null && !seen.has(x.id)){ order.push(x.id); seen.add(x.id); } });
+    remote.forEach(x=>{ const k=getKey(x); if(k!=null && !seen.has(k)){ order.push(k); seen.add(k); } });
+    local.forEach(x=>{ const k=getKey(x); if(k!=null && !seen.has(k)){ order.push(k); seen.add(k); } });
     const out = [];
-    order.forEach(id=>{
-      const inBase = baseMap.has(id), inLocal = localMap.has(id), inRemote = remoteMap.has(id);
+    order.forEach(key=>{
+      const inBase = baseMap.has(key), inLocal = localMap.has(key), inRemote = remoteMap.has(key);
       if(inLocal && inRemote){
-        const localVal = localMap.get(id), remoteVal = remoteMap.get(id), baseVal = baseMap.get(id);
+        const localVal = localMap.get(key), remoteVal = remoteMap.get(key), baseVal = baseMap.get(key);
         const localChanged = !inBase || JSON.stringify(localVal) !== JSON.stringify(baseVal);
         const remoteChanged = !inBase || JSON.stringify(remoteVal) !== JSON.stringify(baseVal);
         if(localChanged) out.push(localVal);
@@ -1195,14 +1201,18 @@
         else out.push(localVal);
       } else if(inLocal && !inRemote){
         if(inBase){ /* supprimé ailleurs entre-temps : on respecte la suppression */ }
-        else out.push(localMap.get(id)); // ajout local pas encore vu par le serveur
+        else out.push(localMap.get(key)); // ajout local pas encore vu par le serveur
       } else if(!inLocal && inRemote){
         if(inBase){ /* on l'a supprimé localement : on respecte notre suppression */ }
-        else out.push(remoteMap.get(id)); // ajout fait ailleurs qu'on n'a pas encore
+        else out.push(remoteMap.get(key)); // ajout fait ailleurs qu'on n'a pas encore
       }
     });
     return out;
   }
+
+  const MERGE_ARRAY_KEYS = {
+    studentAccounts: x => x && x.email ? x.email.toLowerCase() : null,
+  };
 
   function mergeAppData(base, local, remote){
     base = base || {}; local = local || {}; remote = remote || {};
@@ -1211,7 +1221,7 @@
     keys.forEach(key=>{
       const b = base[key], l = local[key], r = remote[key];
       if(Array.isArray(l) || Array.isArray(r) || Array.isArray(b)){
-        out[key] = mergeArrayById(b, l, r);
+        out[key] = mergeArrayById(b, l, r, MERGE_ARRAY_KEYS[key]);
       } else if(l && typeof l === 'object' && !Array.isArray(l) && r && typeof r === 'object'){
         // objet simple (ex: config) : on part du serveur puis on repasse par-dessus
         // chaque champ qu'on a nous-même changé localement.
@@ -1578,7 +1588,9 @@
       status:'confirmee',
       createdAt: Date.now(),
       noMembership: !!noMembership,
-      addedByStaff: true
+      addedByStaff: true,
+      addedByManagerName: noMembership ? ((currentManager()||{}).name || null) : null,
+      addedByManagerAt: noMembership ? Date.now() : null
     });
     if(membership && membership.type==='credits'){
       membership.creditsRemaining = Math.max(0, membership.creditsRemaining - 1);
@@ -1845,6 +1857,14 @@
     });
     return Array.from(set).sort((a,b)=>a.localeCompare(b));
   }
+  // Catégories des autocollants : même stratégie que celles du carnet — texte libre créé
+  // par la gestion, pas la liste des catégories de cours. On suggère juste celles déjà
+  // utilisées, via une <datalist> sur le champ.
+  function usedStickerCategories(){
+    const set = new Set();
+    state.data.stickers.forEach(s=>{ if(s.category && s.category.trim()) set.add(s.category.trim()); });
+    return Array.from(set).sort((a,b)=>a.localeCompare(b));
+  }
   const POSTIT_COLORS = ['#F2E27A','#F2A65A','#8FCBD9','#93B48F','#E8A9A0','#B79FDB','#FFFBF8'];
   const TEXTNOTE_FONTS = [
     {key:'marker', label:'Manuscrite (Sharpie)', css:"'Permanent Marker', cursive"},
@@ -1933,16 +1953,18 @@
     const e = (email||'').toLowerCase();
     return state.data.stickers.filter(s=> s.availableToAll || (s.assignedEmails && s.assignedEmails.includes(e)));
   }
-  function giftedStickersForStudent(email){
+  function giftedStickersForStudent(email, profileId){
     const e = (email||'').toLowerCase();
-    const grants = state.data.stickerGrants.filter(g=>g.email.toLowerCase()===e && !g.used);
+    const pid = profileId || null;
+    const grants = state.data.stickerGrants.filter(g=>g.email.toLowerCase()===e && (g.profileId||null)===pid && !g.used);
     return grants.map(g=>{
       const s = state.data.stickers.find(x=>x.id===g.stickerId);
       return s ? Object.assign({}, s, {grantId:g.id, grantMessage:g.message||''}) : null;
     }).filter(Boolean);
   }
   function giftedStickersForOwner(ownerKey){
-    return giftedStickersForStudent(parseOwnerKey(ownerKey).email);
+    const parsed = parseOwnerKey(ownerKey);
+    return giftedStickersForStudent(parsed.email, parsed.profileId);
   }
   // Notes/post-its/autocollants partagés entre carnets (élève → coach ou élève → élève).
   // Une note "signée" est livrée immédiatement (statut 'delivered') ; une note "anonyme"
@@ -1971,6 +1993,48 @@
   }
   function flaggedInappropriateItems(){
     return state.data.sharedItems.filter(s=>s.inappropriate && s.status!=='archived');
+  }
+  // Présences ajoutées sans abonnement valide, encore non réglées, pour un étudiant (ou un
+  // de ses enfants) précis — affiché directement dans sa fiche, en plus de la liste globale
+  // "Présences sans abonnement" du tableau de bord.
+  function unpaidAttendanceFor(email, profileId){
+    const pid = profileId || null;
+    return state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===(email||'').toLowerCase() && (b.profileId||null)===pid && b.noMembership && b.status!=='annulee');
+  }
+  function unpaidAttendanceHtml(email, profileId){
+    const items = unpaidAttendanceFor(email, profileId);
+    if(!items.length) return '';
+    return `
+      <label style="margin-top:14px;color:var(--coral);">⚠ Présences non réglées (${items.length})</label>
+      <ul class="link-list">
+        ${items.map(b=>{
+          const c = state.data.classes.find(cl=>cl.id===b.classId);
+          return `<li><span>${c?escapeHtml(c.name):'—'} — ${b.dateIso}</span><span><button class="small-btn" data-action="open-mark-attendance-paid" data-id="${b.id}">A payé</button></span></li>`;
+        }).join('')}
+      </ul>
+    `;
+  }
+  // Onglet "Visites" dépliable dans la fiche d'un étudiant (ou d'un enfant) : toutes ses
+  // réservations passées et à venir (hors déjà annulées), avec possibilité de les retirer.
+  function studentVisitsHtml(email, profileId, showVisits){
+    const pid = profileId || null;
+    const visits = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===(email||'').toLowerCase() && (b.profileId||null)===pid && b.status!=='annulee').sort((a,b)=>a.dateIso.localeCompare(b.dateIso));
+    const today = todayIso();
+    return `
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="small-btn" data-action="toggle-modal-visits">${showVisits?'▲':'▼'} Visites (${visits.length})</button>
+      </div>
+      ${showVisits ? (visits.length ? `
+        <table style="margin-top:6px;">
+          <tr><th>Cours</th><th>Date</th><th>Statut</th><th></th></tr>
+          ${visits.map(b=>{
+            const c = state.data.classes.find(cl=>cl.id===b.classId);
+            const upcoming = b.dateIso >= today;
+            return `<tr><td>${c?escapeHtml(c.name):'—'}${upcoming?' <span style="color:var(--sage);font-size:11px;">(à venir)</span>':''}</td><td>${b.dateIso}</td><td>${statusBadge(b.status)}</td><td><button class="small-btn" data-action="cancel-booking" data-id="${b.id}">Supprimer</button></td></tr>`;
+          }).join('')}
+        </table>
+      ` : '<p class="muted" style="color:var(--chalk-dim);margin-top:6px;">Aucune visite.</p>') : ''}
+    `;
   }
   function trashedItemsForOwner(ownerKey){
     return state.data.notebookEntries.filter(n=>n.ownerKey===ownerKey && n.trashed).sort((a,b)=>(b.trashedAt||0)-(a.trashedAt||0));
@@ -2047,6 +2111,7 @@
       if(ds!=='annulee'){
         extra += ` <button class="small-btn" data-action="edit-membership" data-id="${m.id}">Modifier</button>`;
         extra += ` <button class="small-btn" data-action="refund-membership" data-id="${m.id}">Rembourser</button>`;
+        if(findStudentAccount(m.studentEmail)) extra += ` <button class="small-btn" data-action="open-transfer-membership" data-id="${m.id}">Transférer</button>`;
       }
       if(ds==='active'){
         extra += ` <button class="small-btn" data-action="revoke-membership" data-id="${m.id}">Révoquer</button>`;
@@ -2067,7 +2132,7 @@
         : `<button class="small-btn" data-action="open-student-detail" data-email="${escapeHtml(m.studentEmail)}" style="padding:0;border:none;background:none;text-decoration:underline;color:var(--chalk);font-weight:bold;">${escapeHtml(m.studentName)}</button>`;
       return `
         <tr>
-          <td>${nameLink}<br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(m.studentEmail)}</span></td>
+          <td>${nameLink}${childOfNoteHtml(m.studentEmail, m.profileId)}<br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(m.studentEmail)}</span></td>
           <td>${escapeHtml(m.planName)}${m.grantedFree?' <span style="color:var(--chalk-dim);font-size:11px;">(offert)</span>':''}${hiddenNote}${refundNote}</td>
           <td>${ds==='active' ? membershipDetail(m) : '—'}</td>
           <td>${membershipBadge(m)}</td>
@@ -2547,11 +2612,30 @@
     const bookings = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===email.toLowerCase() && b.status!=='annulee')
       .sort((a,b)=>a.dateIso.localeCompare(b.dateIso));
 
+    // Aperçu de l'abonnement actif juste sous le nom, toujours visible (même carte réduite).
+    // S'il y en a plusieurs (soi-même + famille, ou plusieurs formules actives), des flèches
+    // permettent de naviguer entre eux sans avoir à dérouler toute la liste plus bas.
+    const activeOwnMemberships = allOwnMemberships.filter(m=>!m.hiddenByStudent && membershipDisplayStatus(m)==='active');
+    let activeIdx = state.accountActiveMembershipIndex || 0;
+    if(activeIdx >= activeOwnMemberships.length) activeIdx = 0;
+    const currentMembershipHtml = (()=>{
+      if(!activeOwnMemberships.length) return `<p class="muted" style="color:var(--chalk-dim);font-size:12.5px;margin:4px 0 0;">Aucun abonnement actif</p>`;
+      const m = activeOwnMemberships[activeIdx];
+      const forWho = m.profileId ? ` <span style="color:var(--chalk-dim);">(pour ${escapeHtml(getProfileName(acct,m.profileId))})</span>` : '';
+      return `
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          ${activeOwnMemberships.length > 1 ? `<button class="small-btn" data-action="cycle-account-membership" data-dir="-1" style="padding:2px 8px;">‹</button>` : ''}
+          <span style="font-size:12.5px;color:var(--sage);">🎫 ${escapeHtml(m.planName)}${forWho} · ${membershipDetail(m)}</span>
+          ${activeOwnMemberships.length > 1 ? `<button class="small-btn" data-action="cycle-account-membership" data-dir="1" style="padding:2px 8px;">›</button>` : ''}
+        </div>
+      `;
+    })();
     const header = `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
         <div>
           <h3 style="margin:0;">Mon compte</h3>
           <p class="muted" style="color:var(--chalk-dim);margin-top:4px;">${escapeHtml(acct?acct.name:email)} <span style="color:var(--chalk-dim);">(${escapeHtml(email)})</span></p>
+          ${currentMembershipHtml}
         </div>
         <button class="small-btn" data-action="toggle-account-expand" title="${state.accountExpanded?'Réduire':'Agrandir'}" style="font-size:14px;padding:6px 10px;">${state.accountExpanded ? '▲' : '▼'}</button>
       </div>
@@ -2678,21 +2762,20 @@
       const coverBgStyle = `background:${activeNotebook.coverColor};${notebookTextureCss(activeNotebook.coverTexture)}`;
       return `
         ${backBtn}
+        ${myNotebooks.length > 1 ? `
+          <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
+            <select id="nb-select-cover" class="nb-switch-select">
+              ${myNotebooks.map(nb=>`<option value="${nb.id}" ${nb.id===activeNotebook.id?'selected':''}>${escapeHtml(nb.name)}</option>`).join('')}
+            </select>
+            <button class="small-btn" data-action="switch-notebook" data-select="nb-select-cover">Changer</button>
+          </div>
+        ` : ''}
         <div class="notebook-cover" style="${coverBgStyle}">
-          <div class="koss-logo-wrap" id="koss-logo-wrap" style="left:${activeNotebook.kossLogoX ?? 38}%;top:${activeNotebook.kossLogoY ?? 8}%;color:${activeNotebook.coverTextColor};">
+          <div class="koss-logo-wrap" id="koss-logo-wrap" style="left:${activeNotebook.kossLogoX ?? 50}%;top:${activeNotebook.kossLogoY ?? 8}%;color:${activeNotebook.coverTextColor};">
             <div class="koss-logo-main" id="koss-logo-main">K-OSS</div>
           </div>
           <div class="owner-name" style="color:${activeNotebook.coverTextColor};font-family:${textnoteFontCss(activeNotebook.titleFont||'marker')};font-size:${activeNotebook.titleSize||32}px;">${escapeHtml(activeNotebook.name)}</div>
           <p class="muted" style="color:${activeNotebook.coverTextColor};opacity:0.75;margin:0;font-family:${textnoteFontCss(activeNotebook.nameFont||'sans')};font-size:${activeNotebook.nameSize||14}px;">${escapeHtml(ownerName)}</p>
-          ${myNotebooks.length > 1 ? `
-            <div style="align-self:flex-start;text-align:left;width:100%;">
-              <label style="margin-top:14px;color:${activeNotebook.coverTextColor};opacity:0.8;">Changer de carnet</label>
-              <select id="nb-select-cover">
-                ${myNotebooks.map(nb=>`<option value="${nb.id}" ${nb.id===activeNotebook.id?'selected':''}>${escapeHtml(nb.name)}</option>`).join('')}
-              </select>
-              <div class="btn-row" style="justify-content:flex-start;margin-top:6px;"><button class="small-btn" data-action="switch-notebook" data-select="nb-select-cover">Valider</button></div>
-            </div>
-          ` : ''}
           <div class="btn-row" style="justify-content:center;">
             <button class="btn btn-primary" data-action="open-notebook-cover" style="margin-top:10px;">Ouvrir mon carnet</button>
             <button class="btn btn-secondary" data-action="new-notebook" style="margin-top:10px;">+ Nouveau carnet</button>
@@ -2741,7 +2824,7 @@
       ${backBtn}
       ${myNotebooks.length > 1 ? `
         <div class="btn-row" style="margin-top:0;margin-bottom:10px;">
-          <select id="nb-select-active">
+          <select id="nb-select-active" class="nb-switch-select">
             ${myNotebooks.map(nb=>`<option value="${nb.id}" ${nb.id===activeNotebook.id?'selected':''}>${escapeHtml(nb.name)}</option>`).join('')}
           </select>
           <button class="small-btn" data-action="switch-notebook" data-select="nb-select-active">Changer</button>
@@ -3039,6 +3122,18 @@
 
     const toConfirmMemberships = state.data.memberships.filter(m=>m.status==='paiement_declare');
 
+    // Revenu du mois en cours : mêmes règles que le rapport de ventes (statut ni en
+    // attente de paiement ni annulé compte comme "vendu"), filtré sur le mois calendaire.
+    const nowForRevenue = new Date();
+    const monthStart = new Date(nowForRevenue.getFullYear(), nowForRevenue.getMonth(), 1);
+    const monthLabel = nowForRevenue.toLocaleDateString('fr-CA', {month:'long', year:'numeric'});
+    const monthSales = state.data.memberships.filter(m=> m.status!=='attente_paiement' && m.status!=='annulee' && new Date(m.createdAt) >= monthStart);
+    const monthRevenue = monthSales.reduce((sum,m)=>{
+      const plan = state.data.membershipPlans.find(p=>p.id===m.planId);
+      const amountStr = m.planPrice || (plan?plan.price:'') || '';
+      return sum + parsePriceAmount(amountStr);
+    }, 0);
+
     const ADMIN_GROUPS = [
       {key:'bjj_adulte', label:'BJJ Adulte'},
       {key:'enfants', label:'BJJ Enfants'},
@@ -3213,6 +3308,14 @@
     ) : '';
 
     return `
+      <div style="background:var(--bg-panel);border:1px solid var(--sage);border-radius:10px;padding:14px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-family:var(--font-d);text-transform:uppercase;font-size:11px;letter-spacing:0.06em;color:var(--chalk-dim);">Revenu — ${escapeHtml(monthLabel)}</div>
+          <div style="font-family:var(--font-d);font-size:26px;color:var(--sage);">${monthRevenue.toFixed(2)} $</div>
+        </div>
+        <span class="muted" style="color:var(--chalk-dim);font-size:12px;">${monthSales.length} vente${monthSales.length>1?'s':''} ce mois-ci</span>
+      </div>
+
       ${adminCard('attendance-entry', 'Prise de présences', `
         <p class="muted" style="color:var(--chalk-dim);">Les instructeurs peuvent cocher qui est présent à un cours et ajouter des participants sur place.</p>
         <div class="btn-row"><button class="btn btn-primary" data-action="goto-attendance">Ouvrir la prise de présences</button></div>
@@ -3250,7 +3353,7 @@
               <td>${c?escapeHtml(c.name):'—'}</td>
               <td>${b.dateIso}</td>
               <td>
-                <button class="small-btn" data-action="mark-attendance-paid" data-id="${b.id}">A payé</button>
+                <button class="small-btn" data-action="open-mark-attendance-paid" data-id="${b.id}">A payé</button>
                 <button class="small-btn" data-action="cancel-booking" data-id="${b.id}">Retirer</button>
               </td>
             </tr>`;
@@ -3281,7 +3384,7 @@
                 <div class="btn-row" style="margin-top:8px;">
                   <button class="small-btn" style="background:var(--sage);border-color:var(--sage);color:var(--ink);" data-action="approve-shared-item" data-id="${it.id}">Approuver</button>
                   <button class="small-btn" data-action="refuse-shared-item" data-id="${it.id}">Refuser</button>
-                  <button class="small-btn" style="background:var(--coral);border-color:var(--coral);color:var(--ink);" data-action="flag-shared-item" data-id="${it.id}">🚩 Signaler comme inapproprié</button>
+                  <button class="small-btn" style="background:var(--bg-tile);border:1px solid var(--coral);color:var(--coral);font-weight:700;" data-action="confirm-flag-shared-item" data-id="${it.id}">🚩 Signaler comme inapproprié</button>
                 </div>
               </div>
             `;}).join('')}
@@ -3309,6 +3412,8 @@
                 <p style="font-size:12px;color:var(--chalk-dim);margin:6px 0;">De : <span style="color:var(--chalk);">${escapeHtml(ownerKeyLabel(it.senderOwnerKey))}</span><br>À : <span style="color:var(--chalk);">${it.recipientType==='coach' ? escapeHtml((state.data.managers.find(mg=>mg.id===it.recipientManagerId)||{}).name||'Coach inconnu') : escapeHtml(ownerKeyLabel(it.recipientOwnerKey))}</span></p>
                 <div class="btn-row" style="margin-top:8px;">
                   <button class="small-btn" data-action="archive-shared-item" data-id="${it.id}">Marquer comme traité</button>
+                  <button class="small-btn" data-action="transfer-flagged-to-notes" data-id="${it.id}">Transférer dans les notes de l’expéditeur</button>
+                  <button class="small-btn" data-action="unflag-shared-item" data-id="${it.id}">Annuler le signalement</button>
                 </div>
               </div>
             `).join('')}
@@ -3369,7 +3474,7 @@
         if(!state.expandedStickerGroups) state.expandedStickerGroups = {};
         const q = normalizeStr(state.stickerSearchQuery||'');
         const visible = q ? state.data.stickers.filter(s=>
-          normalizeStr(s.name||'').includes(q) || normalizeStr(categoryLabel(s.category)||'').includes(q)
+          normalizeStr(s.name||'').includes(q) || normalizeStr(s.category||'').includes(q)
         ) : state.data.stickers;
         const stickerLi = s => `
           <li>
@@ -3380,7 +3485,7 @@
             </span>
           </li>
         `;
-        const groups = allCategories().map(cat=>({key:cat.key, label:cat.label}));
+        const groups = usedStickerCategories().map(cat=>({key:cat, label:cat}));
         groups.push({key:'', label:'Sans catégorie'});
         const groupRows = groups.map(g=>{
           const items = visible.filter(s=>(s.category||'')===g.key);
@@ -3464,7 +3569,7 @@
             <div style="max-height:45vh;overflow:auto;border:1px solid var(--border);border-radius:8px;">
               <table style="margin:0;">
                 <tr><th>Étudiant</th><th>Catégorie</th><th>Formule</th><th>Montant payé</th><th>Date d’achat</th><th>Date de début</th><th>Date de fin</th></tr>
-                ${rows.map(r=>`<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.category)}</td><td>${escapeHtml(r.planName)}</td><td>${escapeHtml(r.amountDisplay)}</td><td>${escapeHtml(r.purchaseDate)}</td><td>${escapeHtml(r.startDate)}</td><td>${escapeHtml(r.endDate)}</td></tr>`).join('')}
+                ${rows.map(r=>`<tr><td>${studentLinkHtml(r.studentName, r.email, r.profileId)}${childOfNoteHtml(r.email, r.profileId)}</td><td>${escapeHtml(r.category)}</td><td>${escapeHtml(r.planName)}</td><td>${escapeHtml(r.amountDisplay)}</td><td>${escapeHtml(r.purchaseDate)}</td><td>${escapeHtml(r.startDate)}</td><td>${escapeHtml(r.endDate)}</td></tr>`).join('')}
               </table>
             </div>
             <div class="btn-row">
@@ -3506,7 +3611,7 @@
             <div style="max-height:55vh;overflow:auto;border:1px solid var(--border);border-radius:8px;">
               <table style="margin:0;">
                 <tr><th>Étudiant</th><th>Courriel</th><th>Date intro</th><th>Abonnement suivant</th><th>Nb présences depuis</th><th>Cours le plus visité</th></tr>
-                ${rows.map(r=>`<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.introDate)}</td><td style="${r.nextPlanName?'':'color:var(--coral);'}">${escapeHtml(r.nextPlanName||'Aucun (pas repris d’abonnement)')}</td><td>${r.visitCount}</td><td>${escapeHtml(r.topClass||'—')}</td></tr>`).join('')}
+                ${rows.map(r=>`<tr><td>${studentLinkHtml(r.studentName, r.email, r.profileId)}${childOfNoteHtml(r.email, r.profileId)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.introDate)}</td><td style="${r.nextPlanName?'':'color:var(--coral);'}">${escapeHtml(r.nextPlanName||'Aucun (pas repris d’abonnement)')}</td><td>${r.visitCount}</td><td>${escapeHtml(r.topClass||'—')}</td></tr>`).join('')}
               </table>
             </div>
             <div class="btn-row">
@@ -3546,7 +3651,7 @@
             <div style="max-height:55vh;overflow:auto;border:1px solid var(--border);border-radius:8px;">
               <table style="margin:0;">
                 <tr><th>Étudiant</th><th>Courriel</th><th>Dernière visite</th><th>Absent depuis</th></tr>
-                ${rows.map(r=>`<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.lastVisit||'Jamais venu')}</td><td>${r.daysSince==null?'—':r.daysSince+' jours'}</td></tr>`).join('')}
+                ${rows.map(r=>`<tr><td>${studentLinkHtml(r.studentName, r.email, r.profileId)}${childOfNoteHtml(r.email, r.profileId)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.lastVisit||'Jamais venu')}</td><td>${r.daysSince==null?'—':r.daysSince+' jours'}</td></tr>`).join('')}
               </table>
             </div>
             <div class="btn-row">
@@ -4039,10 +4144,32 @@
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Offrir un abonnement gratuit</h3>
-          <label>Nom de l\u2019étudiant</label>
+          ${prefill.prefillEmail ? `
+            <label>Étudiant</label>
+            <p style="margin:4px 0 10px;">Sélectionné : <strong style="color:var(--chalk);">${escapeHtml(prefill.prefillName||prefill.prefillEmail)}</strong>${prefill.prefillProfileId?' <span style="color:var(--chalk-dim);font-size:11px;">(enfant)</span>':''} <button type="button" class="small-btn" data-action="clear-grant-recipient">Changer</button></p>
+          ` : `
+            <label>Chercher un étudiant ou un enfant existant (optionnel)</label>
+            <input id="grant-search-input" placeholder="Nom de l'étudiant·e..." value="${escapeHtml(state.grantSearchQuery||'')}">
+            <div class="btn-row"><button class="btn btn-secondary" data-action="run-grant-search">Chercher</button></div>
+            ${(()=>{
+              const q = state.grantSearchQuery||'';
+              if(!q) return '';
+              const results = searchStudentAccounts(q);
+              if(!results.length) return '<p class="muted" style="color:var(--chalk-dim);margin-top:8px;">Aucun résultat.</p>';
+              return `<ul class="link-list" style="margin-top:8px;">${results.map(r=>{
+                if(r.type==='child'){
+                  return `<li><span>${escapeHtml(r.name)} <span style="color:var(--chalk-dim);font-size:11px;">(enfant de ${escapeHtml(r.parentName)})</span></span><span><button class="small-btn" data-action="pick-grant-recipient" data-email="${escapeHtml(r.parentEmail)}" data-name="${escapeHtml(r.name)}" data-profile="${r.memberId}">Choisir</button></span></li>`;
+                }
+                return `<li><span>${escapeHtml(r.name)}</span><span><button class="small-btn" data-action="pick-grant-recipient" data-email="${escapeHtml(r.email)}" data-name="${escapeHtml(r.name)}" data-profile="">Choisir</button></span></li>`;
+              }).join('')}</ul>`;
+            })()}
+          `}
+          <label style="margin-top:10px;">Nom de l\u2019étudiant${prefill.prefillEmail?'':' (si pas trouvé ci-dessus)'}</label>
           <input id="g-name" placeholder="Nom complet" value="${escapeHtml(prefill.prefillName||'')}">
           <label>Courriel</label>
           <input id="g-email" type="email" placeholder="courriel@exemple.com" value="${escapeHtml(prefill.prefillEmail||'')}">
+          ${prefill.prefillProfileId ? `<p class="muted" style="color:var(--chalk-dim);font-size:12px;">Abonnement pour l\u2019enfant \u2014 utilise le courriel du parent ci-dessus.</p>` : ''}
+          <input type="hidden" id="g-profile" value="${escapeHtml(prefill.prefillProfileId||'')}">
           <label>Formule</label>
           <select id="g-plan">${plans.map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${p.type==='illimite'?p.durationDays+' jours':p.creditsCount+' cours'})</option>`).join('') || '<option value="">Aucune formule créée</option>'}</select>
           <div class="btn-row">
@@ -4220,6 +4347,70 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'transfer-membership'){
+      const {id} = m.payload;
+      const mem = state.data.memberships.find(x=>x.id===id);
+      const acct = mem ? findStudentAccount(mem.studentEmail) : null;
+      if(!mem || !acct){
+        html = `<div class="modal"><button class="close-x" data-action="close-modal">✕</button><h3>Abonnement introuvable</h3></div>`;
+      } else {
+        const currentProfileId = mem.profileId || null;
+        const options = [{profileId:null, name:acct.name}].concat((acct.familyMembers||[]).map(f=>({profileId:f.id, name:f.name})));
+        const destinations = options.filter(o=>o.profileId !== currentProfileId);
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Transférer cet abonnement</h3>
+            <p class="muted">${escapeHtml(mem.planName)} — actuellement associé à <strong style="color:var(--chalk);">${escapeHtml(mem.studentName)}</strong>${currentProfileId?' <span style="color:var(--chalk-dim);">(enfant de '+escapeHtml(acct.name)+')</span>':''}.</p>
+            ${destinations.length ? `
+              <label>Transférer vers</label>
+              <select id="transfer-target-profile">
+                ${destinations.map(o=>`<option value="${o.profileId||''}">${escapeHtml(o.name)}${o.profileId?' (enfant)':' (compte principal)'}</option>`).join('')}
+              </select>
+              <div class="btn-row">
+                <button class="btn btn-primary" data-action="submit-transfer-membership" data-id="${id}">Transférer</button>
+                <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+              </div>
+            ` : `<p class="muted" style="color:var(--chalk-dim);">Aucune autre destination possible sur ce compte (ajoutez un enfant d’abord).</p>
+              <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>`}
+          </div>
+        `;
+      }
+    } else if(m.type === 'confirm-mark-attendance-paid'){
+      const {id} = m.payload;
+      const b = state.data.bookings.find(bk=>bk.id===id);
+      if(!b){
+        html = `<div class="modal"><button class="close-x" data-action="close-modal">✕</button><h3>Réservation introuvable</h3></div>`;
+      } else {
+        const c = state.data.classes.find(cl=>cl.id===b.classId);
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Confirmer le paiement</h3>
+            <p class="muted">${studentLinkHtml(b.studentName, b.studentEmail, b.profileId)} — ${c?escapeHtml(c.name):'—'} du ${b.dateIso}${b.addedByManagerName ? '<br>Ajouté sans abonnement par : '+escapeHtml(b.addedByManagerName) : ''}</p>
+            <label>Note sur ce paiement (obligatoire)</label>
+            <textarea id="mark-paid-note" rows="3" placeholder="ex. Payé comptant 20$ le ${todayIso()}"></textarea>
+            <p class="muted" style="color:var(--chalk-dim);font-size:11px;">Cette note sera ajoutée aux « Notes sur l’abonnement » du dossier de l’étudiant, avec la date et ton nom.</p>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="submit-mark-attendance-paid" data-id="${id}">Confirmer le paiement</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          </div>
+        `;
+      }
+    } else if(m.type === 'confirm-flag-shared-item'){
+      const {id} = m.payload;
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>🚩 Signaler ce message ?</h3>
+          <p class="muted">Êtes-vous certain(e) de vouloir signaler ce message comme inapproprié ? La confidentialité de l’expéditeur ET de la personne qui le recevait sera alors levée pour vous — vous devrez en assumer la responsabilité. Cette exception n’existe que pour la politique de tolérance zéro envers l’intimidation ou les abus.</p>
+          <div class="btn-row">
+            <button class="btn btn-danger" data-action="flag-shared-item" data-id="${id}">Oui, signaler</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
     } else if(m.type === 'confirm-cancel-booking'){
       const {id} = m.payload;
       const b = state.data.bookings.find(bk=>bk.id===id);
@@ -4272,6 +4463,8 @@
               <p style="font-size:13px;margin:4px 0 0;color:var(--chalk);">✉️ Courriel (urgence) : <strong>${escapeHtml(fm.email||'—')}</strong></p>
               <p style="font-size:13px;margin:4px 0 0;color:var(--chalk);">📞 Téléphone (urgence) : <strong>${escapeHtml(fm.phone||'—')}</strong></p>
             </div>
+            ${unpaidAttendanceHtml(parentAcct.email, fm.id)}
+            ${studentVisitsHtml(parentAcct.email, fm.id, !!(m.payload && m.payload.showVisits))}
 
             <label style="margin-top:14px;">Date de fête</label>
             <input id="cd-birthday" type="date" value="${fm.birthday||''}">
@@ -4307,6 +4500,9 @@
 
             <label style="margin-top:14px;">Abonnements actifs (${activeMemberships.length})</label>
             ${activeMemberships.length ? activeMemberships.map(m2=>`<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m2.planName)} — ${membershipBadge(m2)} ${membershipDisplayStatus(m2)==='active' ? '· '+membershipDetail(m2) : ''}</div>`).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun abonnement actif.</p>'}
+            <div class="btn-row"><button class="btn btn-primary" data-action="grant-membership-for" data-email="${escapeHtml(parentAcct.email)}" data-name="${escapeHtml(fm.name)}" data-profile="${fm.id}">Offrir un abonnement</button></div>
+
+            <div class="btn-row"><button class="btn btn-primary" data-action="open-sticker-grant-picker" data-email="${escapeHtml(parentAcct.email)}" data-profile="${fm.id}">🎁 Attribuer un autocollant</button></div>
 
             <div class="btn-row">
               <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
@@ -4337,6 +4533,8 @@
             <h3>${escapeHtml(acct.name)}</h3>
             <p class="muted">${escapeHtml(acct.email)}${acct.phone?' · '+escapeHtml(acct.phone):''}</p>
             <div class="btn-row"><button class="btn btn-primary" data-action="grant-membership-for" data-email="${escapeHtml(email)}" data-name="${escapeHtml(acct.name)}">Offrir un abonnement</button></div>
+            ${unpaidAttendanceHtml(email, null)}
+            ${studentVisitsHtml(email, null, !!(m.payload && m.payload.showVisits))}
 
             <label style="margin-top:14px;">Date de fête</label>
             <input id="sd-birthday" type="date" value="${acct.birthday||''}">
@@ -4425,8 +4623,8 @@
             <h3>Rapport — ${rows.length} étudiant(s)</h3>
             <div style="max-height:50vh;overflow:auto;border:1px solid var(--border);border-radius:8px;">
               <table style="margin:0;">
-                <tr>${columns.map(k=>`<th>${fieldLabels[k]}</th>`).join('')}</tr>
-                ${rows.map(r=>`<tr>${columns.map(k=>`<td>${escapeHtml(String(r[k]==null?'':r[k]))}</td>`).join('')}</tr>`).join('')}
+                <tr><th>Étudiant</th>${columns.map(k=>`<th>${fieldLabels[k]}</th>`).join('')}</tr>
+                ${rows.map(r=>`<tr><td>${studentLinkHtml(r.name, r.email, r.profileId)}${childOfNoteHtml(r.email, r.profileId)}</td>${columns.map(k=>`<td>${escapeHtml(String(r[k]==null?'':r[k]))}</td>`).join('')}</tr>`).join('')}
               </table>
             </div>
             <div class="btn-row">
@@ -4558,7 +4756,7 @@
     } else if(m.type === 'sticker-picker'){
       const email = state.studentSession ? state.studentSession.email : '';
       const studioStickers = stickersAvailableForStudent(email);
-      const gifted = giftedStickersForStudent(email);
+      const gifted = giftedStickersForStudent(email, state.notebookProfileId || null);
       const giftedIds = new Set(gifted.map(s=>s.id));
       const studioOnly = studioStickers.filter(s=>!giftedIds.has(s.id));
       const grid = (list)=> `
@@ -4628,7 +4826,7 @@
             `}
           `}
           <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
-            <input type="checkbox" id="share-anonymous" style="width:auto;">
+            <input type="checkbox" id="share-anonymous" data-action="toggle-share-anonymous" style="width:auto;" ${state.shareAnonymous?'checked':''}>
             <span>Envoyer de façon anonyme</span>
           </label>
           <p class="muted" style="color:var(--chalk-dim);font-size:11px;">Une note anonyme est d’abord vérifiée par un·e gestionnaire avant d’être livrée (pour éviter les abus) — une note signée est livrée immédiatement.</p>
@@ -4691,19 +4889,21 @@
         </div>
       `;
     } else if(m.type === 'sticker-grant-picker'){
-      const {email} = m.payload;
+      const {email, profileId} = m.payload;
+      const pid = profileId || null;
       const acct = findStudentAccount(email);
-      const grantedIds = new Set(state.data.stickerGrants.filter(g=>g.email.toLowerCase()===email.toLowerCase()).map(g=>g.stickerId));
+      const recipientName = pid ? getProfileName(acct||{}, pid) : (acct?acct.name:email);
+      const grantedIds = new Set(state.data.stickerGrants.filter(g=>g.email.toLowerCase()===email.toLowerCase() && (g.profileId||null)===pid).map(g=>g.stickerId));
       html = `
         <div class="modal" style="max-width:420px;">
           <button class="close-x" data-action="close-modal">✕</button>
-          <h3>Attribuer un autocollant à ${escapeHtml(acct?acct.name:email)}</h3>
+          <h3>Attribuer un autocollant à ${escapeHtml(recipientName)}</h3>
           <label style="margin-top:6px;">Petit message (optionnel)</label>
           <input id="grant-message-input" placeholder="ex. Bravo pour ta ceinture !" style="margin-bottom:10px;">
           ${state.data.stickers.length ? `
             <div class="sticker-picker-grid">
               ${state.data.stickers.map(s=>`
-                <div class="sticker-picker-item" data-action="grant-sticker" data-sticker="${s.id}" data-email="${escapeHtml(email)}" style="${grantedIds.has(s.id)?'opacity:0.4;':''}">
+                <div class="sticker-picker-item" data-action="grant-sticker" data-sticker="${s.id}" data-email="${escapeHtml(email)}" data-profile="${pid?escapeHtml(pid):''}" style="${grantedIds.has(s.id)?'opacity:0.4;':''}">
                   <img src="${s.image}">
                   <div class="sname">${escapeHtml(s.name)}${grantedIds.has(s.id)?' ✓':''}</div>
                 </div>
@@ -4726,10 +4926,10 @@
           <label>Nom</label>
           <input id="sticker-name" value="${entry?escapeHtml(entry.name):''}" placeholder="ex. Ceinture noire">
           <label style="margin-top:10px;">Catégorie</label>
-          <select id="sticker-category">
-            <option value="" ${!entry||!entry.category?'selected':''}>Sans catégorie</option>
-            ${allCategories().map(cat=>`<option value="${cat.key}" ${entry&&entry.category===cat.key?'selected':''}>${escapeHtml(cat.label)}</option>`).join('')}
-          </select>
+          <input id="sticker-category" list="sticker-category-list" placeholder="Tape ou choisis une catégorie (optionnel)" value="${escapeHtml(entry&&entry.category?entry.category:'')}">
+          <datalist id="sticker-category-list">
+            ${usedStickerCategories().map(cat=>`<option value="${escapeHtml(cat)}">`).join('')}
+          </datalist>
           <label style="margin-top:10px;">Image</label>
           <input type="file" id="sticker-image-file" accept="image/*">
           ${entry && entry.image ? `<img src="${entry.image}" style="max-width:80px;margin-top:6px;border-radius:6px;display:block;">` : ''}
@@ -4808,6 +5008,25 @@
             <button class="btn btn-primary" data-action="save-notebook-settings" data-notebook="${notebookId}">Enregistrer</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
+          ${getNotebooksForOwner(nb.ownerKey).length > 1 ? `
+            <div class="btn-row" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
+              <button class="btn btn-danger" data-action="delete-notebook" data-notebook="${notebookId}">🗑 Supprimer ce carnet</button>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    } else if(m.type === 'confirm-delete-notebook'){
+      const {notebookId} = m.payload;
+      const nb = state.data.notebooks.find(x=>x.id===notebookId);
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Supprimer « ${escapeHtml(nb?nb.name:'')} » ?</h3>
+          <p class="muted">Toutes les pages et notes de ce carnet seront supprimées définitivement. Cette action est irréversible.</p>
+          <div class="btn-row">
+            <button class="btn btn-danger" data-action="confirm-delete-notebook-yes" data-notebook="${notebookId}">Oui, supprimer</button>
+            <button class="btn btn-secondary" data-action="open-notebook-settings" data-notebook="${notebookId}">Annuler</button>
+          </div>
         </div>
       `;
     } else if(m.type === 'family-member-form'){
@@ -4877,6 +5096,20 @@
           <div class="btn-row">
             <button class="btn btn-danger" data-action="delete-family-member" data-id="${memberId}">Oui, retirer</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'pay-onsite-info'){
+      const {email, isNew, introStart} = m.payload;
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>📞 Paiement sur place</h3>
+          ${introStart ? `<p style="font-size:13px;line-height:1.6;">Merci ! Tes 5 cours sont réservés.</p>` : ''}
+          <p style="font-size:13px;line-height:1.6;">Pour régler ton paiement, appelle-nous pour prendre rendez-vous ou présente-toi directement pendant les heures de cours.</p>
+          <p style="font-size:13px;line-height:1.6;color:var(--coral);font-weight:600;">Ton abonnement restera inactif tant que le paiement n’aura pas été réglé.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="close-pay-onsite-info" data-email="${escapeHtml(email)}" data-new="${isNew?'1':''}">J’ai compris</button>
           </div>
         </div>
       `;
@@ -5195,6 +5428,14 @@
   function escapeHtml(str){
     return String(str||'').replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
   }
+  // Pour les rapports : petite mention "(enfant de X)" quand la ligne concerne un enfant,
+  // afin de distinguer les profils enfants des comptes parents dans les tableaux.
+  function childOfNoteHtml(email, profileId){
+    if(!profileId || !email) return '';
+    const acct = findStudentAccount(email);
+    if(!acct) return '';
+    return `<br><span style="color:var(--chalk-dim);font-size:11px;">Enfant de ${escapeHtml(acct.name)}</span>`;
+  }
   function studentLinkHtml(name, email, profileId){
     const safeName = escapeHtml(name||'—');
     if(!email) return safeName;
@@ -5407,7 +5648,7 @@
       const rect = cover.getBoundingClientRect();
       const dxPct = (dxPx / rect.width) * 100;
       const dyPct = (dyPx / rect.height) * 100;
-      let newLeft = Math.max(0, Math.min(88, startLeft + dxPct));
+      let newLeft = Math.max(10, Math.min(90, startLeft + dxPct));
       let newTop = Math.max(0, Math.min(88, startTop + dyPct));
       wrap.style.left = newLeft + '%';
       wrap.style.top = newTop + '%';
@@ -5466,13 +5707,22 @@
       }
     }
     else if(action==='goto-account'){ state.view='account'; state.accountMenuOpen=false; render(); }
+    else if(action==='cycle-account-membership'){
+      const email = state.studentSession ? state.studentSession.email : '';
+      const dir = parseInt(e.currentTarget.dataset.dir, 10) || 1;
+      const count = state.data.memberships.filter(m=>m.studentEmail.toLowerCase()===email.toLowerCase() && !m.hiddenByStudent && membershipDisplayStatus(m)==='active').length;
+      const cur = state.accountActiveMembershipIndex || 0;
+      state.accountActiveMembershipIndex = count ? ((cur + dir) % count + count) % count : 0;
+      render();
+    }
     else if(action==='toggle-account-menu'){ state.accountMenuOpen = !state.accountMenuOpen; render(); }
     else if(action==='toggle-manager-menu'){ state.managerMenuOpen = !state.managerMenuOpen; render(); }
     else if(action==='admin-logout'){
       state.adminUnlocked = false;
       state.currentManagerId = null;
       state.managerMenuOpen = false;
-      state.view = 'student';
+      // Sur l'URL ?admin, revenir à l'écran de PIN admin plutôt qu'à la page élève.
+      state.view = ADMIN_URL_FLAG ? 'admin-login' : 'student';
       render();
     }
     else if(action==='goto-manager-account'){
@@ -5667,8 +5917,15 @@
       state.shareRecipientType = 'coach';
       state.shareSearchQuery = '';
       state.shareSelectedRecipient = null;
+      state.shareAnonymous = false;
       state.modal = {type:'share-form', payload:{entryId, ownerKey}};
       render();
+    }
+    else if(action==='toggle-share-anonymous'){
+      // Ne pas re-render ici : le navigateur a déjà basculé la case à cocher, et un
+      // render() la régénérerait à l'identique — on garde juste l'état en mémoire pour
+      // que choisir un destinataire ensuite ne la décoche pas.
+      state.shareAnonymous = !!e.currentTarget.checked;
     }
     else if(action==='set-share-recipient-type'){
       state.shareRecipientType = e.currentTarget.dataset.value;
@@ -5822,12 +6079,57 @@
       const item = state.data.sharedItems.find(s=>s.id===id);
       if(item){ item.status = 'refused'; item.decidedAt = Date.now(); await persist(); render(); showToast('Note refusée.'); }
     }
+    else if(action==='confirm-flag-shared-item'){
+      state.modal = {type:'confirm-flag-shared-item', payload:{id}};
+      render();
+    }
     else if(action==='flag-shared-item'){
       // Seule exception à l'anonymat : un message jugé inacceptable — l'origine et la
       // destination deviennent visibles dans la carte "Messages signalés inappropriés"
       // (politique de tolérance zéro), voir flaggedInappropriateItems()/ownerKeyLabel().
       const item = state.data.sharedItems.find(s=>s.id===id);
-      if(item){ item.status = 'refused'; item.inappropriate = true; item.decidedAt = Date.now(); await persist(); render(); showToast('Message signalé — origine et destination visibles ci-dessous.'); }
+      if(item){ item.status = 'refused'; item.inappropriate = true; item.decidedAt = Date.now(); await persist(); }
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Message signalé — origine et destination visibles ci-dessous.');
+    }
+    else if(action==='unflag-shared-item'){
+      // Annule un signalement fait par erreur : remet le message dans la file de
+      // modération normale (anonymat restauré) plutôt que de le supprimer.
+      const item = state.data.sharedItems.find(s=>s.id===id);
+      if(item){
+        item.inappropriate = false;
+        item.status = 'pending_review';
+        item.decidedAt = null;
+        await persist();
+        render();
+        showToast('Signalement annulé — le message est retourné en approbation.');
+      }
+    }
+    else if(action==='transfer-flagged-to-notes'){
+      // Copie le contenu du message signalé dans les notes privées (Avis) de la personne
+      // qui l'a envoyé, pour garder une trace même après avoir traité/archivé le signalement.
+      const item = state.data.sharedItems.find(s=>s.id===id);
+      if(!item){ return; }
+      const {email, profileId} = parseOwnerKey(item.senderOwnerKey);
+      const acct = findStudentAccount(email);
+      if(!acct){ showToast('Compte de l’expéditeur introuvable.'); return; }
+      let contentDesc = '';
+      if(item.kind === 'sticker'){
+        const sticker = state.data.stickers.find(x=>x.id===item.stickerId);
+        contentDesc = 'Autocollant envoyé : ' + (sticker ? sticker.name : 'inconnu');
+      } else {
+        contentDesc = (item.text||'').trim();
+      }
+      const dateStr = new Date().toLocaleDateString('fr-CA');
+      const line = `[${dateStr}] Message signalé (${item.recipientType==='coach'?'à un coach':'à un’étudiant’e'}) : "${contentDesc}"`;
+      const target = profileId ? (acct.familyMembers||[]).find(f=>f.id===profileId) : acct;
+      if(!target){ showToast('Profil de l’expéditeur introuvable.'); return; }
+      if(!target.notes) target.notes = {};
+      target.notes.avis = (target.notes.avis ? target.notes.avis + '\n' : '') + line;
+      await persist();
+      render();
+      showToast('Transféré dans les notes (Avis) de ' + (target.name||acct.name) + '.');
     }
     else if(action==='archive-shared-item'){
       const item = state.data.sharedItems.find(s=>s.id===id);
@@ -5885,7 +6187,7 @@
       if(!image){ showToast('Ajoute une image pour cet autocollant.'); return; }
       const pendingAll = state.modal.payload.pendingAll;
       const assignedEmails = pendingAll ? [] : state.modal.payload.pendingAssigned.map(a=>a.email.toLowerCase());
-      const category = document.getElementById('sticker-category').value;
+      const category = document.getElementById('sticker-category').value.trim();
       if(existing){
         existing.name = name; existing.image = image; existing.assignedEmails = assignedEmails; existing.availableToAll = pendingAll; existing.category = category;
       } else {
@@ -5945,6 +6247,32 @@
       const nb = getOrCreateActiveNotebook(ownerKey);
       state.modal = {type:'notebook-settings', payload:{notebookId:nb.id}};
       render();
+    }
+    else if(action==='delete-notebook'){
+      const notebookId = e.currentTarget.dataset.notebook;
+      state.modal = {type:'confirm-delete-notebook', payload:{notebookId}};
+      render();
+    }
+    else if(action==='confirm-delete-notebook-yes'){
+      const notebookId = e.currentTarget.dataset.notebook;
+      const nb = state.data.notebooks.find(x=>x.id===notebookId);
+      if(!nb){ state.modal = null; closeModalDom(); render(); return; }
+      const ownerKey = nb.ownerKey;
+      const remaining = getNotebooksForOwner(ownerKey).filter(x=>x.id!==notebookId);
+      if(!remaining.length){
+        showToast('Impossible de supprimer votre dernier carnet.');
+        state.modal = null; closeModalDom(); render();
+        return;
+      }
+      state.data.notebooks = state.data.notebooks.filter(x=>x.id!==notebookId);
+      state.data.notebookEntries = state.data.notebookEntries.filter(n=>n.notebookId!==notebookId);
+      if(state.notebookActiveId === notebookId) state.notebookActiveId = remaining[0].id;
+      state.notebookActivePage = 1;
+      state.notebookFilterCategory = null;
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Carnet supprimé.');
     }
     else if(action==='save-notebook-settings'){
       const notebookId = e.currentTarget.dataset.notebook;
@@ -6068,7 +6396,8 @@
         const amount = parsePriceAmount(amountStr);
         const cats = m.categories||[];
         return {
-          studentName: m.studentName, category: cats.length>1 ? 'Plusieurs' : (cats[0]?categoryLabel(cats[0]):'—'),
+          studentName: m.studentName, email: m.studentEmail, profileId: m.profileId||null,
+          category: cats.length>1 ? 'Plusieurs' : (cats[0]?categoryLabel(cats[0]):'—'),
           _categoryKey: cats.length===1 ? cats[0] : (cats.length>1 ? 'ALL_UNLIMITED' : ''),
           planName: m.planName, amountDisplay: amountStr||'—', amount,
           purchaseDate: isoDate(new Date(m.createdAt)), startDate: m.startDate||'', endDate: m.endDate||''
@@ -6127,7 +6456,7 @@
           if(count>topCount){ topCount = count; const c = state.data.classes.find(cl=>cl.id===classId); topClass = c?c.name:''; }
         });
         return {
-          studentName: m.studentName, email: m.studentEmail, introDate: introDateIso,
+          studentName: m.studentName, email: m.studentEmail, profileId: pid, introDate: introDateIso,
           nextPlanName: next ? next.planName : '', visitCount: relevantBookings.length, topClass
         };
       });
@@ -6168,7 +6497,7 @@
           daysSince = Math.round((todayDate - d) / 86400000);
         }
         if(daysSince===null || daysSince>=minDays){
-          rows.push({studentName:pr.name, email:pr.email, lastVisit, daysSince});
+          rows.push({studentName:pr.name, email:pr.email, profileId:pr.profileId||null, lastVisit, daysSince});
         }
       });
       rows.sort((a,b)=>{
@@ -6611,9 +6940,15 @@
         }
       }
       await persist();
+      state.modal = {type:'pay-onsite-info', payload:{email, isNew, introStart: !!introStart}};
+      closeModalDom();
+      render();
+    }
+    else if(action==='close-pay-onsite-info'){
+      const email = e.currentTarget.dataset.email;
+      const isNew = e.currentTarget.dataset.new === '1';
       state.modal = null; closeModalDom();
       render();
-      showToast(introStart ? 'Merci ! Vos 5 cours sont réservés. Le studio confirmera votre paiement sous peu.' : 'Merci ! Le studio confirmera votre abonnement sous peu. (Confirmation par courriel non disponible pour l\u2019instant — voir avec le studio.)');
       if(isNew){
         state.modal = {type:'ask-phone', payload:{email}};
         render();
@@ -6779,28 +7114,37 @@
       if(!checked.length){ showToast('Choisissez au moins une colonne.'); return; }
       const planFilterId = document.getElementById('report-plan-filter').value;
       const today = todayIso();
-      let reportRows = state.data.studentAccounts.map(acct=>{
-        const email = acct.email;
-        const nameParts = (acct.name||'').trim().split(/\s+/);
-        const derivedFirst = acct.firstName || nameParts[0] || '';
-        const derivedLast = acct.lastName || nameParts.slice(1).join(' ') || '';
-        const pastConfirmed = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===email.toLowerCase() && b.status==='confirmee' && b.dateIso<=today);
-        const cancelCount = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===email.toLowerCase() && b.status==='annulee').length;
+      // Un compte parent peut avoir des enfants (familyMembers) : on génère une ligne pour
+      // le parent ET une ligne par enfant, chacune avec ses propres statistiques (filtrées
+      // par profileId), pour que les enfants apparaissent dans le rapport eux aussi.
+      const computeReportRow = (email, profileId, displayName, birthday, createdAt, firstNameOverride, lastNameOverride)=>{
+        const pid = profileId || null;
+        const pastConfirmed = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===email.toLowerCase() && (b.profileId||null)===pid && b.status==='confirmee' && b.dateIso<=today);
+        const cancelCount = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===email.toLowerCase() && (b.profileId||null)===pid && b.status==='annulee').length;
         const visitDates = pastConfirmed.map(b=>b.dateIso).sort();
-        const memberships = state.data.memberships.filter(m2=>m2.studentEmail.toLowerCase()===email.toLowerCase());
+        const memberships = state.data.memberships.filter(m2=>m2.studentEmail.toLowerCase()===email.toLowerCase() && (m2.profileId||null)===pid);
         const activeM = memberships.filter(m2=>membershipDisplayStatus(m2)==='active');
         const pastM = memberships.filter(m2=>membershipDisplayStatus(m2)!=='active');
+        const nameParts = (displayName||'').trim().split(/\s+/);
         return {
           _hasFilterPlan: activeM.some(m2=>m2.planId===planFilterId),
-          lastName: derivedLast, firstName: derivedFirst, email: email,
-          registeredDate: acct.createdAt ? isoDate(new Date(acct.createdAt)) : '',
+          name: displayName, email, profileId: pid,
+          lastName: lastNameOverride || nameParts.slice(1).join(' ') || '', firstName: firstNameOverride || nameParts[0] || '',
+          registeredDate: createdAt ? isoDate(new Date(createdAt)) : '',
           firstVisit: visitDates[0]||'', lastVisit: visitDates[visitDates.length-1]||'',
           visitCount: pastConfirmed.length, cancelCount: cancelCount,
           activeMemberships: activeM.map(m2=>m2.planName).join('; '),
           pastMemberships: pastM.map(m2=>m2.planName).join('; '),
           membershipType: activeM.map(m2=>m2.type).join('; '),
-          birthday: acct.birthday||''
+          birthday: birthday||''
         };
+      };
+      let reportRows = [];
+      state.data.studentAccounts.forEach(acct=>{
+        reportRows.push(computeReportRow(acct.email, null, acct.name, acct.birthday, acct.createdAt, acct.firstName, acct.lastName));
+        (acct.familyMembers||[]).forEach(fm=>{
+          reportRows.push(computeReportRow(acct.email, fm.id, fm.name, fm.birthday, acct.createdAt));
+        });
       });
       if(planFilterId) reportRows = reportRows.filter(r=>r._hasFilterPlan);
       reportRows.forEach(r=>delete r._hasFilterPlan);
@@ -6878,17 +7222,19 @@
     }
     else if(action==='open-sticker-grant-picker'){
       const email = e.currentTarget.dataset.email;
-      state.modal = {type:'sticker-grant-picker', payload:{email}};
+      const profileId = e.currentTarget.dataset.profile || null;
+      state.modal = {type:'sticker-grant-picker', payload:{email, profileId}};
       render();
     }
     else if(action==='grant-sticker'){
       const stickerId = e.currentTarget.dataset.sticker;
       const email = e.currentTarget.dataset.email;
-      const already = state.data.stickerGrants.find(g=>g.stickerId===stickerId && g.email.toLowerCase()===email.toLowerCase());
-      if(already){ showToast('Déjà offert à cet étudiant.'); return; }
+      const profileId = e.currentTarget.dataset.profile || null;
+      const already = state.data.stickerGrants.find(g=>g.stickerId===stickerId && g.email.toLowerCase()===email.toLowerCase() && (g.profileId||null)===profileId);
+      if(already){ showToast('Déjà offert.'); return; }
       const messageInput = document.getElementById('grant-message-input');
       const message = messageInput ? messageInput.value.trim() : '';
-      state.data.stickerGrants.push({id:uid(), stickerId, email, message, grantedAt:Date.now()});
+      state.data.stickerGrants.push({id:uid(), stickerId, email, profileId, message, grantedAt:Date.now()});
       await persist();
       render();
       showToast('Autocollant offert.');
@@ -6987,12 +7333,53 @@
       state.modal.payload.searchTried = false;
       render();
     }
-    else if(action==='mark-attendance-paid'){
-      const b = state.data.bookings.find(bk=>bk.id===id);
-      if(b) b.noMembership = false;
-      await persist();
+    else if(action==='toggle-modal-visits'){
+      if(state.modal && state.modal.payload) state.modal.payload.showVisits = !state.modal.payload.showVisits;
       render();
-      showToast('Marqué comme payé.');
+    }
+    else if(action==='open-transfer-membership'){
+      state.modal = {type:'transfer-membership', payload:{id}};
+      render();
+    }
+    else if(action==='submit-transfer-membership'){
+      const mem = state.data.memberships.find(x=>x.id===id);
+      if(!mem){ state.modal = null; closeModalDom(); render(); return; }
+      const acct = findStudentAccount(mem.studentEmail);
+      if(!acct){ showToast('Compte introuvable.'); return; }
+      const sel = document.getElementById('transfer-target-profile');
+      const targetProfileId = sel && sel.value ? sel.value : null;
+      const targetName = targetProfileId ? getProfileName(acct, targetProfileId) : acct.name;
+      mem.profileId = targetProfileId;
+      mem.studentName = targetName;
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Abonnement transféré à ' + targetName + '.');
+    }
+    else if(action==='open-mark-attendance-paid'){
+      state.modal = {type:'confirm-mark-attendance-paid', payload:{id}};
+      render();
+    }
+    else if(action==='submit-mark-attendance-paid'){
+      const b = state.data.bookings.find(bk=>bk.id===id);
+      if(!b){ state.modal = null; closeModalDom(); render(); return; }
+      const noteText = document.getElementById('mark-paid-note').value.trim();
+      if(!noteText){ markInvalid('mark-paid-note'); showToast('Ajoute une note avant de confirmer le paiement.'); return; }
+      const c = state.data.classes.find(cl=>cl.id===b.classId);
+      const acct = findStudentAccount(b.studentEmail);
+      const target = acct ? (b.profileId ? (acct.familyMembers||[]).find(f=>f.id===b.profileId) : acct) : null;
+      const approverName = (currentManager()||{}).name || 'Gestionnaire';
+      const dateStr = new Date().toLocaleDateString('fr-CA');
+      const line = `[${dateStr}] Présence sans abonnement (${c?c.name:'—'} du ${b.dateIso}) ajoutée par ${b.addedByManagerName||'inconnu'}, paiement approuvé par ${approverName} : ${noteText}`;
+      if(target){
+        if(!target.notes) target.notes = {};
+        target.notes.membership = (target.notes.membership ? target.notes.membership + '\n' : '') + line;
+      }
+      b.noMembership = false;
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Paiement confirmé et note ajoutée au dossier.');
     }
     else if(action==='import-students'){ state.modal = {type:'import-students', payload:null}; render(); }
     else if(action==='run-import'){
@@ -7096,11 +7483,30 @@
       showToast('Formule enregistrée.');
     }
 
-    else if(action==='grant-membership'){ state.modal = {type:'grant-membership', payload:null}; render(); }
+    else if(action==='grant-membership'){ state.grantSearchQuery = ''; state.modal = {type:'grant-membership', payload:null}; render(); }
     else if(action==='grant-membership-for'){
       const email = e.currentTarget.dataset.email;
       const name = e.currentTarget.dataset.name;
-      state.modal = {type:'grant-membership', payload:{prefillName:name, prefillEmail:email}};
+      const profileId = e.currentTarget.dataset.profile || null;
+      state.grantSearchQuery = '';
+      state.modal = {type:'grant-membership', payload:{prefillName:name, prefillEmail:email, prefillProfileId:profileId}};
+      render();
+    }
+    else if(action==='run-grant-search'){
+      const input = document.getElementById('grant-search-input');
+      state.grantSearchQuery = input ? input.value.trim() : '';
+      render();
+    }
+    else if(action==='pick-grant-recipient'){
+      const email = e.currentTarget.dataset.email;
+      const name = e.currentTarget.dataset.name;
+      const profileId = e.currentTarget.dataset.profile || null;
+      state.modal.payload = Object.assign({}, state.modal.payload, {prefillName:name, prefillEmail:email, prefillProfileId:profileId});
+      state.grantSearchQuery = '';
+      render();
+    }
+    else if(action==='clear-grant-recipient'){
+      state.modal.payload = Object.assign({}, state.modal.payload, {prefillName:'', prefillEmail:'', prefillProfileId:null});
       render();
     }
     else if(action==='save-student-birthday'){
@@ -7131,10 +7537,12 @@
       const name = document.getElementById('g-name').value.trim();
       const email = document.getElementById('g-email').value.trim();
       const planId = document.getElementById('g-plan').value;
+      const profileEl = document.getElementById('g-profile');
+      const profileId = profileEl && profileEl.value ? profileEl.value : null;
       const plan = state.data.membershipPlans.find(p=>p.id===planId);
       if(!name || !email){ showToast('Nom et courriel requis.'); return; }
       if(!plan){ showToast('Créez d\u2019abord une formule.'); return; }
-      activatePlanForStudent(plan, name, email, true);
+      activatePlanForStudent(plan, name, email, true, profileId);
       await persist();
       state.modal = null; closeModalDom();
       render();
