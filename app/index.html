@@ -656,6 +656,23 @@
     async set(key, value, ...args){ return (LOCAL_ONLY_KEYS.has(key) ? localBackend : supabaseBackend).set(key, value, ...args); },
     async delete(key, ...args){ return (LOCAL_ONLY_KEYS.has(key) ? localBackend : supabaseBackend).delete(key, ...args); }
   };
+  // Thèmes d'accent pour la zone Gérer, choisis par chaque gestionnaire dans son
+  // compte (mgr.accentTheme). N'affecte que l'intérieur de Gérer/Présences —
+  // appliqué en surchargeant --amber sur #app le temps du rendu (voir render()).
+  const MANAGER_ACCENT_THEMES = [
+    {key:'os', label:'Blanc os (actuel)', hex:'#E9E6D5'},
+    {key:'peche', label:'Pêche', hex:'#E8A87C'},
+    {key:'sauge', label:'Sauge', hex:'#93B48F'},
+    {key:'cyan', label:'Cyan', hex:'#8FCBD9'},
+    {key:'orchidee', label:'Orchidée', hex:'#B85FC9'},
+    {key:'argent', label:'Argent graphite', hex:'#9BA3AA'},
+  ];
+  function managerAccentHex(mgr){
+    const key = (mgr && mgr.accentTheme) || 'os';
+    const theme = MANAGER_ACCENT_THEMES.find(t=>t.key===key);
+    return theme ? theme.hex : MANAGER_ACCENT_THEMES[0].hex;
+  }
+
   const CATEGORIES = [
     {key:'enfants', label:'BJJ Enfants'},
     {key:'bjj_adulte', label:'BJJ Adulte'},
@@ -2088,6 +2105,18 @@
     inner += '</div>';
 
     app.innerHTML = inner;
+
+    // Accent personnalisé de Gérer : n'affecte que #app pendant qu'on est dans
+    // les vues admin/présences déverrouillées, choisi par le gestionnaire
+    // connecté dans son compte. Le reste du site (élève, accueil) garde le
+    // --amber par défaut défini sur :root.
+    const inManagerAreaNow = state.adminUnlocked && (state.view==='admin' || state.view==='attendance');
+    if(inManagerAreaNow){
+      app.style.setProperty('--amber', managerAccentHex(currentManager()));
+    } else {
+      app.style.removeProperty('--amber');
+    }
+
     attachHandlers();
     if(state.view === 'notebook') { attachNotebookDrag(); attachFreeHandles(); }
     if(state.view === 'notebook' && !state.notebookOpened){ attachCoverLogoDrag(); }
@@ -3454,6 +3483,16 @@
             <input id="mgr-email" type="email" value="${escapeHtml(mgr.email||'')}" placeholder="courriel@exemple.com">
             <label style="margin-top:10px;">Téléphone</label>
             <input id="mgr-phone" type="tel" value="${escapeHtml(mgr.phone||'')}" placeholder="514-555-1234">
+            <label style="margin-top:16px;">Couleur d'accent de Gérer</label>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;">
+              ${MANAGER_ACCENT_THEMES.map(t=>`
+                <button type="button" data-action="set-manager-theme" data-theme="${t.key}" title="${escapeHtml(t.label)}"
+                  style="width:34px;height:34px;border-radius:50%;background:${t.hex};cursor:pointer;
+                  border:2px solid ${(mgr.accentTheme||'os')===t.key?'var(--chalk)':'transparent'};
+                  box-shadow:0 0 0 1px var(--border);"></button>
+              `).join('')}
+            </div>
+            <p class="muted" style="font-size:11px;margin-top:6px;">${escapeHtml(MANAGER_ACCENT_THEMES.find(t=>t.key===(mgr.accentTheme||'os')).label)}</p>
             <div class="btn-row">
               <button class="btn btn-primary" data-action="save-manager-info">Enregistrer</button>
               <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
@@ -5275,6 +5314,13 @@
     else if(action==='goto-manager-account'){
       state.managerMenuOpen = false;
       state.modal = {type:'manager-account', payload:null};
+      render();
+    }
+    else if(action==='set-manager-theme'){
+      const mgr = currentManager();
+      if(!mgr){ showToast('Session gestionnaire introuvable.'); return; }
+      mgr.accentTheme = e.currentTarget.dataset.theme;
+      await persist();
       render();
     }
     else if(action==='save-manager-info'){
