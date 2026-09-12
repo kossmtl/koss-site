@@ -109,12 +109,6 @@
   .account-menu-actions button:hover{background:var(--bg-tile);}
   .account-menu-actions button + button{border-top:1px solid var(--border);}
   .field-invalid{border-color:var(--coral) !important; box-shadow:0 0 0 1px var(--coral);}
-  .admin-hidden-link{
-    position:absolute;bottom:10px;right:14px;
-    color:rgba(255,255,255,0.3);text-decoration:underline;
-    font-size:11px;font-family:var(--font-b);
-    opacity:0.85;
-  }
   .avatar-img{width:26px;height:26px;border-radius:50%;object-fit:cover;display:block;}
   .avatar-fallback{
     width:26px;height:26px;border-radius:50%;background:var(--amber);color:var(--ink);
@@ -615,6 +609,12 @@
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
 
+  // Lien caché pour les gestionnaires : kossmtl.ca/app/?admin ouvre directement
+  // l'écran de NIP (Gérer), sans passer par l'écran d'accueil membre/nouveau.
+  const ADMIN_URL_FLAG = (function(){
+    try{ return new URLSearchParams(window.location.search).has('admin'); }catch(e){ return false; }
+  })();
+
   // Certaines clés (session de l'élève sur SON navigateur, profil personnel mémorisé
   // localement) ne doivent JAMAIS être partagées entre visiteurs : elles restent en
   // localStorage peu importe le backend. Seule STORAGE_KEY (studio_data_v1, les vraies
@@ -829,6 +829,14 @@
         state.studentSession = {email: sess.email};
       }
     }catch(e){}
+    // Page publique : on choisit l'écran de départ selon le contexte.
+    if(ADMIN_URL_FLAG){
+      state.view = state.adminUnlocked ? 'admin' : 'admin-login';
+    } else if(!state.studentSession){
+      state.view = 'welcome';
+    } else {
+      state.view = 'student';
+    }
     render();
   }
 
@@ -2055,17 +2063,25 @@
     const app = document.getElementById('app');
     if(!state.data){ app.innerHTML = '<div style="padding:40px;text-align:center;color:#AEB8AC;">Chargement…</div>'; return; }
 
+    // Garde-fou : les écrans élève exigent un compte connecté. Si la session est
+    // absente (déconnexion, expiration, ouverture directe d'un lien), on retombe
+    // sur l'écran d'accueil membre/nouveau plutôt que de montrer l'app vide.
+    if(!state.studentSession && !state.adminUnlocked && ['student','account','notebook'].includes(state.view)){
+      state.view = 'welcome';
+    }
+
     let inner = '';
-    inner += renderHeader();
+    const hideHeader = state.view === 'welcome';
+    if(!hideHeader) inner += renderHeader();
     inner += '<div class="content">';
-    if(state.view === 'student') inner += renderStudent();
+    if(state.view === 'welcome') inner += renderWelcome();
+    else if(state.view === 'student') inner += renderStudent();
     else if(state.view === 'account') inner += renderAccountCard();
     else if(state.view === 'admin-login') inner += renderAdminLogin();
     else if(state.view === 'admin') inner += renderAdmin();
     else if(state.view === 'attendance') inner += state.adminUnlocked ? renderAttendance() : renderAdminLogin();
     else if(state.view === 'notebook') inner += renderNotebook();
     inner += '</div>';
-    inner += `<a href="#" class="admin-hidden-link" data-action="goto-admin">Gérer</a>`;
 
     app.innerHTML = inner;
     attachHandlers();
@@ -2767,6 +2783,54 @@
       </div>
       ` : `<p class="muted" style="color:var(--chalk-dim);">Cours d’aujourd’hui seulement.</p>`}
       ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">${isSuperMgr ? 'Aucun cours programmé cette semaine.' : 'Aucun cours aujourd’hui.'}</div></div>`}
+    `;
+  }
+
+  // --- Écran d'accueil public : membre existant ou nouvelle inscription ---
+  function renderWelcome(){
+    const choice = state.welcomeAuthChoice || null;
+    if(!choice){
+      return `
+        <div class="pin-screen" style="max-width:360px;margin:60px auto 0;text-align:center;">
+          <h2 style="font-family:var(--font-d);margin-bottom:6px;">Bienvenue chez K-OSS</h2>
+          <p class="muted" style="margin-bottom:24px;">Dis-nous qui tu es pour continuer.</p>
+          <div class="btn-row" style="flex-direction:column;gap:10px;">
+            <button class="btn btn-primary" data-action="choose-welcome-auth" data-choice="existing" style="width:100%;">😎 Je suis cool, je suis membre</button>
+            <button class="btn btn-secondary" data-action="choose-welcome-auth" data-choice="new" style="width:100%;">🤙 J'ai envie de faire partie de la gang</button>
+          </div>
+        </div>
+      `;
+    }
+    if(choice === 'existing'){
+      return `
+        <div class="pin-screen" style="max-width:360px;margin:40px auto 0;">
+          <p class="muted" style="margin-bottom:10px;"><a href="#" data-action="choose-welcome-auth" data-choice="" style="color:var(--chalk-dim);">&larr; Retour</a></p>
+          <h3 style="font-family:var(--font-d);">Connexion</h3>
+          <label>Courriel</label>
+          <input id="w-email" type="email" placeholder="votre@courriel.com">
+          <label>Mot de passe</label>
+          ${pwField('w-password', 'Votre mot de passe')}
+          <div class="btn-row"><button class="btn btn-primary" data-action="submit-welcome-auth" style="width:100%;">Entrer</button></div>
+        </div>
+      `;
+    }
+    return `
+      <div class="pin-screen" style="max-width:360px;margin:40px auto 0;">
+        <p class="muted" style="margin-bottom:10px;"><a href="#" data-action="choose-welcome-auth" data-choice="" style="color:var(--chalk-dim);">&larr; Retour</a></p>
+        <h3 style="font-family:var(--font-d);">Créer mon compte</h3>
+        <label>Prénom</label>
+        <input id="w-firstname" placeholder="Prénom">
+        <label>Nom</label>
+        <input id="w-lastname" placeholder="Nom">
+        <label>Courriel</label>
+        <input id="w-email" type="email" placeholder="votre@courriel.com">
+        <label>Confirmez votre courriel</label>
+        <input id="w-email-confirm" type="email" placeholder="Retapez votre courriel">
+        <label>Mot de passe</label>
+        ${pwField('w-password', "Créez-en un")}
+        <p style="font-size:11px;color:var(--chalk-dim);margin-top:4px;">Ce mot de passe protège votre compte, et vous resterez connecté pour vos prochaines visites.</p>
+        <div class="btn-row"><button class="btn btn-primary" data-action="submit-welcome-auth" style="width:100%;">Créer mon compte</button></div>
+      </div>
     `;
   }
 
@@ -5976,6 +6040,63 @@
       state.modal.payload.authChoice = choice;
       render();
     }
+    else if(action==='choose-welcome-auth'){
+      const choice = e.currentTarget.dataset.choice || null;
+      state.welcomeAuthChoice = choice;
+      render();
+    }
+    else if(action==='submit-welcome-auth'){
+      const choice = state.welcomeAuthChoice;
+      if(choice === 'existing'){
+        const email = document.getElementById('w-email').value.trim();
+        const password = document.getElementById('w-password').value;
+        if(!email || !password){
+          markInvalid([!email?'w-email':null, !password?'w-password':null].filter(Boolean));
+          showToast('Courriel et mot de passe requis.'); return;
+        }
+        const existing = findStudentAccount(email);
+        if(!existing){
+          markInvalid('w-email');
+          showToast("Aucun compte trouvé avec ce courriel. Choisis plutôt « faire partie de la gang ».");
+          return;
+        }
+        const auth = await verifyOrCreateAccount(email, existing.name, password, existing.firstName, existing.lastName);
+        if(!auth.ok){ markInvalid('w-password'); showToast('Mot de passe incorrect pour ce courriel.'); return; }
+        state.studentSession = {email};
+        await saveSessionToStorage(email);
+        try{ await storageBackend.set('my_profile', JSON.stringify({name:existing.name,email}), false); }catch(e){}
+        state.welcomeAuthChoice = null;
+        state.view = 'student';
+        render();
+        return;
+      }
+      const firstName = document.getElementById('w-firstname').value.trim();
+      const lastName = document.getElementById('w-lastname').value.trim();
+      const email = document.getElementById('w-email').value.trim();
+      const emailConfirm = document.getElementById('w-email-confirm').value.trim();
+      const password = document.getElementById('w-password').value;
+      if(!firstName || !lastName || !email || !password){
+        markInvalid([!firstName?'w-firstname':null, !lastName?'w-lastname':null, !email?'w-email':null, !password?'w-password':null].filter(Boolean));
+        showToast('Prénom, nom, courriel et mot de passe requis.'); return;
+      }
+      if(email.toLowerCase() !== emailConfirm.toLowerCase()){
+        markInvalid(['w-email','w-email-confirm']);
+        showToast('Les deux courriels ne correspondent pas.'); return;
+      }
+      const name = `${firstName} ${lastName}`;
+      const auth = await verifyOrCreateAccount(email, name, password, firstName, lastName);
+      if(!auth.ok){ markInvalid('w-password'); showToast('Mot de passe incorrect pour ce courriel.'); return; }
+      state.studentSession = {email};
+      await saveSessionToStorage(email);
+      try{ await storageBackend.set('my_profile', JSON.stringify({name,email}), false); }catch(e){}
+      state.welcomeAuthChoice = null;
+      state.view = 'student';
+      render();
+      if(auth.isNew){
+        state.modal = {type:'ask-phone', payload:{email}};
+        render();
+      }
+    }
     else if(action==='submit-booking'){
       const classId = e.currentTarget.dataset.class;
       const dateIso = e.currentTarget.dataset.date;
@@ -7197,62 +7318,13 @@
     }, 200);
   });
 
-  // --- Écran de connexion (accès privé, via Supabase Auth) ---
-  function showLoginGate(){
-    return new Promise((resolve)=>{
-      const overlay = document.createElement('div');
-      overlay.id = 'auth-gate';
-      overlay.style.cssText = 'position:fixed;inset:0;background:#28292E;color:#FFFBF8;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:"Work Sans",sans-serif;padding:16px;';
-      overlay.innerHTML =
-        '<form id="auth-gate-form" style="background:#35363C;border:1px solid #4A4B52;border-radius:12px;padding:28px;max-width:320px;width:100%;box-sizing:border-box;">' +
-          '<h2 style="font-family:\'Oswald\',sans-serif;margin:0 0 18px;font-size:20px;color:#FFFBF8;">K-OSS — Accès privé</h2>' +
-          '<label style="display:block;font-size:12px;color:#AEB8AC;margin-bottom:4px;">Courriel</label>' +
-          '<input id="auth-gate-email" type="email" autocomplete="username" required style="width:100%;background:#28292E;border:1px solid #4A4B52;color:#FFFBF8;padding:8px 10px;border-radius:6px;margin-bottom:12px;box-sizing:border-box;font-size:14px;">' +
-          '<label style="display:block;font-size:12px;color:#AEB8AC;margin-bottom:4px;">Mot de passe</label>' +
-          '<input id="auth-gate-password" type="password" autocomplete="current-password" required style="width:100%;background:#28292E;border:1px solid #4A4B52;color:#FFFBF8;padding:8px 10px;border-radius:6px;margin-bottom:16px;box-sizing:border-box;font-size:14px;">' +
-          '<div id="auth-gate-error" style="color:#E2725B;font-size:12px;margin-bottom:10px;display:none;"></div>' +
-          '<button type="submit" style="width:100%;background:#E9E6D5;color:#28292E;border:none;padding:10px;border-radius:7px;font-family:\'Oswald\',sans-serif;font-size:14px;cursor:pointer;">Entrer</button>' +
-        '</form>';
-      document.body.appendChild(overlay);
-      const form = overlay.querySelector('#auth-gate-form');
-      const errEl = overlay.querySelector('#auth-gate-error');
-      form.addEventListener('submit', async (e)=>{
-        e.preventDefault();
-        errEl.style.display = 'none';
-        const email = overlay.querySelector('#auth-gate-email').value.trim();
-        const password = overlay.querySelector('#auth-gate-password').value;
-        const btn = form.querySelector('button');
-        btn.disabled = true; btn.textContent = 'Connexion...';
-        try{
-          const { error } = await sb.auth.signInWithPassword({ email, password });
-          if(error){
-            errEl.textContent = 'Courriel ou mot de passe incorrect.';
-            errEl.style.display = 'block';
-            btn.disabled = false; btn.textContent = 'Entrer';
-            return;
-          }
-          overlay.remove();
-          resolve();
-        }catch(err){
-          errEl.textContent = 'Erreur de connexion, réessaie.';
-          errEl.style.display = 'block';
-          btn.disabled = false; btn.textContent = 'Entrer';
-        }
-      });
-    });
-  }
-
+  // Site public depuis le lancement des tests avec de vrais courriels : plus de
+  // mot de passe unique partagé (Supabase Auth) devant tout le site. Chaque
+  // visiteur passe maintenant par l'écran d'accueil membre/nouveau (renderWelcome).
+  // ⚠️ Ça veut dire que les appels à Supabase (lecture/écriture de app_state) se
+  // font maintenant en rôle "anon" et non "authenticated" — les policies RLS de
+  // la table app_state doivent autoriser le rôle anon, sinon rien ne se charge.
   async function boot(){
-    if(!sb){
-      // Cas de secours (ex: script Supabase bloqué) : on ne bloque pas complètement,
-      // mais rien ne sera partagé/sauvegardé correctement sans connexion Supabase.
-      loadData();
-      return;
-    }
-    const { data: { session } } = await sb.auth.getSession();
-    if(!session){
-      await showLoginGate();
-    }
     loadData();
   }
 
