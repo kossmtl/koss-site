@@ -830,10 +830,13 @@
       }
     }catch(e){}
     // Page publique : on choisit l'écran de départ selon le contexte.
+    // Un visiteur qui n'a pas encore de session tombe d'abord sur la fausse
+    // page d'erreur (renderGate) pour décourager les curieux — le vrai accueil
+    // membre/nouveau (renderWelcome) n'est atteignable qu'en cliquant le 0 caché.
     if(ADMIN_URL_FLAG){
       state.view = state.adminUnlocked ? 'admin' : 'admin-login';
     } else if(!state.studentSession){
-      state.view = 'welcome';
+      state.view = 'gate';
     } else {
       state.view = 'student';
     }
@@ -2071,10 +2074,11 @@
     }
 
     let inner = '';
-    const hideHeader = state.view === 'welcome';
+    const hideHeader = state.view === 'welcome' || state.view === 'gate';
     if(!hideHeader) inner += renderHeader();
     inner += '<div class="content">';
-    if(state.view === 'welcome') inner += renderWelcome();
+    if(state.view === 'gate') inner += renderGate();
+    else if(state.view === 'welcome') inner += renderWelcome();
     else if(state.view === 'student') inner += renderStudent();
     else if(state.view === 'account') inner += renderAccountCard();
     else if(state.view === 'admin-login') inner += renderAdminLogin();
@@ -2783,6 +2787,22 @@
       </div>
       ` : `<p class="muted" style="color:var(--chalk-dim);">Cours d’aujourd’hui seulement.</p>`}
       ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">${isSuperMgr ? 'Aucun cours programmé cette semaine.' : 'Aucun cours aujourd’hui.'}</div></div>`}
+    `;
+  }
+
+  // --- Fausse page d'erreur (décourage les visiteurs curieux) ---
+  // Le "0" de "403" est le seul moyen d'atteindre le vrai écran d'accueil
+  // (renderWelcome) — volontairement sans style ni curseur différent pour
+  // qu'il ne se distingue pas du reste du texte.
+  function renderGate(){
+    return `
+      <div style="max-width:420px;margin:70px auto 0;font-family:var(--font-b);">
+        <div style="background:var(--coral);color:#1a1a1a;font-family:var(--font-d);font-size:12px;letter-spacing:0.08em;text-transform:uppercase;padding:9px 14px;border-radius:6px 6px 0 0;">Système — avis officiel</div>
+        <div style="background:#181818;border:1px solid #2a2a2e;border-top:none;border-radius:0 0 6px 6px;padding:22px 18px;">
+          <div style="font-family:monospace;font-size:30px;color:var(--chalk);letter-spacing:0.02em;margin-bottom:10px;">4<span data-action="enter-through-403" style="cursor:default;">0</span>3</div>
+          <p style="color:var(--chalk-dim);font-size:13px;line-height:1.6;margin:0;">Cette page n'est pas valide. Erreur de redirection.</p>
+        </div>
+      </div>
     `;
   }
 
@@ -6038,6 +6058,10 @@
     else if(action==='choose-booking-auth'){
       const choice = e.currentTarget.dataset.choice || null;
       state.modal.payload.authChoice = choice;
+      render();
+    }
+    else if(action==='enter-through-403'){
+      state.view = 'welcome';
       render();
     }
     else if(action==='choose-welcome-auth'){
