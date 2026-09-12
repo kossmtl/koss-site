@@ -672,6 +672,17 @@
     const theme = MANAGER_ACCENT_THEMES.find(t=>t.key===key);
     return theme ? theme.hex : MANAGER_ACCENT_THEMES[0].hex;
   }
+  // Mélange deux couleurs hex ("#rrggbb") — pct = part de la couleur "accent"
+  // dans le résultat (10 = 10%). Sert à teinter légèrement le fond de Gérer
+  // avec l'accent choisi, sans changer le fond du reste du site.
+  function mixHexColors(baseHex, accentHex, pct){
+    const toRgb = (h)=>{ const s=h.replace('#',''); return [parseInt(s.slice(0,2),16),parseInt(s.slice(2,4),16),parseInt(s.slice(4,6),16)]; };
+    const base = toRgb(baseHex), accent = toRgb(accentHex);
+    const t = pct/100;
+    const mixed = base.map((b,i)=> Math.round(b*(1-t) + accent[i]*t));
+    return '#' + mixed.map(v=>v.toString(16).padStart(2,'0')).join('');
+  }
+  const MANAGER_BG_TINT_PCT = 10; // % d'accent mélangé dans le fond de Gérer
 
   const CATEGORIES = [
     {key:'enfants', label:'BJJ Enfants'},
@@ -2112,9 +2123,12 @@
     // --amber par défaut défini sur :root.
     const inManagerAreaNow = state.adminUnlocked && (state.view==='admin' || state.view==='attendance');
     if(inManagerAreaNow){
-      app.style.setProperty('--amber', managerAccentHex(currentManager()));
+      const accentHex = managerAccentHex(currentManager());
+      app.style.setProperty('--amber', accentHex);
+      app.style.setProperty('--bg', mixHexColors('#28292E', accentHex, MANAGER_BG_TINT_PCT));
     } else {
       app.style.removeProperty('--amber');
+      app.style.removeProperty('--bg');
     }
 
     attachHandlers();
