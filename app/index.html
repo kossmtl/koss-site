@@ -3122,12 +3122,13 @@
 
     const toConfirmMemberships = state.data.memberships.filter(m=>m.status==='paiement_declare');
 
-    // Revenu du mois en cours : mêmes règles que le rapport de ventes (statut ni en
-    // attente de paiement ni annulé compte comme "vendu"), filtré sur le mois calendaire.
+    // Revenu du mois en cours : uniquement l'argent réellement passé par Helcim (carte),
+    // pas les abonnements payés sur place, offerts ou importés — ceux-là ne sont pas de
+    // l'argent encaissé automatiquement et ne doivent pas gonfler ce chiffre.
     const nowForRevenue = new Date();
     const monthStart = new Date(nowForRevenue.getFullYear(), nowForRevenue.getMonth(), 1);
     const monthLabel = nowForRevenue.toLocaleDateString('fr-CA', {month:'long', year:'numeric'});
-    const monthSales = state.data.memberships.filter(m=> m.status!=='attente_paiement' && m.status!=='annulee' && new Date(m.createdAt) >= monthStart);
+    const monthSales = state.data.memberships.filter(m=> m.paidViaHelcim && new Date(m.paidViaHelcimAt||m.createdAt) >= monthStart);
     const monthRevenue = monthSales.reduce((sum,m)=>{
       const plan = state.data.membershipPlans.find(p=>p.id===m.planId);
       const amountStr = m.planPrice || (plan?plan.price:'') || '';
@@ -6852,6 +6853,7 @@
           if(status==='SUCCESS'){
             state.modal = null; closeModalDom(); render();
             showToast('Paiement reçu, confirmation en cours…');
+            let confirmedByHelcim = false;
             try{
               const confirmResp = await sb.functions.invoke('koss-confirm-payment', {
                 body:{checkoutToken, transactionId: transaction && transaction.transactionId}
@@ -6859,13 +6861,25 @@
               if(confirmResp.error || !confirmResp.data || !confirmResp.data.ok){
                 showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
               } else {
+                confirmedByHelcim = true;
                 showToast('Abonnement activé !');
               }
             }catch(confirmErr){
               console.error('Échec confirmation paiement:', confirmErr);
               showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
             }
-            await loadData(); render();
+            await loadData();
+            // Marque ce paiement comme réellement passé par Helcim (pour le distinguer d'un
+            // paiement sur place / offert / importé) — sert au calcul du revenu du mois.
+            if(confirmedByHelcim){
+              const confirmedM = state.data.memberships.find(mm=>mm.id===m.id);
+              if(confirmedM && !confirmedM.paidViaHelcim){
+                confirmedM.paidViaHelcim = true;
+                confirmedM.paidViaHelcimAt = Date.now();
+                await persist();
+              }
+            }
+            render();
             if(pendingClassId && pendingDateIso){
               try{ await proceedBooking(pendingClassId, pendingDateIso, name, email, false, profileId); }
               catch(bookErr){ console.error('Échec inscription automatique au cours:', bookErr); showToast('Abonnement activé, mais l’inscription automatique au cours a échoué — réservez-le à nouveau.'); }
