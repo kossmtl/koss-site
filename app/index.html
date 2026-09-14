@@ -2369,9 +2369,15 @@
   // c'est handleGoogleSession() qui prend le relais à ce moment-là (voir boot()).
   async function signInWithGoogle(){
     try{
+      // ⚠️ Piège : NE JAMAIS utiliser window.location.href tel quel ici — si la page a déjà
+      // des paramètres d'un essai précédent (?error=... ou #access_token=...) encore collés
+      // dans l'URL, ils seraient repris comme adresse de retour et s'empileraient à chaque
+      // nouvel essai (URL à rallonge, plusieurs # dans la même adresse). On repart toujours
+      // d'une URL propre (juste le chemin, sans query ni hash).
+      const cleanUrl = window.location.origin + window.location.pathname;
       const { error } = await sb.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: window.location.href }
+        options: { redirectTo: cleanUrl }
       });
       if(error){ console.error('Échec connexion Google:', error); showToast('Échec de la connexion Google. Réessayez.'); }
     }catch(err){
@@ -3351,7 +3357,15 @@
   // courriel/mot de passe. Réutilisé partout où on affiche un formulaire de connexion/création
   // de compte élève (actuellement l'écran d'accueil ; à ajouter aux autres endroits si Amélie
   // le demande — réservation, achat d'abonnement, "Mon compte" → Créer mon compte).
+  // MASQUÉ temporairement (S19) : l'app OAuth Google n'est pas encore publiée/vérifiée — tant
+  // que ce n'est pas fait, un vrai usager tomberait sur l'écran d'avertissement "Google n'a pas
+  // validé cette application", ce qu'Amélie ne veut pas montrer pour l'instant. Le code Google
+  // (signInWithGoogle/handleGoogleSession/boot()) reste actif en arrière-plan — il suffit de
+  // remettre GOOGLE_SIGNIN_BUTTON_VISIBLE à true une fois la politique de confidentialité prête
+  // et l'app publiée/vérifiée côté Google, pour réafficher le bouton sans rien recoder.
+  const GOOGLE_SIGNIN_BUTTON_VISIBLE = false;
   function googleSigninButtonHtml(){
+    if(!GOOGLE_SIGNIN_BUTTON_VISIBLE) return '';
     return `
       <div style="display:flex;align-items:center;gap:8px;margin:16px 0;">
         <div style="flex:1;height:1px;background:var(--border);"></div>
@@ -8873,12 +8887,29 @@
 
   async function boot(){
     await loadData();
-    // Retour d'un login Google (redirection) OU session Google déjà active dans ce navigateur —
-    // supabase-js détecte l'URL de retour tout seul et remonte la session via getSession().
+    // Retour d'un login Google (redirection) : repère si Google/Supabase a renvoyé une erreur
+    // (ex. "access_denied" — compte pas autorisé pendant que l'app OAuth est encore en mode
+    // Test côté Google Cloud) AVANT de nettoyer l'URL, pour pouvoir prévenir clairement.
+    const hadOAuthError = /[?#&]error(_description)?=/.test(window.location.search + window.location.hash);
+    // Session Google déjà active dans ce navigateur — supabase-js détecte l'URL de retour
+    // tout seul et remonte la session via getSession().
+    let signedIn = false;
     try{
       const { data } = await sb.auth.getSession();
-      if(data && data.session){ await handleGoogleSession(data.session); }
+      if(data && data.session){ await handleGoogleSession(data.session); signedIn = true; }
     }catch(err){ console.error('Échec vérification session Google:', err); }
+    // Nettoie l'URL après coup (qu'il y ait eu une erreur ou un succès) — sinon ces
+    // paramètres restent collés dans l'adresse et seraient repris par erreur au prochain
+    // essai (voir le piège corrigé dans signInWithGoogle()).
+    if(window.location.search || window.location.hash){
+      try{ window.history.replaceState(null, '', window.location.pathname); }catch(err){}
+    }
+    // showToast() APRÈS tout render() déclenché ci-dessus (par loadData()/handleGoogleSession())
+    // — render() efface tous les toasts affichés avant lui, donc appeler showToast() trop tôt
+    // ferait disparaître le message avant que quiconque le voie.
+    if(hadOAuthError && !signedIn){
+      showToast('Connexion Google refusée. Si tu testes encore, vérifie que ton compte est bien ajouté comme "Test user" dans Google Cloud Console.');
+    }
     // Écoute les connexions Google qui arrivent APRÈS le chargement initial (le clic sur
     // "Se connecter avec Google" redirige puis revient ici, ce qui redéclenche boot() au
     // complet de toute façon — cet écouteur couvre aussi les cas où Supabase la détecte
