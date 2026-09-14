@@ -1088,6 +1088,26 @@
       state.data.migratedIntroProgramsV2 = true;
       changed = true;
     }
+    if(!state.data.migratedMemberPricingV1){
+      // Prix membre automatique (14 sept 2026) : remplace les anciennes formules séparées
+      // "Drop-in Membres K-OSS (Yoga/Muay Thai)" par un champ memberPrice sur la formule
+      // régulière, appliqué automatiquement si l'acheteur a un abonnement illimité actif
+      // (voir hasActiveAbonnement/priceForPurchase). On supprime les 2 anciennes formules —
+      // sans risque pour l'historique, car m.planName est déjà figé sur chaque abonnement créé.
+      const byName = n => state.data.membershipPlans.find(p=>p.name===n);
+      const dropAdult = byName('Drop-in Adult');
+      const dropYoga = byName('Drop-in (Yoga)');
+      const dropMuayThai = byName('Drop-in (Muay Thai)');
+      const enfantParent = byName('1 Enfant + 1 Parent');
+      if(dropAdult) dropAdult.memberPrice = '8 $';
+      if(dropYoga) dropYoga.memberPrice = '8 $';
+      if(dropMuayThai) dropMuayThai.memberPrice = '8 $';
+      if(enfantParent){ enfantParent.memberPrice = '10 $'; enfantParent.familyMemberCheck = true; }
+      state.data.membershipPlans = state.data.membershipPlans.filter(p=>
+        p.name!=='Drop-in Membres K-OSS (Yoga)' && p.name!=='Drop-in Membres K-OSS (Muay Thai)');
+      state.data.migratedMemberPricingV1 = true;
+      changed = true;
+    }
     if(changed) persist();
   }
 
@@ -1097,7 +1117,7 @@
     const mkI = (name,days,price,categories)=>({id:uid(),name,type:'illimite',durationDays:days,creditsCount:1,price,categories,paymentLink:''});
     const mkC = (name,credits,price,categories)=>({id:uid(),name,type:'credits',creditsCount:credits,durationDays:30,price,categories,paymentLink:''});
     const plans = [
-      mkC('1 Enfant + 1 Parent', 1, '40 $', []),
+      Object.assign(mkC('1 Enfant + 1 Parent', 1, '40 $', []), {memberPrice:'10 $', familyMemberCheck:true}),
       mkI('1 Month Adult All Unlimited', 30, '165 $', ALL),
       mkI('1 Month Adult BJJ', 30, '145 $', A),
       mkI('1 Month Kid (4-13)', 30, '120 $', K),
@@ -1118,11 +1138,9 @@
       mkI('6 Months Adult All Unlimited', 180, '780 $', ALL),
       mkI('6 Months Adult BJJ', 180, '655 $', A),
       mkI('6 Months Kid', 180, '545 $', K),
-      mkC('Drop-in (Yoga)', 1, '14 $', Y),
-      mkC('Drop-in (Muay Thai)', 1, '20 $', MT),
-      mkC('Drop-in Membres K-OSS (Yoga)', 1, '8 $', Y),
-      mkC('Drop-in Membres K-OSS (Muay Thai)', 1, '8 $', MT),
-      mkC('Drop-in Adult', 1, '20 $', A),
+      Object.assign(mkC('Drop-in (Yoga)', 1, '14 $', Y), {memberPrice:'8 $'}),
+      Object.assign(mkC('Drop-in (Muay Thai)', 1, '20 $', MT), {memberPrice:'8 $'}),
+      Object.assign(mkC('Drop-in Adult', 1, '20 $', A), {memberPrice:'8 $'}),
       mkC('Drop-in Kid', 1, '20 $', K),
       mkC('Intro to BJJ Adult (5 cours)', 5, '119 $', A),
     ];
@@ -1698,6 +1716,35 @@
     return m.status;
   }
 
+  // Prix membre automatique (14 sept 2026) : quiconque a un abonnement illimité actif
+  // (BJJ, Yoga, Muay Thai, All Unlimited — peu importe la catégorie) devient "membre" pour la
+  // durée de cet abonnement et obtient le prix réduit sur les drop-in/pass qui en offrent un
+  // (plan.memberPrice). Les cartes de crédits ("pass") ne rendent PAS membre.
+  function hasActiveAbonnement(email, profileId){
+    const e = (email||'').toLowerCase().trim();
+    if(!e) return false;
+    return state.data.memberships.some(m =>
+      m.studentEmail && m.studentEmail.toLowerCase()===e &&
+      (m.profileId||null) === (profileId||null) &&
+      m.type === 'illimite' && isMembershipActive(m)
+    );
+  }
+
+  function buyerQualifiesForMemberPrice(plan, email, profileId){
+    if(!plan || !plan.memberPrice) return false;
+    if(plan.familyMemberCheck){
+      // Ex. "1 Enfant + 1 Parent" : doit être réservé à partir du compte du parent membre
+      // OU de l'enfant membre (l'un ou l'autre suffit).
+      return hasActiveAbonnement(email, null) || (!!profileId && hasActiveAbonnement(email, profileId));
+    }
+    return hasActiveAbonnement(email, profileId || null);
+  }
+
+  function priceForPurchase(plan, email, profileId){
+    if(!plan) return '';
+    return buyerQualifiesForMemberPrice(plan, email, profileId) ? plan.memberPrice : plan.price;
+  }
+
   function membershipBadge(m){
     const ds = membershipDisplayStatus(m);
     const map = {
@@ -1771,6 +1818,9 @@
       type: plan.type,
       status: free ? 'active' : 'attente_paiement',
       grantedFree: !!free,
+      // Fige le prix réel au moment de l'achat (prix membre appliqué automatiquement s'il y a
+      // lieu) — koss-init-payment charge exactement ce montant, jamais plan.price directement.
+      planPrice: free ? null : priceForPurchase(plan, email, profileId),
       createdAt: Date.now()
     };
     if(plan.type === 'illimite'){
@@ -2112,6 +2162,7 @@
         extra += ` <button class="small-btn" data-action="edit-membership" data-id="${m.id}">Modifier</button>`;
         extra += ` <button class="small-btn" data-action="refund-membership" data-id="${m.id}">Rembourser</button>`;
         if(findStudentAccount(m.studentEmail)) extra += ` <button class="small-btn" data-action="open-transfer-membership" data-id="${m.id}">Transférer</button>`;
+        extra += ` <button class="small-btn" data-action="toggle-paid-helcim" data-id="${m.id}">${m.paidViaHelcim ? 'Retirer du revenu Helcim' : 'Marquer payé Helcim'}</button>`;
       }
       if(ds==='active'){
         extra += ` <button class="small-btn" data-action="revoke-membership" data-id="${m.id}">Révoquer</button>`;
@@ -2367,6 +2418,31 @@
     const activeProfileId = acct ? (state.activeProfileId || null) : null;
     const activeName = acct ? getProfileName(acct, activeProfileId) : '';
     const profiles = acct ? getProfiles(acct) : [];
+    // Abonnement actif de la personne actuellement affichée (soi-même ou le profil enfant
+    // sélectionné) — toujours visible sous le nom dans le coin en haut à droite, pas seulement
+    // sur la carte "Mon compte". Le ▼ n'ouvre un menu déroulant que s'il y en a plusieurs.
+    const headerActiveMemberships = acct ? activeMembershipsForEmail(acct.email, null, activeProfileId) : [];
+    let headerMembershipIdx = state.headerActiveMembershipIndex || 0;
+    if(headerMembershipIdx >= headerActiveMemberships.length) headerMembershipIdx = 0;
+    const headerMembershipHtml = acct ? (()=>{
+      if(!headerActiveMemberships.length) return `<div style="font-size:11px;color:var(--chalk-dim);margin-top:2px;">Aucun abonnement actif</div>`;
+      const hm = headerActiveMemberships[headerMembershipIdx];
+      return `
+        <div style="position:relative;margin-top:2px;">
+          <button type="button" class="small-btn" data-action="${headerActiveMemberships.length > 1 ? 'toggle-header-membership-menu' : ''}" style="padding:1px 6px;font-size:11px;color:var(--sage);display:inline-flex;align-items:center;gap:4px;">
+            <span>Abonnement actif : 🎫 ${escapeHtml(hm.planName)}</span>
+            ${headerActiveMemberships.length > 1 ? '<span style="font-size:8px;">▼</span>' : ''}
+          </button>
+          ${(headerActiveMemberships.length > 1 && state.headerMembershipMenuOpen) ? `
+            <div class="account-menu">
+              <div class="account-menu-actions">
+                ${headerActiveMemberships.map((mm,i)=>`<button data-action="pick-header-membership" data-idx="${i}">${i===headerMembershipIdx?'✓ ':''}${escapeHtml(mm.planName)} · ${membershipDetail(mm)}</button>`).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    })() : '';
     // En zone gestionnaire (Gérer), le rond de profil élève disparaît au profit de celui du
     // gestionnaire connecté — avec son propre menu (compte gestionnaire + déconnexion).
     const inManagerArea = state.adminUnlocked && (state.view==='admin' || state.view==='attendance');
@@ -2392,6 +2468,7 @@
           ${acct.photo && !activeProfileId ? `<img src="${acct.photo}" class="avatar-img">` : `<span class="avatar-fallback">${escapeHtml((activeName||'?').trim().charAt(0).toUpperCase())}</span>`}
           <span>${escapeHtml(activeName)}</span>
         </button>
+        ${headerMembershipHtml}
         ${state.accountMenuOpen ? `
           <div class="account-menu">
             ${profiles.length > 1 ? `
@@ -2420,7 +2497,7 @@
         <div class="header-bottom">
           <p class="studio-sub">Réservation de cours collectifs</p>
           <div class="tabs">
-            <button class="tab-btn ${state.view==='student'?'active':''}" data-action="goto-student">${(state.view==='admin'||state.view==='admin-login'||state.view==='attendance') ? 'Retour à l\u2019espace client' : 'Réserver'}</button>
+            ${(state.view==='admin'||state.view==='admin-login'||state.view==='attendance') ? '' : `<button class="tab-btn ${state.view==='student'?'active':''}" data-action="goto-student">Réserver</button>`}
           </div>
         </div>
       </div>
@@ -2546,7 +2623,7 @@
     return `
       ${myWeekBookingsHtml}
       <div class="week-nav">
-        <button data-action="week-prev"><span class="full-text">← Semaine préc.</span><span class="short-text">Semaine<br>← Préc.</span></button>
+        ${state.weekOffset>0 ? '<button data-action="week-prev"><span class="full-text">← Semaine préc.</span><span class="short-text">Semaine<br>← Préc.</span></button>' : ''}
         <span class="week-label">${weekLabel(state.weekOffset)}</span>
         <button data-action="week-next"><span class="full-text">Semaine suiv. →</span><span class="short-text">Semaine<br>Suiv. →</span></button>
         ${state.weekOffset!==0 ? '<button data-action="week-today">Aujourd\'hui</button>' : ''}
@@ -2623,10 +2700,21 @@
       const m = activeOwnMemberships[activeIdx];
       const forWho = m.profileId ? ` <span style="color:var(--chalk-dim);">(pour ${escapeHtml(getProfileName(acct,m.profileId))})</span>` : '';
       return `
-        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-          ${activeOwnMemberships.length > 1 ? `<button class="small-btn" data-action="cycle-account-membership" data-dir="-1" style="padding:2px 8px;">‹</button>` : ''}
-          <span style="font-size:12.5px;color:var(--sage);">🎫 ${escapeHtml(m.planName)}${forWho} · ${membershipDetail(m)}</span>
-          ${activeOwnMemberships.length > 1 ? `<button class="small-btn" data-action="cycle-account-membership" data-dir="1" style="padding:2px 8px;">›</button>` : ''}
+        <div style="position:relative;margin-top:4px;">
+          <button type="button" class="small-btn" data-action="${activeOwnMemberships.length > 1 ? 'toggle-account-membership-menu' : ''}" style="padding:2px 8px;font-size:12.5px;color:var(--sage);display:inline-flex;align-items:center;gap:6px;">
+            <span>Abonnement actif : 🎫 ${escapeHtml(m.planName)}${forWho} · ${membershipDetail(m)}</span>
+            ${activeOwnMemberships.length > 1 ? '<span style="font-size:9px;">▼</span>' : ''}
+          </button>
+          ${(activeOwnMemberships.length > 1 && state.accountMembershipMenuOpen) ? `
+            <div class="account-menu" style="right:auto;left:0;">
+              <div class="account-menu-actions">
+                ${activeOwnMemberships.map((mm,i)=>{
+                  const w = mm.profileId ? ` (${escapeHtml(getProfileName(acct,mm.profileId))})` : '';
+                  return `<button data-action="pick-account-membership" data-idx="${i}">${i===activeIdx?'✓ ':''}${escapeHtml(mm.planName)}${w} · ${membershipDetail(mm)}</button>`;
+                }).join('')}
+              </div>
+            </div>
+          ` : ''}
         </div>
       `;
     })();
@@ -2780,6 +2868,7 @@
             <button class="btn btn-primary" data-action="open-notebook-cover" style="margin-top:10px;">Ouvrir mon carnet</button>
             <button class="btn btn-secondary" data-action="new-notebook" style="margin-top:10px;">+ Nouveau carnet</button>
             <button class="small-btn" data-action="open-notebook-settings" style="margin-top:10px;">⚙ Personnaliser</button>
+            <button class="small-btn" data-action="delete-notebook" data-notebook="${activeNotebook.id}" style="margin-top:10px;color:var(--coral);">🗑 Supprimer ce carnet</button>
           </div>
         </div>
       `;
@@ -2834,6 +2923,7 @@
         <button class="small-btn" data-action="close-notebook-cover">← Fermer le carnet</button>
         <button class="small-btn" data-action="open-notebook-settings">⚙ Personnaliser</button>
         <button class="small-btn" data-action="new-notebook">+ Nouveau carnet</button>
+        <button class="small-btn" data-action="delete-notebook" data-notebook="${activeNotebook.id}" style="color:var(--coral);">🗑 Supprimer ce carnet</button>
         <button class="small-btn ${state.notebookEditMode?'active':''}" data-action="toggle-notebook-edit-mode" style="${state.notebookEditMode?'background:var(--amber);color:var(--ink);':''}">${state.notebookEditMode ? '✓ Mode édition' : '✎ Modifier le carnet'}</button>
         <button class="small-btn" data-action="open-received-items" data-owner="${escapeHtml(ownerKey)}" style="${(receivedItemsForOwner(ownerKey).length+giftedStickersForOwner(ownerKey).length)?'background:var(--amber);color:var(--ink);':''}">📥 Reçu${(receivedItemsForOwner(ownerKey).length+giftedStickersForOwner(ownerKey).length)?' ('+(receivedItemsForOwner(ownerKey).length+giftedStickersForOwner(ownerKey).length)+')':''}</button>
         <button class="small-btn" data-action="open-notebook-trash" data-owner="${escapeHtml(ownerKey)}">🗑 Corbeille${trashedItemsForOwner(ownerKey).length?' ('+trashedItemsForOwner(ownerKey).length+')':''}</button>
@@ -3221,7 +3311,7 @@
       const isOpen = !!state.expandedPlanGroups[g.key];
       const rows = items.map(p=>`
         <li>
-          <span><strong>${escapeHtml(p.name)}</strong> — ${p.type==='illimite' ? p.durationDays+' jours illimité' : p.creditsCount+' cours'} · ${escapeHtml(p.price)}</span>
+          <span><strong>${escapeHtml(p.name)}</strong> — ${p.type==='illimite' ? p.durationDays+' jours illimité' : p.creditsCount+' cours'} · ${escapeHtml(p.price)}${p.memberPrice?` <span style="color:var(--chalk-dim);">(${escapeHtml(p.memberPrice)} membres${p.familyMemberCheck?', familial':''})</span>`:''}</span>
           <span>
             <button class="small-btn" data-action="edit-plan" data-id="${p.id}">Modifier</button>
             <button class="small-btn" data-action="delete-plan" data-id="${p.id}">Supprimer</button>
@@ -3920,6 +4010,11 @@
       };
       const renderPlanLi = p => {
         let priceLine = `${p.type==='illimite' ? p.durationDays+' jours illimité' : p.creditsCount+' cours'} · ${escapeHtml(p.price)}`;
+        if(p.memberPrice){
+          priceLine += buyerQualifiesForMemberPrice(p, email, profileId)
+            ? ` <span style="color:var(--sage);">→ ${escapeHtml(p.memberPrice)} (prix membre)</span>`
+            : ` <span style="color:var(--chalk-dim);">(${escapeHtml(p.memberPrice)} pour les membres)</span>`;
+        }
         if(p.isIntroProgram){
           const progs = upcomingIntroPrograms();
           if(progs.length){
@@ -4053,16 +4148,22 @@
       `;
     } else if(m.type === 'buy-membership'){
       const {plan, name, email, isNewAccount, introStart, introEnd, introPrice, profileId, classId, dateIso, contactConfirmed} = m.payload;
-      const displayPrice = introPrice!=null ? `${introPrice} $` : plan.price;
+      const memberQualifies = introPrice==null && buyerQualifiesForMemberPrice(plan, email, profileId);
+      const displayPrice = introPrice!=null ? `${introPrice} $` : priceForPurchase(plan, email, profileId);
+      const memberPriceNote = (introPrice==null && plan.memberPrice) ? (memberQualifies
+        ? `<p style="font-size:12px;color:var(--sage);margin-top:2px;">✓ Prix membre appliqué (abonnement actif).</p>`
+        : `<p style="font-size:12px;color:var(--chalk-dim);margin-top:2px;">Prix membre (${escapeHtml(plan.memberPrice)}) réservé aux personnes ayant un abonnement illimité actif.</p>`
+      ) : '';
       const needsContactGate = !!profileId && !contactConfirmed && !childHasPriorActivity(email, profileId);
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>${escapeHtml(plan.name)}</h3>
-          <p class="muted">${plan.type==='illimite' ? plan.durationDays+' jours illimité' : plan.creditsCount+' cours'} · ${escapeHtml(displayPrice)}${introStart?` · Programme du ${formatShortDate(introStart)}`:''}</p>
+          ${needsContactGate ? '' : `<p class="muted">${plan.type==='illimite' ? plan.durationDays+' jours illimité' : plan.creditsCount+' cours'} · ${escapeHtml(displayPrice)}${introStart?` · Programme du ${formatShortDate(introStart)}`:''}</p>
+          ${memberPriceNote}`}
           ${needsContactGate ? `
-            <div style="border:1px solid var(--amber);border-radius:8px;padding:12px;margin-top:10px;">
-              <p style="font-size:13px;color:var(--chalk);margin:0 0 10px;">Avez-vous contacté le club avant de procéder au paiement ? Un contact téléphonique ou par courriel est obligatoire avant d’inscrire votre enfant au cours d’essai. Le cours d’essai est obligatoire, à la date mentionnée sous l’onglet Cours d’essai pour enfants. Aucun remboursement n’est offert en cas d’absence.</p>
+            <div style="border:2px solid var(--coral);background:rgba(255,90,90,0.12);border-radius:10px;padding:16px;margin-top:6px;">
+              <p style="font-size:14px;color:var(--coral);font-weight:700;margin:0 0 10px;line-height:1.5;">⚠️ Avez-vous contacté le club avant d’inscrire votre enfant pour la première fois ? Un contact téléphonique ou par courriel est obligatoire avant l’inscription au cours d’essai. Le cours d’essai est obligatoire, à la date mentionnée sous l’onglet <a href="https://kossmtl.ca/#important" target="_blank" rel="noopener" style="color:var(--coral);text-decoration:underline;">Cours d’essai pour enfants</a> sur le site web. Aucun remboursement n’est offert en cas d’absence.</p>
               <button class="btn btn-primary" data-action="confirm-contact-club">✓ J’ai contacté le club, continuer vers le paiement</button>
             </div>
           ` : `
@@ -4089,9 +4190,8 @@
               ${plan.paymentLink ? `<a href="${escapeHtml(plan.paymentLink)}" target="_blank" rel="noopener">Utilisez ce lien à la place</a>, puis` : 'Contactez le studio, ou'}
               <button class="small-btn" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}">déclarez votre paiement manuellement</button>.
             </p>
-            <p style="font-size:12px;color:var(--chalk-dim);margin-top:10px;">Vous préférez payer sur place, en argent comptant ?
-              <button class="small-btn" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}">Je paierai sur place</button>
-              — votre abonnement apparaîtra « à confirmer » et sera activé une fois le paiement reçu.
+            <p style="font-size:12px;color:var(--chalk-dim);margin-top:10px;">Vous désirez profiter de notre programme « <a href="https://kossmtl.ca/#communaute" target="_blank" rel="noopener" style="color:var(--amber);">pay what you can</a> », du prix promotionnel ou payer sur place, en argent comptant ?
+              <button class="small-btn" data-action="show-onsite-contact-warning">OUI</button>
             </p>
           `}
           `}
@@ -4122,6 +4222,13 @@
           </div>
           <label>Prix (affiché)</label>
           <input id="p-price" value="${escapeHtml(p.price||'')}" placeholder="90 $">
+          <label>Prix membre (optionnel)</label>
+          <input id="p-member-price" value="${escapeHtml(p.memberPrice||'')}" placeholder="ex. 8 $ — laisser vide si aucun rabais membre">
+          <p style="font-size:11px;color:var(--chalk-dim);margin:2px 0 0;">Appliqué automatiquement si l’acheteur a un abonnement illimité actif (peu importe la catégorie) au moment de l’achat.</p>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+            <input type="checkbox" id="p-family-check" style="width:auto;" ${p.familyMemberCheck?'checked':''}>
+            <span style="color:var(--chalk);font-size:13px;">Formule familiale : le prix membre s’applique si le PARENT ou l’ENFANT choisi est membre (au lieu du compte acheteur seulement)</span>
+          </label>
           <label style="margin-top:14px;">Catégories débloquées</label>
           <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
             ${allCategories().map(cat=>`
@@ -4405,8 +4512,10 @@
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>🚩 Signaler ce message ?</h3>
-          <p class="muted">Êtes-vous certain(e) de vouloir signaler ce message comme inapproprié ? La confidentialité de l’expéditeur ET de la personne qui le recevait sera alors levée pour vous — vous devrez en assumer la responsabilité. Cette exception n’existe que pour la politique de tolérance zéro envers l’intimidation ou les abus.</p>
-          <div class="btn-row">
+          <div style="border:2px solid var(--coral);background:rgba(255,90,90,0.12);border-radius:10px;padding:16px;margin-top:6px;">
+            <p style="font-size:14px;color:var(--coral);font-weight:700;margin:0;line-height:1.5;">Êtes-vous certain(e) de vouloir signaler ce message comme inapproprié ? La confidentialité de l’expéditeur ET de la personne qui le recevait sera alors levée pour vous — vous devrez en assumer la responsabilité. Cette exception n’existe que pour la politique de tolérance zéro envers l’intimidation ou les abus.</p>
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
             <button class="btn btn-danger" data-action="flag-shared-item" data-id="${id}">Oui, signaler</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
@@ -5009,24 +5118,24 @@
             <button class="btn btn-primary" data-action="save-notebook-settings" data-notebook="${notebookId}">Enregistrer</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
-          ${getNotebooksForOwner(nb.ownerKey).length > 1 ? `
-            <div class="btn-row" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
-              <button class="btn btn-danger" data-action="delete-notebook" data-notebook="${notebookId}">🗑 Supprimer ce carnet</button>
-            </div>
-          ` : ''}
+          <div class="btn-row" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
+            <button class="btn btn-danger" data-action="delete-notebook" data-notebook="${notebookId}">🗑 Supprimer ce carnet</button>
+          </div>
         </div>
       `;
     } else if(m.type === 'confirm-delete-notebook'){
       const {notebookId} = m.payload;
       const nb = state.data.notebooks.find(x=>x.id===notebookId);
+      const itemCount = state.data.notebookEntries.filter(n=>n.notebookId===notebookId).length;
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Supprimer « ${escapeHtml(nb?nb.name:'')} » ?</h3>
-          <p class="muted">Toutes les pages et notes de ce carnet seront supprimées définitivement. Cette action est irréversible.</p>
+          <p class="muted">Les autocollants et notes reçus (📥 Reçu) retourneront dans votre boîte de réception. Mais tout le reste — ${itemCount} élément${itemCount>1?'s':''} déjà placé${itemCount>1?'s':''} dans ce carnet (pages, notes, autocollants collés) — sera perdu définitivement.</p>
+          <p class="muted" style="font-weight:600;color:var(--coral);">Êtes-vous sûr·e de vouloir supprimer ce carnet ? Cette action est irréversible.</p>
           <div class="btn-row">
             <button class="btn btn-danger" data-action="confirm-delete-notebook-yes" data-notebook="${notebookId}">Oui, supprimer</button>
-            <button class="btn btn-secondary" data-action="open-notebook-settings" data-notebook="${notebookId}">Annuler</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
         </div>
       `;
@@ -5097,6 +5206,18 @@
           <div class="btn-row">
             <button class="btn btn-danger" data-action="delete-family-member" data-id="${memberId}">Oui, retirer</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'onsite-contact-warning'){
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <div style="border:1px solid var(--coral);background:rgba(255,90,90,0.08);border-radius:8px;padding:14px;">
+            <p style="font-size:13px;line-height:1.6;color:var(--coral);font-weight:600;margin:0;">Vous devez contacter Amélie au <a href="tel:4388699187" style="color:var(--coral);">438-869-9187</a> pour discuter des options de paiement. Votre abonnement sera validé manuellement par la suite. Vous ne pouvez pas réserver avant d’avoir complété votre paiement avec Amélie.</p>
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
+            <button class="btn btn-secondary" data-action="close-modal">J’ai compris</button>
           </div>
         </div>
       `;
@@ -5708,12 +5829,22 @@
       }
     }
     else if(action==='goto-account'){ state.view='account'; state.accountMenuOpen=false; render(); }
-    else if(action==='cycle-account-membership'){
-      const email = state.studentSession ? state.studentSession.email : '';
-      const dir = parseInt(e.currentTarget.dataset.dir, 10) || 1;
-      const count = state.data.memberships.filter(m=>m.studentEmail.toLowerCase()===email.toLowerCase() && !m.hiddenByStudent && membershipDisplayStatus(m)==='active').length;
-      const cur = state.accountActiveMembershipIndex || 0;
-      state.accountActiveMembershipIndex = count ? ((cur + dir) % count + count) % count : 0;
+    else if(action==='toggle-account-membership-menu'){
+      state.accountMembershipMenuOpen = !state.accountMembershipMenuOpen;
+      render();
+    }
+    else if(action==='pick-account-membership'){
+      state.accountActiveMembershipIndex = parseInt(e.currentTarget.dataset.idx, 10) || 0;
+      state.accountMembershipMenuOpen = false;
+      render();
+    }
+    else if(action==='toggle-header-membership-menu'){
+      state.headerMembershipMenuOpen = !state.headerMembershipMenuOpen;
+      render();
+    }
+    else if(action==='pick-header-membership'){
+      state.headerActiveMembershipIndex = parseInt(e.currentTarget.dataset.idx, 10) || 0;
+      state.headerMembershipMenuOpen = false;
       render();
     }
     else if(action==='toggle-account-menu'){ state.accountMenuOpen = !state.accountMenuOpen; render(); }
@@ -6089,7 +6220,15 @@
       // destination deviennent visibles dans la carte "Messages signalés inappropriés"
       // (politique de tolérance zéro), voir flaggedInappropriateItems()/ownerKeyLabel().
       const item = state.data.sharedItems.find(s=>s.id===id);
-      if(item){ item.status = 'refused'; item.inappropriate = true; item.decidedAt = Date.now(); await persist(); }
+      if(item){
+        item.status = 'refused'; item.inappropriate = true; item.decidedAt = Date.now();
+        // Garde une trace de qui a fait le signalement, pour que ça apparaisse ensuite dans
+        // les notes si on transfère ce message (transfer-flagged-to-notes).
+        const mgr = currentManager();
+        item.flaggedByManagerId = mgr ? mgr.id : null;
+        item.flaggedByManagerName = mgr ? mgr.name : null;
+        await persist();
+      }
       state.modal = null; closeModalDom();
       render();
       showToast('Message signalé — origine et destination visibles ci-dessous.');
@@ -6123,7 +6262,11 @@
         contentDesc = (item.text||'').trim();
       }
       const dateStr = new Date().toLocaleDateString('fr-CA');
-      const line = `[${dateStr}] Message signalé (${item.recipientType==='coach'?'à un coach':'à un’étudiant’e'}) : "${contentDesc}"`;
+      const recipientLabel = item.recipientType==='coach'
+        ? ((state.data.managers.find(mg=>mg.id===item.recipientManagerId)||{}).name || 'coach inconnu')
+        : ownerKeyLabel(item.recipientOwnerKey);
+      const flaggerLabel = item.flaggedByManagerName || 'gestionnaire inconnu';
+      const line = `[${dateStr}] Message signalé — destiné à ${recipientLabel} — signalé par ${flaggerLabel} : "${contentDesc}"`;
       const target = profileId ? (acct.familyMembers||[]).find(f=>f.id===profileId) : acct;
       if(!target){ showToast('Profil de l’expéditeur introuvable.'); return; }
       if(!target.notes) target.notes = {};
@@ -6259,15 +6402,12 @@
       const nb = state.data.notebooks.find(x=>x.id===notebookId);
       if(!nb){ state.modal = null; closeModalDom(); render(); return; }
       const ownerKey = nb.ownerKey;
+      // On peut maintenant supprimer même le dernier carnet — getOrCreateActiveNotebook() en
+      // recrée automatiquement un vierge ("Mon carnet") la prochaine fois qu'on ouvre l'onglet.
       const remaining = getNotebooksForOwner(ownerKey).filter(x=>x.id!==notebookId);
-      if(!remaining.length){
-        showToast('Impossible de supprimer votre dernier carnet.');
-        state.modal = null; closeModalDom(); render();
-        return;
-      }
       state.data.notebooks = state.data.notebooks.filter(x=>x.id!==notebookId);
       state.data.notebookEntries = state.data.notebookEntries.filter(n=>n.notebookId!==notebookId);
-      if(state.notebookActiveId === notebookId) state.notebookActiveId = remaining[0].id;
+      if(state.notebookActiveId === notebookId) state.notebookActiveId = remaining.length ? remaining[0].id : null;
       state.notebookActivePage = 1;
       state.notebookFilterCategory = null;
       await persist();
@@ -6321,7 +6461,13 @@
       state.modal = {type:'attendance', payload:{classId, dateIso}};
       render();
     }
-    else if(action==='week-prev'){ state.weekOffset--; render(); }
+    else if(action==='week-prev'){
+      // Les usagers (vue 'student', l'horaire de réservation) ne doivent pas pouvoir consulter
+      // les semaines passées — seule la vue Présences (gestionnaires) le permet, via son propre
+      // garde-fou isSuperMgr plus haut.
+      if(state.view==='student' && state.weekOffset<=0) return;
+      state.weekOffset--; render();
+    }
     else if(action==='week-next'){ state.weekOffset++; render(); }
     else if(action==='week-today'){ state.weekOffset=0; render(); }
     else if(action==='goto-next-intro'){
@@ -6958,6 +7104,14 @@
       closeModalDom();
       render();
     }
+    else if(action==='show-onsite-contact-warning'){
+      // Remplace l'ancien "Je paierai sur place" qui créait tout de suite l'abonnement en
+      // attente (confirm-purchase) — maintenant on renvoie simplement vers un appel/courriel
+      // à Amélie ; aucun abonnement/réservation n'est créé tant qu'elle n'a pas validé
+      // manuellement (via Offrir un abonnement gratuit / confirmation manuelle en gestion).
+      state.modal = {type:'onsite-contact-warning'};
+      render();
+    }
     else if(action==='close-pay-onsite-info'){
       const email = e.currentTarget.dataset.email;
       const isNew = e.currentTarget.dataset.new === '1';
@@ -6995,6 +7149,16 @@
       await persist();
       render();
       showToast('Abonnement supprimé.');
+    }
+    else if(action==='toggle-paid-helcim'){
+      const m = state.data.memberships.find(mm=>mm.id===id);
+      if(m){
+        m.paidViaHelcim = !m.paidViaHelcim;
+        m.paidViaHelcimAt = m.paidViaHelcim ? (m.paidViaHelcimAt || Date.now()) : m.paidViaHelcimAt;
+      }
+      await persist();
+      render();
+      showToast(m && m.paidViaHelcim ? 'Compté dans le revenu Helcim.' : 'Retiré du revenu Helcim.');
     }
     else if(action==='hide-membership'){
       const m = state.data.memberships.find(mm=>mm.id===id);
@@ -7481,15 +7645,17 @@
       const creditsCount = Math.max(1, parseInt(document.getElementById('p-credits').value,10)||1);
       const durationDays = Math.max(1, parseInt(document.getElementById('p-days').value,10)||1);
       const price = document.getElementById('p-price').value.trim();
+      const memberPrice = document.getElementById('p-member-price').value.trim() || null;
+      const familyMemberCheck = document.getElementById('p-family-check').checked;
       const categories = Array.from(document.querySelectorAll('.p-cat:checked')).map(el=>el.value);
       if(!name){ showToast('Le nom de la formule est requis.'); return; }
       if(id){
         // Note : "paymentLink" n'est plus modifiable ici (paiement Helcim intégré maintenant
         // automatique) — on laisse volontairement la valeur existante (si présente) intacte.
         const p = state.data.membershipPlans.find(pl=>pl.id===id);
-        Object.assign(p, {name,type,creditsCount,durationDays,price,categories});
+        Object.assign(p, {name,type,creditsCount,durationDays,price,categories,memberPrice,familyMemberCheck});
       } else {
-        state.data.membershipPlans.push({id:uid(),name,type,creditsCount,durationDays,price,paymentLink:'',categories});
+        state.data.membershipPlans.push({id:uid(),name,type,creditsCount,durationDays,price,paymentLink:'',categories,memberPrice,familyMemberCheck});
       }
       await persist();
       state.modal = null; closeModalDom();
