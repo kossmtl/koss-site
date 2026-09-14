@@ -1274,7 +1274,7 @@
     return out;
   }
 
-  async function persist(){
+  async function persistNow(){
     let toWrite = state.data;
     try{
       const res = await storageBackend.get(STORAGE_KEY, true);
@@ -1300,6 +1300,19 @@
       showToast("Erreur d'enregistrement, réessayez.");
       return false;
     }
+  }
+
+  // File d'attente pour persist() : deux persist() lancés presque en même temps (ex. supprimer
+  // un compte puis en recréer un tout de suite après) pouvaient se chevaucher — chacun lisait le
+  // serveur et fusionnait à partir d'un instantané différent, et celui qui écrivait EN SECOND
+  // pouvait écraser le travail de l'autre (perte de la donnée la plus récente). En les mettant en
+  // file, chaque persist() attend que le précédent soit complètement terminé (donc que
+  // state.lastSyncedData soit à jour) avant de lire le serveur à son tour — plus de chevauchement.
+  let persistChain = Promise.resolve();
+  function persist(){
+    const result = persistChain.then(()=> persistNow());
+    persistChain = result.catch(()=>{});
+    return result;
   }
 
   // Récupère périodiquement les changements faits ailleurs (autre appareil/fenêtre)
@@ -8161,7 +8174,8 @@
       if(findStudentAccount(email)){ markInvalid('create-email'); showToast('Un compte existe déjà avec ce courriel — connectez-vous plutôt.'); return; }
       const name = `${firstName} ${lastName}`;
       await verifyOrCreateAccount(email, name, password, firstName, lastName);
-      await persist();
+      const ok = await persist();
+      if(!ok){ showToast("Erreur d'enregistrement du compte, réessaie dans un instant."); return; }
       state.studentSession = {email};
       state.accountExpanded = true;
       await saveSessionToStorage(email);
@@ -8216,9 +8230,9 @@
       state.activeProfileId = null;
       state.modal = null; closeModalDom();
       await clearSessionStorage();
-      await persist();
+      const ok = await persist();
       render();
-      showToast('Compte supprimé.');
+      showToast(ok ? 'Compte supprimé.' : "Erreur pendant la suppression, réessaie dans un instant.");
     }
     else if(action==='student-logout-inline'){
       state.studentSession = null;
