@@ -9362,11 +9362,20 @@
     }
   }
 
+  // ⚠️ Bug Android corrigé : ce re-rendu au resize existe pour réajuster l'horaire quand la
+  // fenêtre change de taille (rotation, redimensionnement navigateur) — mais sur mobile,
+  // l'ouverture du clavier virtuel (ex. en touchant un champ "tel") déclenche AUSSI un
+  // événement 'resize' (le viewport visible rétrécit). Comme render() détruit et recrée
+  // TOUTE la modale (closeModalDom() + renderModal()), ce re-rendu remplaçait le champ juste
+  // au moment où l'usager le touchait, lui faisant perdre le focus — et donc le clavier se
+  // refermait tout de suite (ex. numéro de téléphone à l'inscription, Android). Corrigé en
+  // sautant ce re-rendu automatique tant qu'une modale est ouverte (`!state.modal`), exactement
+  // comme le fait déjà refreshFromRemote() pour la même raison.
   let resizeRenderTimer = null;
   window.addEventListener('resize', ()=>{
     clearTimeout(resizeRenderTimer);
     resizeRenderTimer = setTimeout(()=>{
-      if(state.view==='student' || state.view==='attendance') render();
+      if((state.view==='student' || state.view==='attendance') && !state.modal) render();
     }, 200);
   });
 
