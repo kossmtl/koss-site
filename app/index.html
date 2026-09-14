@@ -974,6 +974,15 @@
       state.data.bugReportsArchive = state.data.bugReportsArchive.filter(b=>(b.resolvedAt||0) >= cutoffBugs);
       if(state.data.bugReportsArchive.length !== beforeLen) changed = true;
     }
+    if(!state.data.deletedAccounts) { state.data.deletedAccounts = []; changed = true; }
+    {
+      // Comptes supprimés (self ou admin) gardés au moins 30 jours dans l'archive avant purge
+      // automatique — sauf réactivation ou suppression définitive manuelle avant ce délai.
+      const cutoffAccounts = Date.now() - 30*24*60*60*1000;
+      const beforeLen = state.data.deletedAccounts.length;
+      state.data.deletedAccounts = state.data.deletedAccounts.filter(d=>(d.deletedAt||0) >= cutoffAccounts);
+      if(state.data.deletedAccounts.length !== beforeLen) changed = true;
+    }
     if(!state.data.migratedYogaDescV2){
       state.data.classes.forEach(c=>{
         if(c.category==='yoga'){
@@ -2112,6 +2121,13 @@
   function receivedItemsForManager(managerId){
     return state.data.sharedItems.filter(s=>s.recipientType==='coach' && s.recipientManagerId===managerId && s.status==='delivered');
   }
+  // Notes déjà marquées "lues" par un coach — gardées (jamais supprimées automatiquement) pour
+  // qu'elles restent consultables plus tard, au lieu de disparaître dès qu'elles sont lues.
+  function archivedItemsForManager(managerId){
+    return state.data.sharedItems
+      .filter(s=>s.recipientType==='coach' && s.recipientManagerId===managerId && s.status==='archived')
+      .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  }
   function pendingModerationSharedItems(){
     return state.data.sharedItems.filter(s=>s.anonymous && s.status==='pending_review');
   }
@@ -2215,6 +2231,53 @@
   function findStudentAccount(email){
     const e = String(email||'').toLowerCase();
     return state.data.studentAccounts.find(a=>a.email.toLowerCase()===e) || null;
+  }
+
+  // Archive un compte élève supprimé (self-delete OU suppression admin) dans
+  // state.data.deletedAccounts au lieu de le perdre pour toujours tout de suite — Amélie peut
+  // ensuite le réactiver ou le supprimer pour de bon depuis l'onglet "Comptes supprimés".
+  // Retire le compte + carnet(s) des données actives, MAIS garde les abonnements/réservations en
+  // place tels quels (comme avant S24) : ils deviennent orphelins, conservés pour la comptabilité,
+  // et se retrouvent naturellement reliés au compte si jamais il est réactivé (même courriel).
+  function archiveDeletedAccount(acct, deletedBy){
+    const email = acct.email.toLowerCase();
+    const ownerKeys = new Set([notebookOwnerKey(acct.email, null)]);
+    (acct.familyMembers||[]).forEach(fm=>ownerKeys.add(notebookOwnerKey(acct.email, fm.id)));
+
+    // Annule les réservations à venir (comme annoncé aux élèves), pour tous les profils du compte.
+    state.data.bookings.forEach(b=>{
+      if(b.studentEmail && b.studentEmail.toLowerCase()===email && b.status!=='annulee'){
+        refundCreditIfNeeded(b);
+        b.status = 'annulee';
+        promoteWaitlistIfRoom(b.classId, b.dateIso);
+      }
+    });
+
+    const hadActiveMembership = state.data.memberships.some(m=>
+      m.studentEmail && m.studentEmail.toLowerCase()===email && membershipDisplayStatus(m)==='active'
+    );
+
+    const archivedNotebooks = state.data.notebooks.filter(nb=>ownerKeys.has(nb.ownerKey));
+    const archivedEntries = state.data.notebookEntries.filter(n=>ownerKeys.has(n.ownerKey));
+    const archivedGrants = (state.data.stickerGrants||[]).filter(g=>g.email && g.email.toLowerCase()===email);
+
+    state.data.notebooks = state.data.notebooks.filter(nb=>!ownerKeys.has(nb.ownerKey));
+    state.data.notebookEntries = state.data.notebookEntries.filter(n=>!ownerKeys.has(n.ownerKey));
+    state.data.stickerGrants = (state.data.stickerGrants||[]).filter(g=>!(g.email && g.email.toLowerCase()===email));
+    state.data.studentAccounts = state.data.studentAccounts.filter(a=>a.email.toLowerCase()!==email);
+
+    if(!state.data.deletedAccounts) state.data.deletedAccounts = [];
+    state.data.deletedAccounts = state.data.deletedAccounts.filter(d=>d.account.email.toLowerCase()!==email);
+    state.data.deletedAccounts.push({
+      id: uid(),
+      deletedAt: Date.now(),
+      deletedBy, // 'self' ou le nom du gestionnaire
+      hadActiveMembership,
+      account: acct,
+      notebooks: archivedNotebooks,
+      notebookEntries: archivedEntries,
+      stickerGrants: archivedGrants,
+    });
   }
 
   function renderMembershipRows(filterEmail, filterProfileId){
@@ -3531,7 +3594,7 @@
         <td>${studentLinkHtml(m.studentName, m.studentEmail, m.profileId)}<br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(m.studentEmail)}</span></td>
         <td>${escapeHtml(m.planName)}</td>
         <td>
-          <button class="small-btn" style="background:var(--sage);border-color:var(--sage);color:var(--ink);" data-action="confirm-membership" data-id="${m.id}">Confirmer</button>
+          <button class="small-btn" style="background:var(--sage);border-color:var(--sage);color:var(--ink);" data-action="open-confirm-membership-amount" data-id="${m.id}">Confirmer</button>
           <button class="small-btn" data-action="refuse-membership" data-id="${m.id}">Refuser</button>
         </td>
       </tr>
@@ -3731,6 +3794,21 @@
             `).join('')}
           `);
         }
+        const archived = mgr ? archivedItemsForManager(mgr.id) : [];
+        if(archived.length){
+          out += adminCard('shared-archive', `Notes archivées pour ${escapeHtml(mgr.name)} (${archived.length})`, `
+            <p class="muted" style="color:var(--chalk-dim);">Notes déjà marquées comme lues — conservées ici, elles ne disparaissent jamais toutes seules.</p>
+            ${archived.map(it=>`
+              <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+                <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 6px;">${it.createdAt ? new Date(it.createdAt).toLocaleDateString('fr-CA') : ''}</p>
+                ${sharedContentPreviewHtml(it)}
+                <div class="btn-row" style="margin-top:8px;">
+                  <button class="small-btn" data-action="confirm-delete-archived-shared-item" data-id="${it.id}" style="color:var(--coral);">Supprimer définitivement</button>
+                </div>
+              </div>
+            `).join('')}
+          `);
+        }
         const flagged = flaggedInappropriateItems();
         if(flagged.length){
           out += adminCard('shared-flagged', `🚩 Messages signalés inappropriés (${flagged.length})`, `
@@ -3761,6 +3839,26 @@
         <input id="student-search-input" placeholder="Rechercher..." value="${escapeHtml(state.studentSearchQuery||'')}">
         <div class="btn-row"><button class="btn btn-secondary" data-action="run-student-search">Rechercher</button></div>
         ${searchResultsHtml}
+      `)}
+
+      ${adminCard('deleted-accounts', `Comptes supprimés ${(state.data.deletedAccounts||[]).length ? '('+state.data.deletedAccounts.length+')' : ''}`, `
+        <p class="muted" style="color:var(--chalk-dim);">Gardés au moins 30 jours après la suppression, puis retirés automatiquement — sauf si réactivés ou supprimés pour de bon avant ce délai.</p>
+        ${(state.data.deletedAccounts||[]).length ? `
+          <table><tr><th>Nom</th><th>Courriel</th><th>Abonnement actif</th><th>Supprimé</th><th></th></tr>
+            ${state.data.deletedAccounts.slice().sort((a,b)=>b.deletedAt-a.deletedAt).map(d=>`
+              <tr>
+                <td>${escapeHtml(d.account.name||'—')}</td>
+                <td>${escapeHtml(d.account.email)}</td>
+                <td>${d.hadActiveMembership ? 'Oui' : 'Non'}</td>
+                <td>${new Date(d.deletedAt).toLocaleDateString('fr-CA')}${d.deletedBy && d.deletedBy!=='self' ? ' · par '+escapeHtml(d.deletedBy) : (d.deletedBy==='self' ? ' · par l’élève' : '')}</td>
+                <td>
+                  <button class="small-btn" style="background:var(--sage);border-color:var(--sage);color:var(--ink);" data-action="reactivate-deleted-account" data-id="${d.id}">Réactiver</button>
+                  <button class="small-btn" data-action="confirm-delete-forever-account" data-id="${d.id}" style="color:var(--coral);">Supprimer pour toujours</button>
+                </td>
+              </tr>
+            `).join('')}
+          </table>
+        ` : '<p class="muted" style="color:var(--chalk-dim);">Aucun compte supprimé récemment.</p>'}
       `)}
 
       ${adminCard('advanced-reports', 'Rapports', `
@@ -3941,6 +4039,34 @@
           <div class="btn-row" style="margin-top:12px;">
             <button class="btn btn-danger" data-action="delete-archived-bug" data-id="${bugId}">Oui, supprimer</button>
             <button class="btn btn-secondary" data-action="open-bug-archive">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'confirm-delete-forever-account'){
+      const {id: accId} = m.payload;
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <div style="border:1px solid var(--coral);background:rgba(255,90,90,0.08);border-radius:8px;padding:14px;">
+            <p style="font-size:14px;line-height:1.5;color:var(--coral);font-weight:600;margin:0;">Supprimer ce compte pour toujours ? Le carnet et les autocollants offerts associés seront perdus définitivement. Cette action est irréversible.</p>
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
+            <button class="btn btn-danger" data-action="delete-forever-account" data-id="${accId}">Oui, supprimer pour toujours</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'confirm-delete-archived-shared-item'){
+      const {id: noteId} = m.payload;
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <div style="border:1px solid var(--coral);background:rgba(255,90,90,0.08);border-radius:8px;padding:14px;">
+            <p style="font-size:14px;line-height:1.5;color:var(--coral);font-weight:600;margin:0;">Supprimer définitivement cette note archivée ? Cette action est irréversible.</p>
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
+            <button class="btn btn-danger" data-action="delete-archived-shared-item" data-id="${noteId}">Oui, supprimer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
         </div>
       `;
@@ -4807,6 +4933,29 @@
           </div>
         `;
       }
+    } else if(m.type === 'confirm-membership-amount'){
+      const {id} = m.payload;
+      const mb = state.data.memberships.find(mm=>mm.id===id);
+      if(!mb){
+        html = `<div class="modal"><button class="close-x" data-action="close-modal">✕</button><h3>Abonnement introuvable</h3></div>`;
+      } else {
+        const plan = state.data.membershipPlans.find(p=>p.id===mb.planId);
+        const defaultAmount = parsePriceAmount(mb.planPrice || (plan?plan.price:'') || '');
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Confirmer l’abonnement</h3>
+            <p class="muted">${studentLinkHtml(mb.studentName, mb.studentEmail, mb.profileId)} — ${escapeHtml(mb.planName)}</p>
+            <label>Montant réellement payé ($)</label>
+            <input type="number" step="0.01" min="0" id="confirm-mb-amount" value="${defaultAmount}">
+            <p class="muted" style="color:var(--chalk-dim);font-size:11px;">Par défaut, le prix affiché de la formule (${escapeHtml(mb.planPrice || (plan?plan.price:'') || '—')}). Modifiez ce montant si un rabais a été accordé ou si le paiement réel diffère (ex. paiement comptant partiel) — le rapport de ventes utilisera ce montant.</p>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="submit-confirm-membership-amount" data-id="${id}">Confirmer le paiement</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          </div>
+        `;
+      }
     } else if(m.type === 'confirm-mark-attendance-paid'){
       const {id} = m.payload;
       const b = state.data.bookings.find(bk=>bk.id===id);
@@ -5291,7 +5440,8 @@
             <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
               ${sharedContentPreviewHtml(it)}
               <div class="btn-row" style="margin-top:8px;">
-                <button class="small-btn" data-action="claim-shared-item" data-id="${it.id}" data-owner="${escapeHtml(ownerKey)}">Voir dans le carnet</button>
+                <button class="small-btn" data-action="goto-notebook-inbox" data-owner="${escapeHtml(ownerKey)}">Voir dans le carnet</button>
+                <button class="small-btn" data-action="claim-shared-item" data-id="${it.id}" data-owner="${escapeHtml(ownerKey)}">Placer sur la page</button>
                 <button class="small-btn" data-action="confirm-delete-shared-item" data-id="${it.id}" data-owner="${escapeHtml(ownerKey)}" style="color:var(--coral);">Supprimer</button>
               </div>
             </div>
@@ -5301,7 +5451,8 @@
               <img src="${s.image}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;"><div class="sname">🎁 ${escapeHtml(s.name)}</div>
               ${s.grantMessage ? `<p style="font-style:italic;color:var(--chalk-dim);font-size:12px;">"${escapeHtml(s.grantMessage)}"</p>` : ''}
               <div class="btn-row" style="margin-top:8px;">
-                <button class="small-btn" data-action="claim-gifted-sticker" data-grant="${s.grantId}" data-owner="${escapeHtml(ownerKey)}">Voir dans le carnet</button>
+                <button class="small-btn" data-action="goto-notebook-inbox" data-owner="${escapeHtml(ownerKey)}">Voir dans le carnet</button>
+                <button class="small-btn" data-action="claim-gifted-sticker" data-grant="${s.grantId}" data-owner="${escapeHtml(ownerKey)}">Placer sur la page</button>
                 <button class="small-btn" data-action="confirm-delete-gifted-sticker" data-grant="${s.grantId}" data-owner="${escapeHtml(ownerKey)}" style="color:var(--coral);">Supprimer</button>
               </div>
             </div>
@@ -6573,6 +6724,21 @@
       render();
       showToast('Supprimé définitivement.');
     }
+    else if(action==='goto-notebook-inbox'){
+      // Navigue seulement — ne place RIEN sur une page et ne modifie aucune donnée. Ouvre le
+      // carnet puis rouvre cette même boîte de réception par-dessus, pour qu'on puisse ensuite
+      // choisir "Placer sur la page" ou "Supprimer" pour chaque élément, depuis le carnet.
+      const ownerKey = e.currentTarget.dataset.owner;
+      const nb = getOrCreateActiveNotebook(ownerKey);
+      await persist();
+      const {profileId} = parseOwnerKey(ownerKey);
+      state.notebookProfileId = profileId;
+      state.notebookActiveId = nb.id;
+      state.notebookOpened = true;
+      state.modal = {type:'received-items', payload:{ownerKey}};
+      state.view = 'notebook';
+      render();
+    }
     else if(action==='claim-shared-item'){
       const itemId = e.currentTarget.dataset.id;
       const ownerKey = e.currentTarget.dataset.owner;
@@ -6733,6 +6899,17 @@
     else if(action==='archive-shared-item'){
       const item = state.data.sharedItems.find(s=>s.id===id);
       if(item){ item.status = 'archived'; await persist(); render(); showToast('Archivé.'); }
+    }
+    else if(action==='confirm-delete-archived-shared-item'){
+      state.modal = {type:'confirm-delete-archived-shared-item', payload:{id}};
+      render();
+    }
+    else if(action==='delete-archived-shared-item'){
+      state.data.sharedItems = state.data.sharedItems.filter(s=>s.id!==id);
+      await persist();
+      state.modal = null;
+      render();
+      showToast('Note supprimée définitivement.');
     }
     else if(action==='new-sticker'){
       pendingStickerImage = null;
@@ -7804,6 +7981,32 @@
       render();
       showToast('Abonnement activé.');
     }
+    else if(action==='open-confirm-membership-amount'){
+      state.modal = {type:'confirm-membership-amount', payload:{id}};
+      render();
+    }
+    else if(action==='submit-confirm-membership-amount'){
+      const m = state.data.memberships.find(mm=>mm.id===id);
+      if(m){
+        const raw = document.getElementById('confirm-mb-amount').value;
+        const amount = parseFloat(raw);
+        if(!isNaN(amount) && amount>=0){
+          m.planPrice = amount.toFixed(2).replace(/\.00$/,'') + ' $';
+        }
+        activateMembership(m);
+      }
+      await persist();
+      state.modal = null;
+      render();
+      showToast('Abonnement activé.');
+      // Courriel de confirmation à l'étudiant — best-effort, ne doit jamais bloquer ni faire
+      // échouer l'activation si Resend est indisponible (réutilise koss-send-invoice, qui envoie
+      // déjà un reçu avec le montant réellement payé — voir m.planPrice ci-dessus).
+      if(m){
+        try{ sb.functions.invoke('koss-send-invoice', {body:{membershipId: m.id}}); }
+        catch(err){ console.error('Échec envoi courriel de confirmation d’abonnement:', err); }
+      }
+    }
     else if(action==='refuse-membership'){
       const m = state.data.memberships.find(mm=>mm.id===id);
       if(m) m.status = 'annulee';
@@ -7932,16 +8135,49 @@
     }
     else if(action==='confirm-delete-student-yes'){
       const email = e.currentTarget.dataset.email;
-      const e2 = email.toLowerCase();
-      const affected = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===e2 && ACTIVE_STATUSES.includes(b.status));
-      state.data.studentAccounts = state.data.studentAccounts.filter(a=>a.email.toLowerCase()!==e2);
-      state.data.memberships = state.data.memberships.filter(m=>m.studentEmail.toLowerCase()!==e2);
-      state.data.bookings = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()!==e2);
-      affected.forEach(b=> promoteWaitlistIfRoom(b.classId, b.dateIso));
+      const acct = findStudentAccount(email);
+      // Archive le compte (voir archiveDeletedAccount) au lieu de le perdre pour toujours tout de
+      // suite — l'abonnement/historique de réservations reste intact (orphelin), consultable et
+      // récupérable depuis l'onglet admin "Comptes supprimés" (réactiver ou supprimer pour de bon).
+      if(acct){ archiveDeletedAccount(acct, currentManager() ? currentManager().name : 'admin'); }
+      else {
+        // Compte introuvable dans studentAccounts (ex. élève jamais officiellement inscrit,
+        // seulement présent via memberships/bookings) — comportement d'avant, rien à archiver.
+        const e2 = email.toLowerCase();
+        const affected = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===e2 && ACTIVE_STATUSES.includes(b.status));
+        state.data.memberships = state.data.memberships.filter(m=>m.studentEmail.toLowerCase()!==e2);
+        state.data.bookings = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()!==e2);
+        affected.forEach(b=> promoteWaitlistIfRoom(b.classId, b.dateIso));
+      }
       await persist();
       state.modal = null; closeModalDom();
       render();
       showToast('Étudiant supprimé.');
+    }
+    else if(action==='reactivate-deleted-account'){
+      const d = (state.data.deletedAccounts||[]).find(x=>x.id===id);
+      if(!d){ showToast('Introuvable.'); return; }
+      const already = findStudentAccount(d.account.email);
+      if(already){ showToast('Un compte existe déjà avec ce courriel — impossible de réactiver.'); return; }
+      state.data.studentAccounts.push(d.account);
+      state.data.notebooks.push(...d.notebooks);
+      state.data.notebookEntries.push(...d.notebookEntries);
+      state.data.stickerGrants.push(...d.stickerGrants);
+      state.data.deletedAccounts = (state.data.deletedAccounts||[]).filter(x=>x.id!==id);
+      await persist();
+      render();
+      showToast('Compte réactivé.');
+    }
+    else if(action==='confirm-delete-forever-account'){
+      state.modal = {type:'confirm-delete-forever-account', payload:{id}};
+      render();
+    }
+    else if(action==='delete-forever-account'){
+      state.data.deletedAccounts = (state.data.deletedAccounts||[]).filter(x=>x.id!==id);
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Compte supprimé pour toujours.');
     }
     else if(action==='toggle-admin-card'){
       const key = e.currentTarget.dataset.card;
@@ -8695,27 +8931,10 @@
       const hash = await hashPassword(password || '');
       if(hash !== acct.hash){ markInvalid('del-acc-password'); showToast('Mot de passe incorrect.'); return; }
 
-      const email = acct.email.toLowerCase();
-      const ownerKeys = new Set([notebookOwnerKey(acct.email, null)]);
-      (acct.familyMembers||[]).forEach(fm=>ownerKeys.add(notebookOwnerKey(acct.email, fm.id)));
-
-      // Annule les réservations à venir (comme self-cancel), pour tous les profils du compte.
-      state.data.bookings.forEach(b=>{
-        if(b.studentEmail && b.studentEmail.toLowerCase()===email && b.status!=='annulee'){
-          refundCreditIfNeeded(b);
-          b.status = 'annulee';
-          promoteWaitlistIfRoom(b.classId, b.dateIso);
-        }
-      });
-
-      // Retire le carnet personnel (et celui des profils enfants) — irréversible, comme annoncé.
-      state.data.notebooks = state.data.notebooks.filter(nb=>!ownerKeys.has(nb.ownerKey));
-      state.data.notebookEntries = state.data.notebookEntries.filter(n=>!ownerKeys.has(n.ownerKey));
-      state.data.stickerGrants = (state.data.stickerGrants||[]).filter(g=>!(g.email && g.email.toLowerCase()===email));
-
-      // L'historique d'abonnements/paiements est conservé pour la comptabilité — pas touché ici,
-      // il devient simplement orphelin puisque le compte n'existe plus (comme annoncé à l'élève).
-      state.data.studentAccounts = state.data.studentAccounts.filter(a=>a.email.toLowerCase()!==email);
+      // Archive le compte (voir archiveDeletedAccount) au lieu de tout perdre pour toujours
+      // tout de suite — Amélie peut le réactiver ou le supprimer pour de bon depuis l'onglet
+      // admin "Comptes supprimés" (l'élève, lui, ne peut pas revenir en arrière lui-même).
+      archiveDeletedAccount(acct, 'self');
 
       state.studentSession = null;
       state.activeProfileId = null;
