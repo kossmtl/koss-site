@@ -46,7 +46,7 @@
     border-bottom:1px dashed var(--border);
     display:flex;
     flex-direction:column;
-    gap:10px;
+    gap:48px; /* espace volontairement généreux entre le bloc nom/abonnement et le reste (S28, demande d'Amélie) */
   }
   .header-top{
     display:flex;
@@ -54,7 +54,6 @@
     justify-content:space-between;
     flex-wrap:wrap;
     gap:10px;
-    padding-right:150px;
   }
   .header-bottom{
     display:flex;
@@ -93,7 +92,10 @@
     border-color:var(--amber);
   }
   .account-badge{display:flex;align-items:center;gap:8px;padding:6px 14px 6px 6px;}
-  .account-corner{position:absolute;top:18px;right:20px;z-index:5;}
+  /* .account-corner n'est plus en position absolue — remplacé par un flex item normal dans
+     .header-top, pour que sa hauteur réelle (ex. badge + abonnement sur 2 lignes) pousse
+     correctement le reste de l'en-tête vers le bas au lieu de le chevaucher sur mobile. */
+  .account-corner{z-index:5;flex-shrink:0;}
   .account-menu{
     position:absolute;top:calc(100% + 6px);right:0;
     background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;
@@ -838,6 +840,7 @@
     accountExpanded: false,
     accountMenuOpen: false,
     studentSearchQuery: '',
+    studentSearchTried: false, // liste des étudiants cachée tant qu'on n'a pas cliqué "Rechercher" au moins une fois (vide = tout le monde, une seule fois recherché)
     activeProfileId: null,
     notebookProfileId: undefined,
     notebookOpened: false,
@@ -845,6 +848,7 @@
     notebookSelectedEntry: null,
     notebookEditMode: false,
     membershipSearchQuery: '',
+    membershipSearchTried: false,
     bugSearchQuery: '',
     bugArchiveSearchQuery: '',
     shareRecipientType: 'coach',
@@ -2371,6 +2375,17 @@
     return results;
   }
 
+  // Les 5 comptes étudiants les plus récemment créés (juste le nom) — vue par défaut de
+  // l'onglet Étudiants avant toute recherche (S28, demande explicite d'Amélie : elle ne veut
+  // jamais voir tout le monde par défaut, seulement les derniers arrivés).
+  function recentStudentAccounts(n){
+    return state.data.studentAccounts
+      .slice()
+      .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))
+      .slice(0, n)
+      .map(a=>({type:'account', email:a.email, name:a.name, phone:a.phone||''}));
+  }
+
   function allStudentsAndChildrenResults(){
     const results = [];
     state.data.studentAccounts.forEach(a=>{
@@ -2681,6 +2696,23 @@
     }
   }
 
+  // Nom court pour le coin en haut à droite de l'en-tête (demande explicite d'Amélie, S28) :
+  // prénom complet + première lettre du nom de famille (ex. "Sarah Martin" → "Sarah M"), et si
+  // le PRÉNOM lui-même est composé (avec un trait d'union), seule la première lettre de son
+  // deuxième segment est gardée (ex. "Marie-Claude Tremblay" → "Marie-C T"). Aucun effet ailleurs
+  // dans l'app (carte "Mon compte", listes admin, etc. gardent le nom complet) — seulement ici.
+  function headerShortName(fullName){
+    const parts = String(fullName||'').trim().split(/\s+/).filter(Boolean);
+    if(parts.length < 2) return fullName||'';
+    const lastName = parts[parts.length-1];
+    let firstPart = parts.slice(0, -1).join(' ');
+    if(firstPart.includes('-')){
+      const sub = firstPart.split('-');
+      firstPart = sub[0] + '-' + (sub[1] ? sub[1].charAt(0).toUpperCase() : '');
+    }
+    return firstPart + ' ' + lastName.charAt(0).toUpperCase();
+  }
+
   function renderHeader(){
     const acct = state.studentSession ? findStudentAccount(state.studentSession.email) : null;
     const activeProfileId = acct ? (state.activeProfileId || null) : null;
@@ -2689,20 +2721,23 @@
     // Abonnement actif de la personne actuellement affichée (soi-même ou le profil enfant
     // sélectionné) — toujours visible sous le nom dans le coin en haut à droite, pas seulement
     // sur la carte "Mon compte". Le ▼ n'ouvre un menu déroulant que s'il y en a plusieurs.
+    // ⚠️ CHANGÉ (S28) : "Abonnement actif :" et le nom de la formule sont maintenant sur 2
+    // lignes séparées (avant : une seule ligne), toujours alignés à droite.
     const headerActiveMemberships = acct ? activeMembershipsForEmail(acct.email, null, activeProfileId) : [];
     let headerMembershipIdx = state.headerActiveMembershipIndex || 0;
     if(headerMembershipIdx >= headerActiveMemberships.length) headerMembershipIdx = 0;
     const headerMembershipHtml = acct ? (()=>{
-      if(!headerActiveMemberships.length) return `<div style="font-size:11px;color:var(--chalk-dim);margin-top:2px;">Aucun abonnement actif</div>`;
+      if(!headerActiveMemberships.length) return `<div style="font-size:11px;color:var(--chalk-dim);margin-top:4px;text-align:right;">Aucun abonnement actif</div>`;
       const hm = headerActiveMemberships[headerMembershipIdx];
       return `
-        <div style="position:relative;margin-top:2px;">
-          <button type="button" class="small-btn" data-action="${headerActiveMemberships.length > 1 ? 'toggle-header-membership-menu' : ''}" style="padding:1px 6px;font-size:11px;color:var(--sage);display:inline-flex;align-items:center;gap:4px;">
-            <span>Abonnement actif : 🎫 ${escapeHtml(hm.planName)}</span>
+        <div style="font-size:11px;color:var(--chalk-dim);margin-top:4px;text-align:right;">Abonnement actif :</div>
+        <div style="position:relative;text-align:right;">
+          <button type="button" data-action="${headerActiveMemberships.length > 1 ? 'toggle-header-membership-menu' : ''}" style="background:transparent;border:none;padding:0;font-size:11px;color:var(--sage);display:inline-flex;align-items:center;gap:4px;cursor:${headerActiveMemberships.length > 1 ? 'pointer' : 'default'};">
+            <span>🎫 ${escapeHtml(hm.planName)}</span>
             ${headerActiveMemberships.length > 1 ? '<span style="font-size:8px;">▼</span>' : ''}
           </button>
           ${(headerActiveMemberships.length > 1 && state.headerMembershipMenuOpen) ? `
-            <div class="account-menu">
+            <div class="account-menu" style="right:0;left:auto;">
               <div class="account-menu-actions">
                 ${headerActiveMemberships.map((mm,i)=>`<button data-action="pick-header-membership" data-idx="${i}">${i===headerMembershipIdx?'✓ ':''}${escapeHtml(mm.planName)} · ${membershipDetail(mm)}</button>`).join('')}
               </div>
@@ -2716,13 +2751,13 @@
     const inManagerArea = state.adminUnlocked && (state.view==='admin' || state.view==='attendance');
     const mgr = inManagerArea ? currentManager() : null;
     const accountControl = mgr ? `
-      <div style="position:relative;">
-        <button class="tab-btn account-badge" data-action="toggle-manager-menu">
+      <div style="position:relative;text-align:right;">
+        <button class="tab-btn account-badge" data-action="toggle-manager-menu" style="margin-left:auto;">
           ${mgr.photo ? `<img src="${mgr.photo}" class="avatar-img">` : `<span class="avatar-fallback">${escapeHtml((mgr.name||'?').trim().charAt(0).toUpperCase())}</span>`}
-          <span>${escapeHtml(mgr.name)}${mgr.role==='super'?' (super)':''}</span>
+          <span>${escapeHtml(headerShortName(mgr.name))}${mgr.role==='super'?' (super)':''}</span>
         </button>
         ${state.managerMenuOpen ? `
-          <div class="account-menu">
+          <div class="account-menu" style="right:0;left:auto;">
             <div class="account-menu-actions">
               <button data-action="goto-manager-account">Gérer mon compte</button>
               <button data-action="admin-logout">Me déconnecter</button>
@@ -2731,17 +2766,17 @@
         ` : ''}
       </div>
     ` : acct ? `
-      <div style="position:relative;">
-        <div style="display:flex;align-items:center;gap:4px;position:relative;">
-          <button class="tab-btn account-badge" data-action="toggle-account-menu">
+      <div style="position:relative;text-align:right;">
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;position:relative;">
+          <button class="tab-btn account-badge" data-action="toggle-account-menu" style="margin-left:auto;">
             ${acct.photo && !activeProfileId ? `<img src="${acct.photo}" class="avatar-img">` : `<span class="avatar-fallback">${escapeHtml((activeName||'?').trim().charAt(0).toUpperCase())}</span>`}
-            <span>${escapeHtml(activeName)}</span>
+            <span>${escapeHtml(headerShortName(activeName))}</span>
           </button>
           ${(()=>{ const n = unreadInboxCountForAccount(acct); return n ? `<span data-action="open-received-items" data-owner="${escapeHtml(notebookOwnerKey(acct.email, activeProfileId))}" title="Nouveau message ou autocollant reçu" style="cursor:pointer;position:absolute;top:-6px;left:-6px;background:var(--coral);color:#fff;border-radius:50%;min-width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;z-index:2;">${n>9?'9+':n}</span>` : ''; })()}
         </div>
         ${headerMembershipHtml}
         ${state.accountMenuOpen ? `
-          <div class="account-menu">
+          <div class="account-menu" style="right:0;left:auto;">
             ${profiles.length > 1 ? `
               <div class="account-menu-profiles">
                 <div class="account-menu-label">Profils</div>
@@ -2761,13 +2796,17 @@
     `;
     return `
       <div class="header">
-        <div class="account-corner">${accountControl}</div>
         <div class="header-top">
           <p class="studio-name">${escapeHtml(state.data.config.name)}</p>
+          <div class="account-corner">${accountControl}</div>
         </div>
         <div class="header-bottom">
-          <p class="studio-sub">Plateforme "vibecoder" par Amélie, signale les bugs <button type="button" class="small-btn" data-action="open-report-bug" style="padding:1px 6px;">ici</button>. <button type="button" class="small-btn" data-action="open-install-app" style="padding:1px 6px;">📲 Ajouter un raccourci</button></p>
-          <div class="tabs">
+          <p class="studio-sub" style="margin-bottom:0;">Plateforme "vibecoder" par Amélie.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;">
+            <button type="button" class="small-btn" data-action="open-report-bug">🐛 Signaler un bug</button>
+            <button type="button" class="small-btn" data-action="open-install-app">📲 Ajouter un raccourci</button>
+          </div>
+          <div class="tabs" style="margin-top:6px;">
             ${(state.view==='admin'||state.view==='admin-login'||state.view==='attendance') ? '' : `<button class="tab-btn ${state.view==='student'?'active':''}" data-action="goto-student">Réserver</button>`}
           </div>
         </div>
@@ -3049,9 +3088,9 @@
     `;
   }
 
-  function adminCard(key, title, contentHtml, titleColor, borderColor){
+  function adminCard(key, title, contentHtml, titleColor, borderColor, defaultOpen){
     if(!state.expandedAdminCards) state.expandedAdminCards = {};
-    if(state.expandedAdminCards[key] === undefined) state.expandedAdminCards[key] = true;
+    if(state.expandedAdminCards[key] === undefined) state.expandedAdminCards[key] = (defaultOpen === undefined ? true : defaultOpen);
     const isOpen = state.expandedAdminCards[key];
     return `
       <div class="card"${borderColor?` style="border-color:${borderColor};"`:''}>
@@ -3492,13 +3531,18 @@
 
     const toConfirmMemberships = state.data.memberships.filter(m=>m.status==='paiement_declare');
 
-    // Revenu du mois en cours : uniquement l'argent réellement passé par Helcim (carte),
-    // pas les abonnements payés sur place, offerts ou importés — ceux-là ne sont pas de
-    // l'argent encaissé automatiquement et ne doivent pas gonfler ce chiffre.
+    // Revenu du mois en cours (⚠️ CHANGÉ S28, demande explicite d'Amélie) : TOUTES les ventes
+    // réelles du mois — carte Helcim ET comptant/confirmées manuellement — pas seulement les
+    // paiements automatiques par carte comme avant. Seuls les abonnements offerts gratuitement
+    // (grantedFree) et ceux encore en attente de paiement/annulés sont exclus. Le critère de
+    // date est la date d'achat (createdAt), pas paidViaHelcimAt (qui n'existe pas pour un
+    // paiement comptant).
     const nowForRevenue = new Date();
     const monthStart = new Date(nowForRevenue.getFullYear(), nowForRevenue.getMonth(), 1);
     const monthLabel = nowForRevenue.toLocaleDateString('fr-CA', {month:'long', year:'numeric'});
-    const monthSales = state.data.memberships.filter(m=> m.paidViaHelcim && new Date(m.paidViaHelcimAt||m.createdAt) >= monthStart);
+    const monthSales = state.data.memberships.filter(m=>
+      !m.grantedFree && m.status!=='attente_paiement' && m.status!=='annulee' && new Date(m.createdAt) >= monthStart
+    );
     const monthRevenue = monthSales.reduce((sum,m)=>{
       const plan = state.data.membershipPlans.find(p=>p.id===m.planId);
       const amountStr = m.planPrice || (plan?plan.price:'') || '';
@@ -3653,9 +3697,12 @@
     else if(notesSortBy==='class') allNotes.sort((a,b)=>a.className.localeCompare(b.className));
     else allNotes.sort((a,b)=>b.at-a.at);
 
-    const studentSearchResults = state.studentSearchQuery ? searchStudentAccounts(state.studentSearchQuery) : allStudentsAndChildrenResults();
-    const searchResultsHtml = (
-      studentSearchResults.length ? `<ul class="link-list" style="margin-top:10px;">${studentSearchResults.map(s=>{
+    // Liste cachée par défaut (protection de la vie privée des étudiants) : avant toute
+    // recherche, on ne montre que les 5 derniers comptes créés (juste le nom, S28). Une
+    // recherche avec un champ vide montre tout le monde (comportement voulu, une fois demandé
+    // explicitement) ; sinon la liste reste filtrée sur le mot-clé tapé.
+    const studentSearchResults = !state.studentSearchTried ? recentStudentAccounts(5) : (state.studentSearchQuery ? searchStudentAccounts(state.studentSearchQuery) : allStudentsAndChildrenResults());
+    const searchResultsHtml = studentSearchResults.length ? `<ul class="link-list" style="margin-top:10px;">${studentSearchResults.map(s=>{
         if(s.type==='child'){
           return `
             <li>
@@ -3675,8 +3722,7 @@
           </span>
         </li>
       `;
-      }).join('')}</ul>` : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucun résultat.</p>'
-    );
+      }).join('')}</ul>` : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucun résultat.</p>';
 
     const storageUsedBytes = JSON.stringify(state.data).length;
     const storagePct = Math.min(100, Math.round((storageUsedBytes / APP_STORAGE_CAP) * 100));
@@ -3816,18 +3862,29 @@
         }
         const archived = mgr ? archivedItemsForManager(mgr.id) : [];
         if(archived.length){
+          if(!state.expandedArchivedNotes) state.expandedArchivedNotes = {};
           out += adminCard('shared-archive', `Notes archivées pour ${escapeHtml(mgr.name)} (${archived.length})`, `
-            <p class="muted" style="color:var(--chalk-dim);">Notes déjà marquées comme lues — conservées ici, elles ne disparaissent jamais toutes seules.</p>
-            ${archived.map(it=>`
-              <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
-                <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 6px;">${it.createdAt ? new Date(it.createdAt).toLocaleDateString('fr-CA') : ''}</p>
-                ${sharedContentPreviewHtml(it)}
-                <div class="btn-row" style="margin-top:8px;">
-                  <button class="small-btn" data-action="confirm-delete-archived-shared-item" data-id="${it.id}" style="color:var(--coral);">Supprimer définitivement</button>
-                </div>
+            <p class="muted" style="color:var(--chalk-dim);">Notes déjà marquées comme lues — conservées ici, elles ne disparaissent jamais toutes seules. Cliquez sur une note pour l’agrandir.</p>
+            ${archived.map(it=>{
+              const isNoteOpen = !!state.expandedArchivedNotes[it.id];
+              const snippet = it.kind==='sticker' ? '🎟️ Autocollant offert' : (escapeHtml((it.text||'').slice(0,46)) + ((it.text||'').length>46 ? '…' : ''));
+              return `
+              <div style="border:1px solid var(--border);border-radius:8px;padding:${isNoteOpen?'10px':'6px 10px'};margin-bottom:8px;">
+                <button type="button" data-action="toggle-archived-note" data-id="${it.id}" style="width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px;background:transparent;border:none;padding:0;cursor:pointer;text-align:left;">
+                  <span style="font-size:12px;color:var(--chalk-dim);">${it.createdAt ? new Date(it.createdAt).toLocaleDateString('fr-CA') : ''} — ${snippet}</span>
+                  <span style="font-family:var(--font-d);color:var(--chalk-dim);font-size:12px;flex-shrink:0;">${isNoteOpen?'▲':'▼'}</span>
+                </button>
+                ${isNoteOpen ? `
+                  <div style="margin-top:10px;">
+                    ${sharedContentPreviewHtml(it)}
+                    <div class="btn-row" style="margin-top:8px;">
+                      <button class="small-btn" data-action="confirm-delete-archived-shared-item" data-id="${it.id}" style="color:var(--coral);">Supprimer définitivement</button>
+                    </div>
+                  </div>
+                ` : ''}
               </div>
-            `).join('')}
-          `);
+            `;}).join('')}
+          `, null, null, false);
         }
         const flagged = flaggedInappropriateItems();
         if(flagged.length){
@@ -3858,6 +3915,7 @@
         <label>Rechercher (nom, prénom, courriel ou téléphone)</label>
         <input id="student-search-input" placeholder="Rechercher..." value="${escapeHtml(state.studentSearchQuery||'')}">
         <div class="btn-row"><button class="btn btn-secondary" data-action="run-student-search">Rechercher</button></div>
+        ${!state.studentSearchTried ? '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Derniers comptes créés — laissez le champ vide et cliquez « Rechercher » pour voir tout le monde.</p>' : ''}
         ${searchResultsHtml}
       `)}
 
@@ -4170,12 +4228,13 @@
             <button class="close-x" data-action="close-modal">✕</button>
             <h3>Rapport de ventes — ${rows.length} vente(s)</h3>
             <table style="margin-bottom:10px;">
-              <tr><th>Catégorie</th><th>Nb de ventes</th><th>Montant total</th></tr>
+              <tr><th style="white-space:normal;min-width:100px;">Catégorie</th><th style="white-space:normal;min-width:90px;">Nb de ventes</th><th style="white-space:normal;min-width:100px;">Montant total</th></tr>
               ${totals.map(t=>`<tr><td>${escapeHtml(t.label)}</td><td>${t.count}</td><td>${t.amount.toFixed(2)} $</td></tr>`).join('')}
+              <tr style="font-weight:700;border-top:2px solid var(--border);"><td>Total</td><td>${rows.length}</td><td>${totals.reduce((s,t)=>s+t.amount,0).toFixed(2)} $</td></tr>
             </table>
             <div style="max-height:45vh;overflow:auto;border:1px solid var(--border);border-radius:8px;">
               <table style="margin:0;">
-                <tr><th>Étudiant</th><th>Catégorie</th><th>Formule</th><th>Montant payé</th><th>Date d’achat</th><th>Date de début</th><th>Date de fin</th></tr>
+                <tr><th style="white-space:normal;min-width:100px;">Étudiant</th><th style="white-space:normal;min-width:100px;">Catégorie</th><th style="white-space:normal;min-width:110px;">Formule</th><th style="white-space:normal;min-width:100px;">Montant payé</th><th style="white-space:normal;min-width:100px;">Date d’achat</th><th style="white-space:normal;min-width:100px;">Date de début</th><th style="white-space:normal;min-width:100px;">Date de fin</th></tr>
                 ${rows.map(r=>`<tr><td>${studentLinkHtml(r.studentName, r.email, r.profileId)}${childOfNoteHtml(r.email, r.profileId)}</td><td>${escapeHtml(r.category)}</td><td>${escapeHtml(r.planName)}</td><td>${escapeHtml(r.amountDisplay)}</td><td>${escapeHtml(r.purchaseDate)}</td><td>${escapeHtml(r.startDate)}</td><td>${escapeHtml(r.endDate)}</td></tr>`).join('')}
               </table>
             </div>
@@ -4217,7 +4276,7 @@
             <h3>Conversions intro → abonnement — ${rows.length} acheteur(s) intro</h3>
             <div style="max-height:55vh;overflow:auto;border:1px solid var(--border);border-radius:8px;">
               <table style="margin:0;">
-                <tr><th>Étudiant</th><th>Courriel</th><th>Date intro</th><th>Abonnement suivant</th><th>Nb présences depuis</th><th>Cours le plus visité</th></tr>
+                <tr><th style="white-space:normal;min-width:100px;">Étudiant</th><th style="white-space:normal;min-width:130px;">Courriel</th><th style="white-space:normal;min-width:90px;">Date intro</th><th style="white-space:normal;min-width:130px;">Abonnement suivant</th><th style="white-space:normal;min-width:110px;">Nb présences depuis</th><th style="white-space:normal;min-width:120px;">Cours le plus visité</th></tr>
                 ${rows.map(r=>`<tr><td>${studentLinkHtml(r.studentName, r.email, r.profileId)}${childOfNoteHtml(r.email, r.profileId)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.introDate)}</td><td style="${r.nextPlanName?'':'color:var(--coral);'}">${escapeHtml(r.nextPlanName||'Aucun (pas repris d’abonnement)')}</td><td>${r.visitCount}</td><td>${escapeHtml(r.topClass||'—')}</td></tr>`).join('')}
               </table>
             </div>
@@ -4820,9 +4879,12 @@
       `;
     } else if(m.type === 'manage-memberships'){
       const q = state.membershipSearchQuery || '';
-      const matches = q ? searchStudentAccounts(q) : [];
+      const tried = !!state.membershipSearchTried;
+      // Même règle que l'onglet Étudiants : rien tant qu'on n'a pas cliqué "Rechercher" ;
+      // une recherche avec champ vide montre tout le monde.
+      const matches = !tried ? [] : (q ? searchStudentAccounts(q) : allStudentsAndChildrenResults());
       let rowsHtml = '';
-      if(q && matches.length){
+      if(tried && matches.length){
         rowsHtml = matches.map(s=> s.type==='child'
           ? renderMembershipRows(s.parentEmail, s.memberId)
           : renderMembershipRows(s.email, null)
@@ -4836,12 +4898,12 @@
           <label>Rechercher un étudiant (nom, prénom, courriel ou téléphone)</label>
           <input id="membership-search-input" placeholder="Rechercher..." value="${escapeHtml(q)}">
           <div class="btn-row"><button class="btn btn-secondary" data-action="run-membership-search">Rechercher</button></div>
-          ${q ? (
+          ${!tried ? '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Rien ne s’affiche tant qu’aucune recherche n’a été lancée. Laissez le champ vide et cliquez « Rechercher » pour voir tout le monde.</p>' : (
             matches.length ? (
               rowsHtml ? `<table style="margin-top:12px;"><tr><th>Étudiant</th><th>Formule</th><th>Détail</th><th>Statut</th><th></th></tr>${rowsHtml}</table>`
                 : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucun abonnement pour cet étudiant.</p>'
             ) : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucun étudiant trouvé.</p>'
-          ) : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Recherchez un étudiant pour voir ses abonnements.</p>'}
+          )}
           <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
         </div>
       `;
@@ -5296,7 +5358,7 @@
             </div>
             <div style="flex:1;min-height:0;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:8px;">
               <table style="margin:0;">
-                <tr><th style="white-space:normal;">Étudiant</th>${columns.map(k=>`<th style="white-space:normal;max-width:120px;">${fieldLabels[k]}</th>`).join('')}</tr>
+                <tr><th style="white-space:normal;min-width:100px;">Étudiant</th>${columns.map(k=>`<th style="white-space:normal;min-width:130px;max-width:170px;line-height:1.3;">${fieldLabels[k]}</th>`).join('')}</tr>
                 ${rows.map(r=>`<tr><td>${studentLinkHtml(r.name, r.email, r.profileId)}${childOfNoteHtml(r.email, r.profileId)}</td>${columns.map(k=>`<td>${escapeHtml(String(r[k]==null?'':r[k]))}</td>`).join('')}</tr>`).join('')}
               </table>
             </div>
@@ -8302,6 +8364,12 @@
       state.expandedAdminCards[key] = !state.expandedAdminCards[key];
       render();
     }
+    else if(action==='toggle-archived-note'){
+      const id = e.currentTarget.dataset.id;
+      if(!state.expandedArchivedNotes) state.expandedArchivedNotes = {};
+      state.expandedArchivedNotes[id] = !state.expandedArchivedNotes[id];
+      render();
+    }
     else if(action==='toggle-admin-class-group'){
       const key = e.currentTarget.dataset.group;
       if(!state.expandedClassGroups) state.expandedClassGroups = {};
@@ -8326,6 +8394,7 @@
     }
     else if(action==='run-membership-search'){
       state.membershipSearchQuery = document.getElementById('membership-search-input').value.trim();
+      state.membershipSearchTried = true;
       render();
     }
     else if(action==='open-report-builder'){ state.modal = {type:'report-builder', payload:null}; render(); }
@@ -8397,6 +8466,7 @@
     }
     else if(action==='run-student-search'){
       state.studentSearchQuery = document.getElementById('student-search-input').value.trim();
+      state.studentSearchTried = true;
       render();
     }
     else if(action==='open-student-detail'){
