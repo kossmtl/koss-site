@@ -631,7 +631,7 @@
   const localBackend = {
     async get(key){
       const v = localStorage.getItem(key);
-      if(v === null) throw new Error('not found');
+      if(v === null){ const e = new Error('not found'); e.notFound = true; throw e; }
       return {value: v};
     },
     async set(key, value){ localStorage.setItem(key, value); },
@@ -640,9 +640,14 @@
 
   const supabaseBackend = {
     async get(key){
+      // Distinction cruciale : une vraie erreur (réseau, RLS/permissions, Supabase down, etc.)
+      // ne doit JAMAIS être traitée comme "pas encore de données" — sinon loadData() écraserait
+      // les vraies données du studio (revenu Helcim inclus) par une base vide au moindre pépin
+      // de connexion. Seul un "pas de ligne du tout" (data===null sans erreur) veut vraiment
+      // dire premier lancement.
       const { data, error } = await sb.from('app_state').select('data').eq('id', 1).maybeSingle();
       if(error) throw error;
-      if(!data) throw new Error('not found');
+      if(!data){ const e = new Error('not found'); e.notFound = true; throw e; }
       return { value: JSON.stringify(data.data) };
     },
     async set(key, value){
@@ -843,8 +848,20 @@
       state.data = JSON.parse(res.value);
       state.lastSyncedData = deepClone(state.data);
     }catch(e){
-      state.data = defaultData();
-      await persist();
+      if(e && e.notFound){
+        // Vraiment aucune ligne sur le serveur : premier lancement, sécuritaire de créer une base vide.
+        state.data = defaultData();
+        await persist();
+      } else {
+        // Échec de connexion/lecture (réseau, permissions, Supabase temporairement indisponible...) :
+        // NE JAMAIS écraser les données existantes sur le serveur avec une base vide dans ce cas —
+        // c'est ce qui a déjà effacé le revenu Helcim par le passé. On bloque plutôt l'app avec un
+        // message clair et un bouton "Réessayer" (voir render()), sans jamais appeler persist().
+        console.error('Échec du chargement des données depuis Supabase :', e);
+        state.loadFailed = true;
+        render();
+        return;
+      }
     }
     if(!state.data.membershipPlans) state.data.membershipPlans = [];
     if(!state.data.memberships) state.data.memberships = [];
@@ -2051,6 +2068,17 @@
     const parsed = parseOwnerKey(ownerKey);
     return giftedStickersForStudent(parsed.email, parsed.profileId);
   }
+  // Nombre total de notes/autocollants pas encore vus (ni placés sur une page, ni supprimés),
+  // sur TOUS les profils du compte (soi-même + enfants) — utilisé pour le petit icône ✉️
+  // dans l'en-tête, à côté du nom, pour prévenir l'usager sans qu'il ait à ouvrir son carnet.
+  function unreadInboxCountForAccount(acct){
+    if(!acct) return 0;
+    const profiles = getProfiles(acct);
+    return profiles.reduce((sum,p)=>{
+      const ownerKey = notebookOwnerKey(acct.email, p.id||null);
+      return sum + receivedItemsForOwner(ownerKey).length + giftedStickersForOwner(ownerKey).length;
+    }, 0);
+  }
   // Notes/post-its/autocollants partagés entre carnets (élève → coach ou élève → élève).
   // Une note "signée" est livrée immédiatement (statut 'delivered') ; une note "anonyme"
   // doit d'abord être approuvée par un·e gestionnaire (statut 'pending_review') — dans les
@@ -2395,7 +2423,16 @@
 
   function render(){
     const app = document.getElementById('app');
-    if(!state.data){ app.innerHTML = '<div style="padding:40px;text-align:center;color:#AEB8AC;">Chargement…</div>'; return; }
+    if(!state.data){
+      // state.loadFailed = échec réel de connexion/lecture (voir loadData) — on ne montre JAMAIS
+      // l'app avec une base vide dans ce cas (ça écraserait les vraies données au prochain
+      // enregistrement). On bloque avec un message clair plutôt qu'un "Chargement…" qui ne finit
+      // jamais silencieusement.
+      app.innerHTML = state.loadFailed
+        ? '<div style="padding:40px;text-align:center;"><p style="color:#E37D4E;font-weight:700;margin-bottom:10px;">⚠️ Impossible de charger les données du studio.</p><p style="color:#AEB8AC;font-size:13px;margin-bottom:16px;">Vérifiez votre connexion internet, puis réessayez. Rien n’a été perdu — l’app refuse simplement d’afficher une page vide pour ne rien écraser par erreur.</p><button class="btn btn-primary" onclick="location.reload()">Réessayer</button></div>'
+        : '<div style="padding:40px;text-align:center;color:#AEB8AC;">Chargement…</div>';
+      return;
+    }
 
     // Garde-fou : les écrans élève exigent un compte connecté. Si la session est
     // absente (déconnexion, expiration, ouverture directe d'un lien), on retombe
@@ -2530,10 +2567,13 @@
       </div>
     ` : acct ? `
       <div style="position:relative;">
-        <button class="tab-btn account-badge" data-action="toggle-account-menu">
-          ${acct.photo && !activeProfileId ? `<img src="${acct.photo}" class="avatar-img">` : `<span class="avatar-fallback">${escapeHtml((activeName||'?').trim().charAt(0).toUpperCase())}</span>`}
-          <span>${escapeHtml(activeName)}</span>
-        </button>
+        <div style="display:flex;align-items:center;gap:4px;">
+          <button class="tab-btn account-badge" data-action="toggle-account-menu">
+            ${acct.photo && !activeProfileId ? `<img src="${acct.photo}" class="avatar-img">` : `<span class="avatar-fallback">${escapeHtml((activeName||'?').trim().charAt(0).toUpperCase())}</span>`}
+            <span>${escapeHtml(activeName)}</span>
+          </button>
+          ${(()=>{ const n = unreadInboxCountForAccount(acct); return n ? `<span data-action="open-received-items" data-owner="${escapeHtml(notebookOwnerKey(acct.email, activeProfileId))}" title="Nouveau message ou autocollant reçu" style="cursor:pointer;font-size:16px;position:relative;display:inline-flex;">✉️<span style="position:absolute;top:-6px;right:-8px;background:var(--coral);color:#fff;border-radius:8px;min-width:15px;height:15px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;">${n>9?'9+':n}</span></span>` : ''; })()}
+        </div>
         ${headerMembershipHtml}
         ${state.accountMenuOpen ? `
           <div class="account-menu">
@@ -4746,7 +4786,10 @@
             ${activeMemberships.length ? activeMemberships.map(m2=>`<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m2.planName)} — ${membershipBadge(m2)} ${membershipDisplayStatus(m2)==='active' ? '· '+membershipDetail(m2) : ''}</div>`).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun abonnement actif.</p>'}
             <div class="btn-row"><button class="btn btn-primary" data-action="grant-membership-for" data-email="${escapeHtml(parentAcct.email)}" data-name="${escapeHtml(fm.name)}" data-profile="${fm.id}">Offrir un abonnement</button></div>
 
-            <div class="btn-row"><button class="btn btn-primary" data-action="open-sticker-grant-picker" data-email="${escapeHtml(parentAcct.email)}" data-profile="${fm.id}">🎁 Attribuer un autocollant</button></div>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="open-sticker-grant-picker" data-email="${escapeHtml(parentAcct.email)}" data-profile="${fm.id}">🎁 Attribuer un autocollant</button>
+              <button class="btn btn-primary" data-action="open-send-note" data-email="${escapeHtml(parentAcct.email)}" data-profile="${fm.id}">✉️ Envoyer une note</button>
+            </div>
 
             <div class="btn-row">
               <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
@@ -4833,7 +4876,10 @@
                 return `<li><span><img src="${s.image}" style="width:28px;height:28px;object-fit:cover;border-radius:5px;vertical-align:middle;margin-right:8px;">${escapeHtml(s.name)}${g.message ? ` <span style="font-style:italic;color:var(--chalk-dim);">— "${escapeHtml(g.message)}"</span>` : ''}${g.used ? ' <span style="color:var(--chalk-dim);">(placé)</span>' : ''}</span><span><button class="small-btn" data-action="revoke-sticker-grant" data-id="${g.id}" data-email="${escapeHtml(email)}">Retirer</button></span></li>`;
               }).join('')}</ul>`;
             })()}
-            <div class="btn-row"><button class="btn btn-primary" data-action="open-sticker-grant-picker" data-email="${escapeHtml(email)}">🎁 Attribuer un autocollant</button></div>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="open-sticker-grant-picker" data-email="${escapeHtml(email)}">🎁 Attribuer un autocollant</button>
+              <button class="btn btn-primary" data-action="open-send-note" data-email="${escapeHtml(email)}">✉️ Envoyer une note</button>
+            </div>
 
             <div class="btn-row">
               <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
@@ -4862,20 +4908,23 @@
       if(m.payload && m.payload.results){
         const {columns, rows} = m.payload.results;
         html = `
-          <div class="modal" style="max-width:95vw;width:1200px;">
-            <button class="close-x" data-action="close-modal">✕</button>
-            <h3>Rapport — ${rows.length} étudiant(s)</h3>
-            <div style="max-height:72vh;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+          <div class="modal" style="max-width:95vw;width:700px;height:560px;max-height:90vh;min-width:340px;min-height:320px;resize:both;overflow:hidden;display:flex;flex-direction:column;">
+            <div style="flex:0 0 auto;">
+              <button class="close-x" data-action="close-modal">✕</button>
+              <h3>Rapport — ${rows.length} étudiant(s)</h3>
+            </div>
+            <div style="flex:1;min-height:0;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:8px;">
               <table style="margin:0;">
-                <tr><th>Étudiant</th>${columns.map(k=>`<th>${fieldLabels[k]}</th>`).join('')}</tr>
+                <tr><th style="white-space:normal;">Étudiant</th>${columns.map(k=>`<th style="white-space:normal;max-width:120px;">${fieldLabels[k]}</th>`).join('')}</tr>
                 ${rows.map(r=>`<tr><td>${studentLinkHtml(r.name, r.email, r.profileId)}${childOfNoteHtml(r.email, r.profileId)}</td>${columns.map(k=>`<td>${escapeHtml(String(r[k]==null?'':r[k]))}</td>`).join('')}</tr>`).join('')}
               </table>
             </div>
-            <div class="btn-row">
+            <div class="btn-row" style="flex:0 0 auto;">
               <button class="btn btn-primary" data-action="download-report-csv">Télécharger (CSV)</button>
               <button class="btn btn-secondary" data-action="open-report-builder">\u2190 Changer les colonnes</button>
               <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
             </div>
+            <p class="muted" style="flex:0 0 auto;color:var(--chalk-dim);font-size:11px;margin:6px 0 0;text-align:right;">↘ Tire le coin en bas à droite pour agrandir la fenêtre.</p>
           </div>
         `;
       } else {
@@ -5158,6 +5207,24 @@
           <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
         </div>
       `;
+    } else if(m.type === 'send-note-form'){
+      const {email, profileId} = m.payload;
+      const pid = profileId || null;
+      const acct = findStudentAccount(email);
+      const recipientName = pid ? getProfileName(acct||{}, pid) : (acct?acct.name:email);
+      html = `
+        <div class="modal" style="max-width:420px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>✉️ Envoyer une note à ${escapeHtml(recipientName)}</h3>
+          <p class="muted" style="color:var(--chalk-dim);font-size:12px;">La note apparaît directement dans son carnet (📥 Reçu), signée par vous — livrée tout de suite, sans attente.</p>
+          <label style="margin-top:10px;">Message</label>
+          <textarea id="coach-note-text" rows="4" placeholder="ex. Belle progression cette semaine !"></textarea>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="send-coach-note" data-email="${escapeHtml(email)}" data-profile="${pid?escapeHtml(pid):''}">Envoyer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
     } else if(m.type === 'sticker-form'){
       const {entry} = m.payload;
       const pendingAll = m.payload.pendingAll;
@@ -5279,7 +5346,7 @@
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <div style="border:2px solid var(--coral);background:rgba(255,90,90,0.12);border-radius:10px;padding:18px;">
-            <p style="font-size:19px;line-height:1.4;color:var(--coral);font-weight:700;margin:0;">Es-tu sûr de vouloir supprimer ton compte ? Tout sera perdu.</p>
+            <p style="font-size:19px;line-height:1.4;color:var(--coral);font-weight:700;margin:0;">Es-tu certain·e de vouloir supprimer ton compte ? Tout sera perdu, pour toujours.</p>
           </div>
           <label style="margin-top:14px;">Confirme avec ton mot de passe</label>
           ${pwField('del-acc-password', 'Ton mot de passe')}
@@ -5295,7 +5362,7 @@
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <div style="border:1px solid var(--coral);background:rgba(255,90,90,0.08);border-radius:8px;padding:14px;">
-            <p style="font-size:13px;line-height:1.6;color:var(--coral);font-weight:600;margin:0;">es-tu certain de vouloir supprimer ce magnifique sticker ? c'est un one shot deal, tu ne le reverras peut-être plus jamais.</p>
+            <p style="font-size:13px;line-height:1.6;color:var(--coral);font-weight:600;margin:0;">Es-tu certain·e de vouloir supprimer ce magnifique autocollant ? C’est un one shot deal : tu risques de ne plus jamais le revoir !</p>
           </div>
           <div class="btn-row" style="margin-top:12px;">
             <button class="btn btn-danger" data-action="delete-gifted-sticker" data-grant="${grantId}" data-owner="${escapeHtml(ownerKey)}">Oui, supprimer</button>
@@ -7822,6 +7889,33 @@
       await persist();
       render();
       showToast('Autocollant retiré.');
+    }
+    else if(action==='open-send-note'){
+      const email = e.currentTarget.dataset.email;
+      const profileId = e.currentTarget.dataset.profile || null;
+      state.modal = {type:'send-note-form', payload:{email, profileId}};
+      render();
+    }
+    else if(action==='send-coach-note'){
+      const email = e.currentTarget.dataset.email;
+      const profileId = e.currentTarget.dataset.profile || null;
+      const textInput = document.getElementById('coach-note-text');
+      const text = textInput ? textInput.value.trim() : '';
+      if(!text){ showToast('Écrivez un message.'); return; }
+      const recipientOwnerKey = notebookOwnerKey(email, profileId);
+      const mgr = currentManager();
+      state.data.sharedItems.push({
+        id: uid(), kind:'text', category:'Coach', text,
+        anonymous:false,
+        recipientType:'student', recipientManagerId:null, recipientOwnerKey,
+        senderOwnerKey: mgr ? mgr.name : 'Coach',
+        status:'delivered',
+        createdAt: Date.now(), decidedAt: null,
+      });
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Note envoyée.');
     }
     else if(action==='view-full-note'){
       const kind = e.currentTarget.dataset.kind;
