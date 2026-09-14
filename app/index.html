@@ -791,6 +791,7 @@
   let cropTargetManager = false; // true = la photo recadrée s'applique au gestionnaire connecté, pas à l'élève
   let pendingPostitPhoto = null;
   let pendingStickerImage = null;
+  let pendingBugScreenshot = null; // capture d'écran optionnelle jointe à un signalement de bug
 
   let state = {
     view: 'student', // 'student' | 'admin-login' | 'admin'
@@ -2495,7 +2496,7 @@
           <p class="studio-name">${escapeHtml(state.data.config.name)}</p>
         </div>
         <div class="header-bottom">
-          <p class="studio-sub">Réservation de cours collectifs</p>
+          <p class="studio-sub">Plateforme "vibecoder" par Amélie, signaler les bugs <button type="button" class="small-btn" data-action="open-report-bug" style="padding:1px 6px;">ici</button>.</p>
           <div class="tabs">
             ${(state.view==='admin'||state.view==='admin-login'||state.view==='attendance') ? '' : `<button class="tab-btn ${state.view==='student'?'active':''}" data-action="goto-student">Réserver</button>`}
           </div>
@@ -2689,41 +2690,13 @@
     const bookings = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===email.toLowerCase() && b.status!=='annulee')
       .sort((a,b)=>a.dateIso.localeCompare(b.dateIso));
 
-    // Aperçu de l'abonnement actif juste sous le nom, toujours visible (même carte réduite).
-    // S'il y en a plusieurs (soi-même + famille, ou plusieurs formules actives), des flèches
-    // permettent de naviguer entre eux sans avoir à dérouler toute la liste plus bas.
-    const activeOwnMemberships = allOwnMemberships.filter(m=>!m.hiddenByStudent && membershipDisplayStatus(m)==='active');
-    let activeIdx = state.accountActiveMembershipIndex || 0;
-    if(activeIdx >= activeOwnMemberships.length) activeIdx = 0;
-    const currentMembershipHtml = (()=>{
-      if(!activeOwnMemberships.length) return `<p class="muted" style="color:var(--chalk-dim);font-size:12.5px;margin:4px 0 0;">Aucun abonnement actif</p>`;
-      const m = activeOwnMemberships[activeIdx];
-      const forWho = m.profileId ? ` <span style="color:var(--chalk-dim);">(pour ${escapeHtml(getProfileName(acct,m.profileId))})</span>` : '';
-      return `
-        <div style="position:relative;margin-top:4px;">
-          <button type="button" class="small-btn" data-action="${activeOwnMemberships.length > 1 ? 'toggle-account-membership-menu' : ''}" style="padding:2px 8px;font-size:12.5px;color:var(--sage);display:inline-flex;align-items:center;gap:6px;">
-            <span>Abonnement actif : 🎫 ${escapeHtml(m.planName)}${forWho} · ${membershipDetail(m)}</span>
-            ${activeOwnMemberships.length > 1 ? '<span style="font-size:9px;">▼</span>' : ''}
-          </button>
-          ${(activeOwnMemberships.length > 1 && state.accountMembershipMenuOpen) ? `
-            <div class="account-menu" style="right:auto;left:0;">
-              <div class="account-menu-actions">
-                ${activeOwnMemberships.map((mm,i)=>{
-                  const w = mm.profileId ? ` (${escapeHtml(getProfileName(acct,mm.profileId))})` : '';
-                  return `<button data-action="pick-account-membership" data-idx="${i}">${i===activeIdx?'✓ ':''}${escapeHtml(mm.planName)}${w} · ${membershipDetail(mm)}</button>`;
-                }).join('')}
-              </div>
-            </div>
-          ` : ''}
-        </div>
-      `;
-    })();
+    // L'abonnement actif n'est plus dupliqué ici depuis qu'il est toujours visible sous le
+    // nom dans le coin en haut à droite (renderHeader) — évite un doublon d'affichage.
     const header = `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
         <div>
           <h3 style="margin:0;">Mon compte</h3>
           <p class="muted" style="color:var(--chalk-dim);margin-top:4px;">${escapeHtml(acct?acct.name:email)} <span style="color:var(--chalk-dim);">(${escapeHtml(email)})</span></p>
-          ${currentMembershipHtml}
         </div>
         <button class="small-btn" data-action="toggle-account-expand" title="${state.accountExpanded?'Réduire':'Agrandir'}" style="font-size:14px;padding:6px 10px;">${state.accountExpanded ? '▲' : '▼'}</button>
       </div>
@@ -2923,10 +2896,10 @@
         <button class="small-btn" data-action="close-notebook-cover">← Fermer le carnet</button>
         <button class="small-btn" data-action="open-notebook-settings">⚙ Personnaliser</button>
         <button class="small-btn" data-action="new-notebook">+ Nouveau carnet</button>
-        <button class="small-btn" data-action="delete-notebook" data-notebook="${activeNotebook.id}" style="color:var(--coral);">🗑 Supprimer ce carnet</button>
         <button class="small-btn ${state.notebookEditMode?'active':''}" data-action="toggle-notebook-edit-mode" style="${state.notebookEditMode?'background:var(--amber);color:var(--ink);':''}">${state.notebookEditMode ? '✓ Mode édition' : '✎ Modifier le carnet'}</button>
         <button class="small-btn" data-action="open-received-items" data-owner="${escapeHtml(ownerKey)}" style="${(receivedItemsForOwner(ownerKey).length+giftedStickersForOwner(ownerKey).length)?'background:var(--amber);color:var(--ink);':''}">📥 Reçu${(receivedItemsForOwner(ownerKey).length+giftedStickersForOwner(ownerKey).length)?' ('+(receivedItemsForOwner(ownerKey).length+giftedStickersForOwner(ownerKey).length)+')':''}</button>
         <button class="small-btn" data-action="open-notebook-trash" data-owner="${escapeHtml(ownerKey)}">🗑 Corbeille${trashedItemsForOwner(ownerKey).length?' ('+trashedItemsForOwner(ownerKey).length+')':''}</button>
+        <button class="small-btn" data-action="delete-notebook" data-notebook="${activeNotebook.id}" style="color:var(--coral);">🗑 Supprimer ce carnet</button>
       </div>
       <div style="margin-bottom:10px;">
         <button class="category-chip ${!state.notebookFilterCategory?'active':''}" data-action="filter-notebook-category" data-category="">Tous</button>
@@ -3452,6 +3425,20 @@
         </table>
       `, 'var(--coral)', 'var(--coral)') : ''}
 
+      ${(()=>{
+        const bugs = state.data.bugReports || [];
+        return adminCard('bug-reports', `🐛 Bugs signalés ${bugs.length ? '('+bugs.length+')' : ''}`, `
+          ${bugs.length ? bugs.map(b=>`
+            <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+              <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(b.reporter||'')}</p>
+              <p style="font-size:13px;white-space:pre-wrap;margin:0 0 8px;">${escapeHtml(b.text)}</p>
+              ${b.screenshot ? `<img src="${b.screenshot}" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:8px;">` : ''}
+              <button class="small-btn" data-action="delete-bug-report" data-id="${b.id}">Marquer comme réglé / supprimer</button>
+            </div>
+          `).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun bug signalé.</p>'}
+        `);
+      })()}
+
       ${adminCard('pending-payments', `Paiements d\u2019abonnement à confirmer ${toConfirmMemberships.length ? '('+toConfirmMemberships.length+')' : ''}`, `
         ${toConfirmMemberships.length ? `<table><tr><th>Étudiant</th><th>Formule</th><th></th></tr>${confirmRows}</table>`
           : '<p class="muted" style="color:var(--chalk-dim);">Rien en attente pour le moment.</p>'}
@@ -3641,6 +3628,25 @@
           <input type="range" id="crop-zoom" min="100" max="300" value="100" style="width:100%;">
           <div class="btn-row">
             <button class="btn btn-primary" data-action="save-cropped-photo">Enregistrer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'report-bug'){
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>🐛 Signaler un bug</h3>
+          <p class="muted" style="color:var(--chalk-dim);">Décris ce qui ne fonctionne pas, le plus précisément possible (ce que tu faisais, ce qui s’est passé, ce que tu attendais).</p>
+          <label>Description du bug</label>
+          <textarea id="bugreport-text" rows="6" placeholder="Ex. : Quand je clique sur « Payer maintenant » sur mon iPhone, rien ne se passe..."></textarea>
+          <label style="margin-top:10px;">Capture d’écran (optionnel)</label>
+          <input type="file" id="bugreport-screenshot-file" accept="image/*">
+          <div id="bugreport-screenshot-preview" style="margin-top:8px;">
+            ${pendingBugScreenshot ? `<img src="${pendingBugScreenshot}" style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid var(--border);">` : ''}
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="submit-bug-report">Envoyer le signalement</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
         </div>
@@ -4180,7 +4186,7 @@
               <button class="btn btn-sage" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-intro-start="${introStart||''}" data-intro-end="${introEnd||''}" data-intro-price="${introPrice||''}" data-profile="${profileId||''}">✓ J'ai complété le paiement</button>
             </div>
           ` : `
-            <p style="font-size:13px;">Réglez le paiement pour activer votre abonnement — l’abonnement s’active automatiquement dès que le paiement est confirmé.</p>
+            <p style="font-size:13px;">Réglez le paiement pour activer votre abonnement/carte de cours — l’abonnement/carte de cours s’active automatiquement dès que le paiement est confirmé.</p>
             <p style="font-size:12px;color:var(--chalk-dim);">🔒 Paiement sécurisé traité directement par Helcim — vos informations de carte ne sont jamais stockées sur le site K-OSS.</p>
             <div class="btn-row">
               <button class="btn btn-primary" data-action="pay-with-helcim" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}" data-class="${classId||''}" data-date="${dateIso||''}">🔒 Payer maintenant</button>
@@ -4191,7 +4197,7 @@
               <button class="small-btn" data-action="confirm-purchase" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}">déclarez votre paiement manuellement</button>.
             </p>
             <p style="font-size:12px;color:var(--chalk-dim);margin-top:10px;">Vous désirez profiter de notre programme « <a href="https://kossmtl.ca/#communaute" target="_blank" rel="noopener" style="color:var(--amber);">pay what you can</a> », du prix promotionnel ou payer sur place, en argent comptant ?
-              <button class="small-btn" data-action="show-onsite-contact-warning">OUI</button>
+              <button class="small-btn" data-action="show-onsite-contact-warning" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}">OUI</button>
             </p>
           `}
           `}
@@ -4255,9 +4261,12 @@
           ${prefill.prefillEmail ? `
             <label>Étudiant</label>
             <p style="margin:4px 0 10px;">Sélectionné : <strong style="color:var(--chalk);">${escapeHtml(prefill.prefillName||prefill.prefillEmail)}</strong>${prefill.prefillProfileId?' <span style="color:var(--chalk-dim);font-size:11px;">(enfant)</span>':''} <button type="button" class="small-btn" data-action="clear-grant-recipient">Changer</button></p>
+            ${prefill.prefillProfileId ? `<p class="muted" style="color:var(--chalk-dim);font-size:12px;">Abonnement pour l\u2019enfant \u2014 utilise le compte du parent.</p>` : ''}
+            <input type="hidden" id="g-name" value="${escapeHtml(prefill.prefillName||'')}">
+            <input type="hidden" id="g-email" value="${escapeHtml(prefill.prefillEmail||'')}">
           ` : `
-            <label>Chercher un étudiant ou un enfant existant (optionnel)</label>
-            <input id="grant-search-input" placeholder="Nom de l'étudiant·e..." value="${escapeHtml(state.grantSearchQuery||'')}">
+            <label>Chercher un étudiant (nom, courriel ou téléphone)</label>
+            <input id="grant-search-input" placeholder="Nom, courriel ou téléphone de l'étudiant·e..." value="${escapeHtml(state.grantSearchQuery||'')}">
             <div class="btn-row"><button class="btn btn-secondary" data-action="run-grant-search">Chercher</button></div>
             ${(()=>{
               const q = state.grantSearchQuery||'';
@@ -4271,12 +4280,9 @@
                 return `<li><span>${escapeHtml(r.name)}</span><span><button class="small-btn" data-action="pick-grant-recipient" data-email="${escapeHtml(r.email)}" data-name="${escapeHtml(r.name)}" data-profile="">Choisir</button></span></li>`;
               }).join('')}</ul>`;
             })()}
+            <input type="hidden" id="g-name" value="">
+            <input type="hidden" id="g-email" value="">
           `}
-          <label style="margin-top:10px;">Nom de l\u2019étudiant${prefill.prefillEmail?'':' (si pas trouvé ci-dessus)'}</label>
-          <input id="g-name" placeholder="Nom complet" value="${escapeHtml(prefill.prefillName||'')}">
-          <label>Courriel</label>
-          <input id="g-email" type="email" placeholder="courriel@exemple.com" value="${escapeHtml(prefill.prefillEmail||'')}">
-          ${prefill.prefillProfileId ? `<p class="muted" style="color:var(--chalk-dim);font-size:12px;">Abonnement pour l\u2019enfant \u2014 utilise le courriel du parent ci-dessus.</p>` : ''}
           <input type="hidden" id="g-profile" value="${escapeHtml(prefill.prefillProfileId||'')}">
           <label>Formule</label>
           <select id="g-plan">${plans.map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${p.type==='illimite'?p.durationDays+' jours':p.creditsCount+' cours'})</option>`).join('') || '<option value="">Aucune formule créée</option>'}</select>
@@ -5131,7 +5137,7 @@
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Supprimer « ${escapeHtml(nb?nb.name:'')} » ?</h3>
-          <p class="muted">Les autocollants et notes reçus (📥 Reçu) retourneront dans votre boîte de réception. Mais tout le reste — ${itemCount} élément${itemCount>1?'s':''} déjà placé${itemCount>1?'s':''} dans ce carnet (pages, notes, autocollants collés) — sera perdu définitivement.</p>
+          <p class="muted">Les autocollants et notes reçus (📥 Reçu) retourneront dans votre boîte de réception. Mais tout le reste — ${itemCount} — sera perdu définitivement.</p>
           <p class="muted" style="font-weight:600;color:var(--coral);">Êtes-vous sûr·e de vouloir supprimer ce carnet ? Cette action est irréversible.</p>
           <div class="btn-row">
             <button class="btn btn-danger" data-action="confirm-delete-notebook-yes" data-notebook="${notebookId}">Oui, supprimer</button>
@@ -5217,7 +5223,7 @@
             <p style="font-size:13px;line-height:1.6;color:var(--coral);font-weight:600;margin:0;">Vous devez contacter Amélie au <a href="tel:4388699187" style="color:var(--coral);">438-869-9187</a> pour discuter des options de paiement. Votre abonnement sera validé manuellement par la suite. Vous ne pouvez pas réserver avant d’avoir complété votre paiement avec Amélie.</p>
           </div>
           <div class="btn-row" style="margin-top:12px;">
-            <button class="btn btn-secondary" data-action="close-modal">J’ai compris</button>
+            <button class="btn btn-secondary" data-action="confirm-onsite-contact">J’ai compris</button>
           </div>
         </div>
       `;
@@ -5463,6 +5469,22 @@
           btn.style.color = 'var(--ink)';
         });
       });
+    }
+    if(m.type === 'report-bug'){
+      const shotInput = backdrop.querySelector('#bugreport-screenshot-file');
+      if(shotInput){
+        shotInput.addEventListener('change', async (ev)=>{
+          const f = ev.target.files[0];
+          if(!f) return;
+          try{
+            pendingBugScreenshot = await resizeImageFile(f, 900);
+            const preview = backdrop.querySelector('#bugreport-screenshot-preview');
+            if(preview) preview.innerHTML = `<img src="${pendingBugScreenshot}" style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid var(--border);">`;
+          }catch(err){
+            showToast('Impossible de traiter cette image.');
+          }
+        });
+      }
     }
     if(m.type === 'sticker-form'){
       const imgInput = backdrop.querySelector('#sticker-image-file');
@@ -7105,12 +7127,69 @@
       render();
     }
     else if(action==='show-onsite-contact-warning'){
-      // Remplace l'ancien "Je paierai sur place" qui créait tout de suite l'abonnement en
-      // attente (confirm-purchase) — maintenant on renvoie simplement vers un appel/courriel
-      // à Amélie ; aucun abonnement/réservation n'est créé tant qu'elle n'a pas validé
-      // manuellement (via Offrir un abonnement gratuit / confirmation manuelle en gestion).
-      state.modal = {type:'onsite-contact-warning'};
+      // Montre d'abord l'avertissement rouge (contacter Amélie) — la demande de paiement
+      // elle-même n'est créée qu'une fois que la personne clique "J'ai compris"
+      // (confirm-onsite-contact), pas au clic sur OUI.
+      const btn = e.currentTarget;
+      state.modal = {type:'onsite-contact-warning', payload:{
+        plan: btn.dataset.plan, name: btn.dataset.name, email: btn.dataset.email,
+        isNew: btn.dataset.new === '1', profileId: btn.dataset.profile || null
+      }};
       render();
+    }
+    else if(action==='confirm-onsite-contact'){
+      // Comme avant (ancien "Je paierai sur place" / confirm-purchase) : crée ou met à jour
+      // l'abonnement en "paiement_declare" pour qu'il apparaisse dans la fenêtre de gestion
+      // ("Abonnements à confirmer") — sauf que ça se déclenche maintenant seulement après
+      // avoir vu l'avertissement rouge et cliqué "J'ai compris", pas immédiatement sur OUI.
+      const {plan: planId, name, email, isNew, profileId} = state.modal.payload;
+      const plan = state.data.membershipPlans.find(p=>p.id===planId);
+      if(plan && name && email){
+        let m = pendingMembershipForEmail(email);
+        if(!m || m.planId !== plan.id || (m.profileId||null)!==(profileId||null)){
+          m = activatePlanForStudent(plan, name, email, false, profileId);
+        }
+        m.status = 'paiement_declare';
+        await persist();
+      }
+      state.modal = null; closeModalDom();
+      render();
+      if(isNew){
+        state.modal = {type:'ask-phone', payload:{email}};
+        render();
+      }
+      showToast('Demande de paiement envoyée — Amélie confirmera votre abonnement/carte de cours après vous avoir parlé.');
+    }
+    else if(action==='open-report-bug'){
+      pendingBugScreenshot = null;
+      state.modal = {type:'report-bug'};
+      render();
+    }
+    else if(action==='submit-bug-report'){
+      const text = (document.getElementById('bugreport-text').value || '').trim();
+      if(!text){ showToast('Décris le bug avant d’envoyer.'); return; }
+      const mgr = state.adminUnlocked ? currentManager() : null;
+      const reporterLabel = mgr ? mgr.name + ' (gestionnaire)'
+        : (state.studentSession ? state.studentSession.email : 'Visiteur non connecté');
+      if(!state.data.bugReports) state.data.bugReports = [];
+      state.data.bugReports.unshift({
+        id: uid(),
+        text,
+        screenshot: pendingBugScreenshot || null,
+        reporter: reporterLabel,
+        createdAt: Date.now(),
+      });
+      pendingBugScreenshot = null;
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Bug signalé — merci !');
+    }
+    else if(action==='delete-bug-report'){
+      state.data.bugReports = (state.data.bugReports||[]).filter(b=>b.id!==id);
+      await persist();
+      render();
+      showToast('Signalement supprimé.');
     }
     else if(action==='close-pay-onsite-info'){
       const email = e.currentTarget.dataset.email;
@@ -7720,7 +7799,7 @@
       const profileEl = document.getElementById('g-profile');
       const profileId = profileEl && profileEl.value ? profileEl.value : null;
       const plan = state.data.membershipPlans.find(p=>p.id===planId);
-      if(!name || !email){ showToast('Nom et courriel requis.'); return; }
+      if(!name || !email){ showToast('Choisissez d\u2019abord un étudiant via la recherche.'); return; }
       if(!plan){ showToast('Créez d\u2019abord une formule.'); return; }
       activatePlanForStudent(plan, name, email, true, profileId);
       await persist();
@@ -8152,6 +8231,26 @@
   // ⚠️ Ça veut dire que les appels à Supabase (lecture/écriture de app_state) se
   // font maintenant en rôle "anon" et non "authenticated" — les policies RLS de
   // la table app_state doivent autoriser le rôle anon, sinon rien ne se charge.
+  // Ferme les menus déroulants (compte élève, compte gestionnaire, abonnement actif) quand on
+  // clique en dehors — attaché une seule fois sur document (pas à chaque render, sinon les
+  // listeners s'empileraient). e.target reste utilisable même détaché du DOM live après un
+  // render() déclenché par le même clic : la chaîne de parenté du sous-arbre détaché est
+  // préservée, donc .closest() fonctionne toujours normalement.
+  document.addEventListener('click', (e)=>{
+    let changed = false;
+    if((state.accountMenuOpen || state.managerMenuOpen || state.headerMembershipMenuOpen) && !e.target.closest('.account-corner')){
+      state.accountMenuOpen = false;
+      state.managerMenuOpen = false;
+      state.headerMembershipMenuOpen = false;
+      changed = true;
+    }
+    if(state.accountMembershipMenuOpen && !e.target.closest('[data-menu-root="account-membership"]')){
+      state.accountMembershipMenuOpen = false;
+      changed = true;
+    }
+    if(changed) render();
+  });
+
   async function boot(){
     loadData();
   }
