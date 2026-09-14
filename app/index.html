@@ -2362,6 +2362,60 @@
     try{ await storageBackend.delete('student_session', false); }catch(e){}
   }
 
+  // --- Connexion avec Google (en option, en plus du courriel/mot de passe — jamais un
+  // remplacement) --------------------------------------------------------------------
+  // Lance le flot OAuth Google via Supabase Auth. Redirige vers Google, puis revient sur
+  // cette même page (redirectTo = l'URL actuelle) avec une session Supabase Auth active —
+  // c'est handleGoogleSession() qui prend le relais à ce moment-là (voir boot()).
+  async function signInWithGoogle(){
+    try{
+      const { error } = await sb.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.href }
+      });
+      if(error){ console.error('Échec connexion Google:', error); showToast('Échec de la connexion Google. Réessayez.'); }
+    }catch(err){
+      console.error('Échec connexion Google:', err);
+      showToast('Échec de la connexion Google. Réessayez.');
+    }
+  }
+
+  // Appelée au chargement de la page (si on revient d'un login Google) et à chaque connexion
+  // Google réussie. Relie le courriel Google à un compte studentAccounts EXISTANT s'il y en a
+  // un (même logique que pour un compte courriel/mot de passe : identifié par courriel) —
+  // sinon en crée un nouveau directement, SANS le code de vérification à 6 chiffres habituel
+  // (startSignupCode) puisque Google a déjà confirmé que cette personne possède ce courriel.
+  async function handleGoogleSession(session){
+    const email = session && session.user ? session.user.email : null;
+    if(!email) return;
+    if(state.studentSession && state.studentSession.email.toLowerCase() === email.toLowerCase()) return; // déjà connecté·e
+    let acct = findStudentAccount(email);
+    if(!acct){
+      const meta = (session.user && session.user.user_metadata) || {};
+      const fullName = meta.full_name || meta.name || email.split('@')[0];
+      const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+      const firstName = meta.given_name || parts[0] || '';
+      const lastName = meta.family_name || parts.slice(1).join(' ') || '';
+      acct = {
+        email, name: fullName, hash: null, googleLinked: true, phone:'',
+        firstName, lastName,
+        createdAt: Date.now(), lastVisit:null, firstVisit:null, visitCount:0, cancelCount:0,
+        birthday:'', belt:'', notes:{}, familyMembers:[]
+      };
+      state.data.studentAccounts.push(acct);
+      await persist();
+      try{ sb.functions.invoke('koss-send-welcome-email', {body:{email, firstName: firstName||fullName}}); }catch(err){ console.error('Échec envoi courriel de bienvenue (Google):', err); }
+    } else if(!acct.googleLinked){
+      acct.googleLinked = true;
+      await persist();
+    }
+    state.studentSession = {email: acct.email};
+    await saveSessionToStorage(acct.email);
+    state.view = 'student';
+    render();
+    showToast(`Bienvenue, ${acct.firstName || acct.name} !`);
+  }
+
   function normalizeStr(s){
     return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
   }
@@ -3268,6 +3322,7 @@
           <p style="margin-top:10px;text-align:center;">
             <button class="small-btn" data-action="open-reset-password">Mot de passe oublié ?</button>
           </p>
+          ${googleSigninButtonHtml()}
         </div>
       `;
     }
@@ -3287,7 +3342,25 @@
         ${pwField('w-password', "Créez-en un")}
         <p style="font-size:11px;color:var(--chalk-dim);margin-top:4px;">Ce mot de passe protège votre compte, et vous resterez connecté pour vos prochaines visites.</p>
         <div class="btn-row"><button class="btn btn-primary" data-action="submit-welcome-auth" style="width:100%;">Créer mon compte</button></div>
+        ${googleSigninButtonHtml()}
       </div>
+    `;
+  }
+
+  // Bouton "Se connecter avec Google", en option — jamais un remplacement du système
+  // courriel/mot de passe. Réutilisé partout où on affiche un formulaire de connexion/création
+  // de compte élève (actuellement l'écran d'accueil ; à ajouter aux autres endroits si Amélie
+  // le demande — réservation, achat d'abonnement, "Mon compte" → Créer mon compte).
+  function googleSigninButtonHtml(){
+    return `
+      <div style="display:flex;align-items:center;gap:8px;margin:16px 0;">
+        <div style="flex:1;height:1px;background:var(--border);"></div>
+        <span style="color:var(--chalk-dim);font-size:11px;">ou</span>
+        <div style="flex:1;height:1px;background:var(--border);"></div>
+      </div>
+      <button type="button" class="btn btn-secondary" data-action="google-signin" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#fff;color:#4285F4;font-weight:700;font-size:11px;font-family:Arial,sans-serif;">G</span> Se connecter avec Google
+      </button>
     `;
   }
 
@@ -6807,6 +6880,9 @@
       state.modal = {type:'reset-password', payload:{step:'verify'}};
       render();
     }
+    else if(action==='google-signin'){
+      await signInWithGoogle();
+    }
     else if(action==='request-reset-code'){
       const email = document.getElementById('rp-email').value.trim();
       if(!email){ showToast('Courriel requis.'); return; }
@@ -8520,6 +8596,10 @@
       state.accountMenuOpen = false;
       state.activeProfileId = null;
       await clearSessionStorage();
+      // Si la session vient d'une connexion Google, il faut aussi fermer CETTE session-là —
+      // sinon au prochain chargement de la page, handleGoogleSession() la retrouverait encore
+      // active et reconnecterait l'usager tout seul, malgré la déconnexion demandée.
+      try{ await sb.auth.signOut(); }catch(err){}
       render();
     }
     else if(action==='open-delete-account'){
@@ -8792,7 +8872,20 @@
   });
 
   async function boot(){
-    loadData();
+    await loadData();
+    // Retour d'un login Google (redirection) OU session Google déjà active dans ce navigateur —
+    // supabase-js détecte l'URL de retour tout seul et remonte la session via getSession().
+    try{
+      const { data } = await sb.auth.getSession();
+      if(data && data.session){ await handleGoogleSession(data.session); }
+    }catch(err){ console.error('Échec vérification session Google:', err); }
+    // Écoute les connexions Google qui arrivent APRÈS le chargement initial (le clic sur
+    // "Se connecter avec Google" redirige puis revient ici, ce qui redéclenche boot() au
+    // complet de toute façon — cet écouteur couvre aussi les cas où Supabase la détecte
+    // après coup, sans rechargement complet de la page).
+    sb.auth.onAuthStateChange((event, session)=>{
+      if(event === 'SIGNED_IN' && session){ handleGoogleSession(session); }
+    });
   }
 
   boot();
