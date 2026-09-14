@@ -638,24 +638,33 @@
     async delete(key){ localStorage.removeItem(key); }
   };
 
+  // NOUVEAU (S16) : les données du studio ne sont plus rangées dans une seule ligne
+  // JSON géante (app_state) — elles sont réparties sur plusieurs tables Supabase
+  // (une par collection : koss_classes, koss_bookings, koss_student_accounts, etc.),
+  // synchronisées d'un coup via 2 fonctions Postgres (koss_load_all/koss_sync_all,
+  // voir supabase/migration_multi_tables.sql) qui font tout dans UNE transaction —
+  // soit tout est écrit, soit rien ne l'est. Le reste de l'app ne voit AUCUNE
+  // différence : state.data garde exactement la même forme qu'avant (mêmes clés,
+  // mêmes tableaux) — seul l'endroit où c'est rangé côté serveur a changé.
   const supabaseBackend = {
     async get(key){
-      // Distinction cruciale : une vraie erreur (réseau, RLS/permissions, Supabase down, etc.)
-      // ne doit JAMAIS être traitée comme "pas encore de données" — sinon loadData() écraserait
-      // les vraies données du studio (revenu Helcim inclus) par une base vide au moindre pépin
-      // de connexion. Seul un "pas de ligne du tout" (data===null sans erreur) veut vraiment
-      // dire premier lancement.
-      const { data, error } = await sb.from('app_state').select('data').eq('id', 1).maybeSingle();
+      // Distinction cruciale (héritée du correctif du bug de perte de revenu, S14) :
+      // une vraie erreur (réseau, permissions, Supabase down, etc.) ne doit JAMAIS être
+      // traitée comme "pas encore de données" — sinon loadData() écraserait les vraies
+      // données du studio par une base vide au moindre pépin de connexion. koss_load_all()
+      // renvoie NULL seulement si la ligne 'meta' n'existe vraiment pas encore (premier
+      // lancement) — toute vraie erreur remonte normalement via `error`.
+      const { data, error } = await sb.rpc('koss_load_all');
       if(error) throw error;
-      if(!data){ const e = new Error('not found'); e.notFound = true; throw e; }
-      return { value: JSON.stringify(data.data) };
+      if(data == null){ const e = new Error('not found'); e.notFound = true; throw e; }
+      return { value: JSON.stringify(data) };
     },
     async set(key, value){
-      const { error } = await sb.from('app_state').upsert({ id: 1, data: JSON.parse(value) });
+      const { error } = await sb.rpc('koss_sync_all', { payload: JSON.parse(value) });
       if(error) throw error;
     },
     async delete(key){
-      const { error } = await sb.from('app_state').delete().eq('id', 1);
+      const { error } = await sb.rpc('koss_reset_all');
       if(error) throw error;
     }
   };
@@ -823,6 +832,8 @@
     notebookSelectedEntry: null,
     notebookEditMode: false,
     membershipSearchQuery: '',
+    bugSearchQuery: '',
+    bugArchiveSearchQuery: '',
     shareRecipientType: 'coach',
     shareSearchQuery: '',
     shareSelectedRecipient: null,
@@ -2601,7 +2612,7 @@
           <p class="studio-name">${escapeHtml(state.data.config.name)}</p>
         </div>
         <div class="header-bottom">
-          <p class="studio-sub">Plateforme "vibecoder" par Amélie, signaler les bugs <button type="button" class="small-btn" data-action="open-report-bug" style="padding:1px 6px;">ici</button>.</p>
+          <p class="studio-sub">Plateforme "vibecoder" par Amélie, signale les bugs <button type="button" class="small-btn" data-action="open-report-bug" style="padding:1px 6px;">ici</button>.</p>
           <div class="tabs">
             ${(state.view==='admin'||state.view==='admin-login'||state.view==='attendance') ? '' : `<button class="tab-btn ${state.view==='student'?'active':''}" data-action="goto-student">Réserver</button>`}
           </div>
@@ -3557,17 +3568,25 @@
       `, 'var(--coral)', 'var(--coral)') : ''}
 
       ${(()=>{
-        const bugs = state.data.bugReports || [];
+        const allBugs = state.data.bugReports || [];
         const archived = state.data.bugReportsArchive || [];
-        return adminCard('bug-reports', `🐛 Bugs signalés ${bugs.length ? '('+bugs.length+')' : ''}`, `
+        const q = state.bugSearchQuery || '';
+        const qn = normalizeStr(q);
+        const bugs = q ? allBugs.filter(b=> normalizeStr((b.text||'')+' '+(b.reporter||'')).includes(qn)) : allBugs;
+        return adminCard('bug-reports', `🐛 Bugs signalés ${allBugs.length ? '('+allBugs.length+')' : ''}`, `
+          <div class="btn-row" style="margin-bottom:10px;">
+            <input id="bug-search-input" placeholder="Rechercher un mot-clé..." value="${escapeHtml(q)}" style="flex:1;">
+            <button class="btn btn-secondary" data-action="run-bug-search">Chercher</button>
+            ${q ? `<button class="small-btn" data-action="clear-bug-search">✕</button>` : ''}
+          </div>
           ${bugs.length ? bugs.map(b=>`
             <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
               <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(b.reporter||'')}</p>
               <p style="font-size:13px;white-space:pre-wrap;margin:0 0 8px;">${escapeHtml(b.text)}</p>
-              ${b.screenshot ? `<img src="${b.screenshot}" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:8px;">` : ''}
+              ${b.screenshot ? `<img src="${b.screenshot}" data-action="view-bug-image" data-src="${b.screenshot}" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:8px;cursor:zoom-in;" title="Cliquer pour agrandir">` : ''}
               <button class="small-btn" data-action="delete-bug-report" data-id="${b.id}">Marquer comme réglé</button>
             </div>
-          `).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun bug signalé.</p>'}
+          `).join('') : `<p class="muted" style="color:var(--chalk-dim);">${q ? 'Aucun résultat.' : 'Aucun bug signalé.'}</p>`}
           <button class="small-btn" data-action="open-bug-archive" style="margin-top:4px;">📁 Archives ${archived.length ? '('+archived.length+')' : ''}</button>
         `);
       })()}
@@ -3785,22 +3804,53 @@
         </div>
       `;
     } else if(m.type === 'bug-archive'){
-      const archived = state.data.bugReportsArchive || [];
+      const allArchived = state.data.bugReportsArchive || [];
+      const aq = state.bugArchiveSearchQuery || '';
+      const aqn = normalizeStr(aq);
+      const archived = aq ? allArchived.filter(b=> normalizeStr((b.text||'')+' '+(b.reporter||'')).includes(aqn)) : allArchived;
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>📁 Archives des bugs réglés</h3>
           <p class="muted" style="color:var(--chalk-dim);font-size:12px;">Conservés 30 jours après avoir été marqués comme réglés, puis supprimés automatiquement.</p>
-          ${archived.length ? `<button class="btn btn-primary" data-action="download-bug-archive-csv" style="margin-bottom:10px;">Télécharger l’archive (CSV)</button>` : ''}
+          <div class="btn-row" style="margin-bottom:10px;">
+            <input id="bug-archive-search-input" placeholder="Rechercher un mot-clé..." value="${escapeHtml(aq)}" style="flex:1;">
+            <button class="btn btn-secondary" data-action="run-bug-archive-search">Chercher</button>
+            ${aq ? `<button class="small-btn" data-action="clear-bug-archive-search">✕</button>` : ''}
+          </div>
+          ${allArchived.length ? `<button class="btn btn-primary" data-action="download-bug-archive-csv" style="margin-bottom:10px;">Télécharger l’archive (CSV)</button>` : ''}
           ${archived.length ? archived.map(b=>`
             <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
               <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">Signalé le ${new Date(b.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(b.reporter||'')}</p>
               <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">Réglé le ${new Date(b.resolvedAt).toLocaleString('fr-CA')}</p>
               <p style="font-size:13px;white-space:pre-wrap;margin:0 0 8px;">${escapeHtml(b.text)}</p>
-              ${b.screenshot ? `<img src="${b.screenshot}" style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid var(--border);display:block;">` : ''}
+              ${b.screenshot ? `<img src="${b.screenshot}" data-action="view-bug-image" data-src="${b.screenshot}" style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:8px;cursor:zoom-in;" title="Cliquer pour agrandir">` : ''}
+              <button class="small-btn" data-action="confirm-delete-archived-bug" data-id="${b.id}" style="color:var(--coral);">Supprimer</button>
             </div>
-          `).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun bug archivé.</p>'}
+          `).join('') : `<p class="muted" style="color:var(--chalk-dim);">${aq ? 'Aucun résultat.' : 'Aucun bug archivé.'}</p>`}
           <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+        </div>
+      `;
+    } else if(m.type === 'confirm-delete-archived-bug'){
+      const {id: bugId} = m.payload;
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <div style="border:1px solid var(--coral);background:rgba(255,90,90,0.08);border-radius:8px;padding:14px;">
+            <p style="font-size:14px;line-height:1.5;color:var(--coral);font-weight:600;margin:0;">Supprimer ce bug de l’archive ? Cette action est irréversible.</p>
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
+            <button class="btn btn-danger" data-action="delete-archived-bug" data-id="${bugId}">Oui, supprimer</button>
+            <button class="btn btn-secondary" data-action="open-bug-archive">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'view-image'){
+      const {src} = m.payload;
+      html = `
+        <div class="modal" style="max-width:95vw;width:auto;padding:10px;background:transparent;border:none;box-shadow:none;text-align:center;">
+          <button class="close-x" data-action="close-modal" style="background:var(--bg-panel);border-radius:50%;padding:2px 8px;">✕</button>
+          <img src="${src}" style="max-width:95vw;max-height:88vh;border-radius:8px;display:block;margin:8px auto 0;">
         </div>
       `;
     } else if(m.type === 'sales-report'){
@@ -7547,6 +7597,37 @@
         }))
       );
     }
+    else if(action==='run-bug-search'){
+      state.bugSearchQuery = (document.getElementById('bug-search-input').value || '').trim();
+      render();
+    }
+    else if(action==='clear-bug-search'){
+      state.bugSearchQuery = '';
+      render();
+    }
+    else if(action==='run-bug-archive-search'){
+      state.bugArchiveSearchQuery = (document.getElementById('bug-archive-search-input').value || '').trim();
+      render();
+    }
+    else if(action==='clear-bug-archive-search'){
+      state.bugArchiveSearchQuery = '';
+      render();
+    }
+    else if(action==='view-bug-image'){
+      state.modal = {type:'view-image', payload:{src: e.currentTarget.dataset.src}};
+      render();
+    }
+    else if(action==='confirm-delete-archived-bug'){
+      state.modal = {type:'confirm-delete-archived-bug', payload:{id}};
+      render();
+    }
+    else if(action==='delete-archived-bug'){
+      state.data.bugReportsArchive = (state.data.bugReportsArchive||[]).filter(b=>b.id!==id);
+      await persist();
+      state.modal = {type:'bug-archive'};
+      render();
+      showToast('Bug supprimé de l’archive.');
+    }
     else if(action==='close-pay-onsite-info'){
       const email = e.currentTarget.dataset.email;
       const isNew = e.currentTarget.dataset.new === '1';
@@ -8686,9 +8767,10 @@
   // Site public depuis le lancement des tests avec de vrais courriels : plus de
   // mot de passe unique partagé (Supabase Auth) devant tout le site. Chaque
   // visiteur passe maintenant par l'écran d'accueil membre/nouveau (renderWelcome).
-  // ⚠️ Ça veut dire que les appels à Supabase (lecture/écriture de app_state) se
-  // font maintenant en rôle "anon" et non "authenticated" — les policies RLS de
-  // la table app_state doivent autoriser le rôle anon, sinon rien ne se charge.
+  // ⚠️ Ça veut dire que les appels à Supabase se font maintenant en rôle "anon" et
+  // non "authenticated" — le rôle anon doit avoir le droit d'exécuter les fonctions
+  // koss_load_all/koss_sync_all/koss_reset_all (GRANT EXECUTE, voir
+  // supabase/migration_multi_tables.sql), sinon rien ne se charge.
   // Ferme les menus déroulants (compte élève, compte gestionnaire, abonnement actif) quand on
   // clique en dehors — attaché une seule fois sur document (pas à chaque render, sinon les
   // listeners s'empileraient). e.target reste utilisable même détaché du DOM live après un
