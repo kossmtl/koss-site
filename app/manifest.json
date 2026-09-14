@@ -1,0 +1,19 @@
+{
+  "name": "K-OSS Jiu-Jitsu",
+  "short_name": "K-OSS",
+  "description": "Réservez vos cours, gérez votre abonnement et suivez votre progression au K-OSS Jiu-Jitsu.",
+  "start_url": "/app/?pwa=1",
+  "scope": "/app/",
+  "id": "/app/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#28292E",
+  "theme_color": "#28292E",
+  "lang": "fr-CA",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
