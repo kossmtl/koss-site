@@ -3363,7 +3363,7 @@
   // (signInWithGoogle/handleGoogleSession/boot()) reste actif en arrière-plan — il suffit de
   // remettre GOOGLE_SIGNIN_BUTTON_VISIBLE à true une fois la politique de confidentialité prête
   // et l'app publiée/vérifiée côté Google, pour réafficher le bouton sans rien recoder.
-  const GOOGLE_SIGNIN_BUTTON_VISIBLE = false;
+  const GOOGLE_SIGNIN_BUTTON_VISIBLE = true;
   function googleSigninButtonHtml(){
     if(!GOOGLE_SIGNIN_BUTTON_VISIBLE) return '';
     return `
