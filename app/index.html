@@ -7739,8 +7739,15 @@
           markInvalid([!email?'w-email':null, !password?'w-password':null].filter(Boolean));
           showToast('Courriel et mot de passe requis.'); return;
         }
+        // Posé AVANT signInWithPassword (voir confirm-signup-code-submit pour l'explication
+        // complète) : ça déclenche SIGNED_IN de façon synchrone/concurrente, capté par
+        // handleGoogleSession() ailleurs — sans ce court-circuit posé tôt, les deux
+        // s'exécutent en course et handleGoogleSession() peut faire un render() avec des
+        // données pas encore chargées (loadData() pas terminé).
+        state.studentSession = {email};
         const { error: signInErr } = await sb.auth.signInWithPassword({ email, password });
         if(signInErr){
+          state.studentSession = null;
           markInvalid('w-password');
           showToast('Courriel ou mot de passe incorrect.');
           return;
@@ -7748,6 +7755,7 @@
         await loadData();
         const existing = findStudentAccount(email);
         if(!existing){
+          state.studentSession = null;
           showToast("Ce compte n'a pas encore de fiche élève — contactez le studio.");
           return;
         }
@@ -7821,8 +7829,10 @@
           markInvalid([!email?'b-email':null, !password?'b-password':null].filter(Boolean));
           showToast('Courriel et mot de passe requis.'); return;
         }
+        state.studentSession = {email};
         const { error: signInErr } = await sb.auth.signInWithPassword({ email, password });
         if(signInErr){
+          state.studentSession = null;
           markInvalid('b-password');
           showToast('Courriel ou mot de passe incorrect.');
           return;
@@ -7830,6 +7840,7 @@
         await loadData();
         const existing = findStudentAccount(email);
         if(!existing){
+          state.studentSession = null;
           showToast("Ce compte n'a pas encore de fiche élève — contactez le studio.");
           return;
         }
