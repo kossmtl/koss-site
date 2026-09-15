@@ -682,7 +682,16 @@
       // données du studio par une base vide au moindre pépin de connexion. koss_load_all()
       // renvoie NULL seulement si la ligne 'meta' n'existe vraiment pas encore (premier
       // lancement) — toute vraie erreur remonte normalement via `error`.
-      const { data, error } = await sb.rpc('koss_load_all');
+      // Avant une vraie connexion (aucune session Supabase active), koss_load_all() est
+      // refusé par le serveur — seul koss_load_public() (horaire + tarifs, rien de privé)
+      // est accessible à un visiteur anonyme. Une fois connecté (élève ou gestionnaire),
+      // koss_load_all() prend le relais et renvoie la vue filtrée selon le rôle.
+      let hasSession = false;
+      try{
+        const { data: sessData } = await sb.auth.getSession();
+        hasSession = !!(sessData && sessData.session);
+      }catch(err){}
+      const { data, error } = await sb.rpc(hasSession ? 'koss_load_all' : 'koss_load_public');
       if(error) throw error;
       if(data == null){ const e = new Error('not found'); e.notFound = true; throw e; }
       return { value: JSON.stringify(data) };
