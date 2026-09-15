@@ -1431,7 +1431,11 @@
       // vient de disparaître de studentAccounts (suppression par lui-même sur un autre
       // appareil, OU par un·e admin), on le déconnecte ici tout de suite plutôt que de le
       // laisser naviguer dans une app avec un compte qui n'existe plus côté serveur.
-      if(state.studentSession && !findStudentAccount(state.studentSession.email)){
+      // ⚠️ Ne jamais faire ça en mode admin : sinon supprimer "l'élève qui a le même
+      // courriel qu'un·e gestionnaire" fait bugger l'affichage vers l'écran d'accueil
+      // pendant que la vraie session admin reste valide (retour instantané en admin ensuite,
+      // mais affichage trompeur entre-temps).
+      if(!ADMIN_URL_FLAG && state.studentSession && !findStudentAccount(state.studentSession.email)){
         state.studentSession = null;
         await clearSessionStorage();
         state.view = 'welcome';
@@ -2568,8 +2572,15 @@
         createdAt: Date.now(), lastVisit:null, firstVisit:null, visitCount:0, cancelCount:0,
         birthday:'', belt:'', notes:{}, familyMembers:[]
       };
+      // Création explicite, via une fonction dédiée à ça — jamais via la synchro de routine
+      // (koss_sync_all), pour qu'une suppression faite par une gestionnaire reste permanente
+      // même si la personne supprimée a encore l'app ouverte ailleurs.
+      try{
+        const { error: signupErr } = await sb.rpc('koss_student_self_signup', { payload: acct });
+        if(signupErr) console.error('Échec création du compte (signup Google):', signupErr);
+      }catch(err){ console.error('Échec création du compte (signup Google):', err); }
       state.data.studentAccounts.push(acct);
-      await persist();
+      state.lastSyncedData = deepClone(state.data);
       try{ sb.functions.invoke('koss-send-welcome-email', {body:{email, firstName: firstName||fullName}}); }catch(err){ console.error('Échec envoi courriel de bienvenue:', err); }
     } else if(isGoogle && !acct.googleLinked){
       acct.googleLinked = true;
