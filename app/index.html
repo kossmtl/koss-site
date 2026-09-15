@@ -54,12 +54,18 @@
     justify-content:space-between;
     flex-wrap:wrap;
     gap:10px;
+    width:100%; /* ⚠️ Sans ça, le média query mobile (.header{align-items:flex-start} plus bas)
+      empêche .header-top d'être étiré par le parent flex-column ; il ne prenait alors que la
+      largeur de son contenu, donc le "justify-content:space-between" ne poussait le badge
+      compte/abonnement que jusqu'au bord de CETTE largeur réduite, pas jusqu'au vrai bord droit
+      de l'écran (gros espace vide à droite sur mobile, signalé par Amélie). */
   }
   .header-bottom{
     display:flex;
     flex-direction:column;
     align-items:flex-start;
     gap:8px;
+    width:100%; /* même raison que .header-top ci-dessus */
   }
   .studio-name{
     font-family:var(--font-d);
@@ -2721,9 +2727,18 @@
   // deuxième segment est gardée (ex. "Marie-Claude Tremblay" → "Marie-C T"). Aucun effet ailleurs
   // dans l'app (carte "Mon compte", listes admin, etc. gardent le nom complet) — seulement ici.
   function headerShortName(fullName){
-    const parts = String(fullName||'').trim().split(/\s+/).filter(Boolean);
+    const name = String(fullName||'');
+    const parts = name.trim().split(/\s+/).filter(Boolean);
     if(parts.length < 2) return fullName||'';
     const lastName = parts[parts.length-1];
+    // ⚠️ Piège trouvé (screenshot Amélie, "Lily (" tronqué) : un profil (souvent un enfant)
+    // peut avoir un nom avec une précision entre parenthèses (ex. "Lily (Léa)") ou toute autre
+    // ponctuation collée au dernier "mot". La règle "1re lettre du nom de famille" prenait alors
+    // cette parenthèse comme si c'était le nom de famille et affichait juste "Lily (" — pas un
+    // bug d'affichage CSS, le texte généré était réellement tronqué à cet endroit. On ne
+    // raccourcit maintenant QUE si le dernier mot ressemble à un vrai nom de famille (lettres,
+    // apostrophes, traits d'union seulement) ; sinon on affiche le nom complet tel quel.
+    if(!/^[A-Za-zÀ-ÖØ-öø-ÿ'’-]+$/.test(lastName)) return name;
     let firstPart = parts.slice(0, -1).join(' ');
     if(firstPart.includes('-')){
       const sub = firstPart.split('-');
