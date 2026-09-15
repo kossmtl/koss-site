@@ -2540,6 +2540,14 @@
   async function handleGoogleSession(session){
     const email = session && session.user ? session.user.email : null;
     if(!email) return;
+    // ⚠️ Piège corrigé (15 sept 2026) : une gestionnaire (compte réel Supabase Auth, ex.
+    // super-gestionnaire kossmtl@gmail.com) qui ouvre l'app SANS ?admin dans le même
+    // navigateur où elle est connectée en admin se faisait automatiquement créer/connecter
+    // un compte ÉLÈVE avec sa propre adresse admin — sb.auth.getSession() renvoie la même
+    // session peu importe l'onglet/la page, cette fonction ne distinguait pas "courriel
+    // gestionnaire" de "courriel élève". On ne traite donc jamais ici un courriel qui
+    // correspond à un compte gestionnaire existant.
+    if(state.data.managers.some(m=>(m.email||'').toLowerCase()===email.toLowerCase())) return;
     if(state.studentSession && state.studentSession.email.toLowerCase() === email.toLowerCase()) return; // déjà connecté·e
     const isGoogle = !!(session.user && session.user.app_metadata && session.user.app_metadata.provider === 'google');
     let acct = findStudentAccount(email);
@@ -2819,7 +2827,7 @@
           </div>
         ` : ''}
       </div>
-    ` : acct ? `
+    ` : ADMIN_URL_FLAG ? `` : acct ? `
       <div style="position:relative;text-align:right;">
         <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;position:relative;">
           <button class="tab-btn account-badge" data-action="toggle-account-menu" style="margin-left:auto;">
@@ -2845,7 +2853,7 @@
           </div>
         ` : ''}
       </div>
-    ` : (state.view==='admin-login') ? '' : `
+    ` : `
       <button class="tab-btn ${state.view==='account'?'active':''}" data-action="goto-account">Connexion/Inscription</button>
     `;
     return `
