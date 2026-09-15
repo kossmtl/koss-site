@@ -3550,9 +3550,12 @@
     return `
       <div class="pin-screen">
         <h3 style="font-family:var(--font-d);">Espace administrateur</h3>
-        <p class="muted" style="color:var(--chalk-dim);">Entrez votre NIP personnel pour gérer les cours et les paiements.</p>
-        ${pwField('pin-input', '••••', {wrapStyle:'max-width:180px;margin:0 auto;', inputExtra:'inputmode="numeric" style="text-align:center;letter-spacing:4px;"'})}
-        <div class="btn-row"><button class="btn btn-primary" data-action="pin-submit">Entrer</button></div>
+        <p class="muted" style="color:var(--chalk-dim);">Connectez-vous avec votre compte gestionnaire.</p>
+        <div class="field-group" style="max-width:280px;margin:0 auto;">
+          <input id="admin-email" type="email" autocomplete="username" placeholder="Courriel" style="margin-bottom:8px;">
+          ${pwField('admin-password', 'Mot de passe', {inputExtra:'autocomplete="current-password"'})}
+        </div>
+        <div class="btn-row"><button class="btn btn-primary" data-action="admin-login-submit">Entrer</button></div>
       </div>
     `;
   }
@@ -6600,7 +6603,8 @@
       state.adminUnlocked = false;
       state.currentManagerId = null;
       state.managerMenuOpen = false;
-      // Sur l'URL ?admin, revenir à l'écran de PIN admin plutôt qu'à la page élève.
+      try{ await sb.auth.signOut(); }catch(err){}
+      // Sur l'URL ?admin, revenir à l'écran de connexion admin plutôt qu'à la page élève.
       state.view = ADMIN_URL_FLAG ? 'admin-login' : 'student';
       render();
     }
@@ -7306,18 +7310,34 @@
       }
     }
 
-    else if(action==='pin-submit'){
-      const val = document.getElementById('pin-input').value;
-      const manager = state.data.managers.find(m=>m.pin===val);
-      if(manager){
-        state.adminUnlocked = true;
-        state.currentManagerId = manager.id;
-        state.view = 'admin';
-        render();
-      } else {
-        markInvalid('pin-input');
-        showToast('NIP incorrect.');
+    else if(action==='admin-login-submit'){
+      const email = document.getElementById('admin-email').value.trim();
+      const password = document.getElementById('admin-password').value;
+      if(!email || !password){
+        markInvalid([!email?'admin-email':null, !password?'admin-password':null].filter(Boolean));
+        showToast('Courriel et mot de passe requis.'); return;
       }
+      const { error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+      if(signInErr){
+        markInvalid('admin-password');
+        showToast('Courriel ou mot de passe incorrect.');
+        return;
+      }
+      // Le serveur seul décide si ce compte est bien un compte gestionnaire — jamais le client.
+      const { data: isMgr, error: roleErr } = await sb.rpc('koss_is_manager');
+      if(roleErr || !isMgr){
+        try{ await sb.auth.signOut(); }catch(err){}
+        showToast("Ce compte n'est pas un compte gestionnaire.");
+        return;
+      }
+      await loadData();
+      const session = (await sb.auth.getSession()).data.session;
+      const myEmail = session && session.user ? session.user.email.toLowerCase() : '';
+      const mgr = state.data.managers.find(m=>(m.email||'').toLowerCase()===myEmail);
+      state.adminUnlocked = true;
+      state.currentManagerId = mgr ? mgr.id : null;
+      state.view = 'admin';
+      render();
     }
 
     else if(action==='open-reset-password'){
@@ -9422,7 +9442,29 @@
   });
 
   async function boot(){
+    // Restaure une session gestionnaire déjà active (compte courriel/mot de passe) AVANT
+    // loadData(), pour qu'elle choisisse tout de suite la bonne vue au chargement/actualisation
+    // — c'est le serveur seul (koss_is_manager) qui décide, jamais un NIP local.
+    if(ADMIN_URL_FLAG){
+      try{
+        const { data: sessData } = await sb.auth.getSession();
+        if(sessData && sessData.session){
+          const { data: isMgr } = await sb.rpc('koss_is_manager');
+          state.adminUnlocked = !!isMgr;
+        } else {
+          state.adminUnlocked = false;
+        }
+      }catch(err){ console.error('Échec vérification session gestionnaire:', err); state.adminUnlocked = false; }
+    }
     await loadData();
+    if(ADMIN_URL_FLAG && state.adminUnlocked && !state.currentManagerId){
+      try{
+        const { data: sessData2 } = await sb.auth.getSession();
+        const myEmail = (sessData2 && sessData2.session && sessData2.session.user) ? sessData2.session.user.email.toLowerCase() : '';
+        const mgr = state.data.managers.find(m=>(m.email||'').toLowerCase()===myEmail);
+        state.currentManagerId = mgr ? mgr.id : null;
+      }catch(err){ console.error('Échec résolution de l\'identité gestionnaire:', err); }
+    }
     // Retour d'un login Google (redirection) : repère si Google/Supabase a renvoyé une erreur
     // (ex. "access_denied" — compte pas autorisé pendant que l'app OAuth est encore en mode
     // Test côté Google Cloud) AVANT de nettoyer l'URL, pour pouvoir prévenir clairement.
