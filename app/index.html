@@ -643,6 +643,18 @@
   const sb = (typeof window.supabase !== 'undefined')
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
+  // Enregistré ICI, tout de suite après la création du client — pas plus bas dans boot()
+  // (qui fait plusieurs `await` avant d'y arriver) — car Supabase traite le lien de
+  // récupération de mot de passe dans l'URL dès la création du client, et l'événement
+  // PASSWORD_RECOVERY ne serait plus jamais reçu si on écoutait trop tard.
+  if(sb){
+    sb.auth.onAuthStateChange((event, session)=>{
+      if(event === 'PASSWORD_RECOVERY'){
+        state.modal = {type:'set-new-password', payload:null};
+        render();
+      }
+    });
+  }
 
   // Lien caché pour les gestionnaires : kossmtl.ca/app/?admin ouvre directement
   // l'écran de NIP (Gérer), sans passer par l'écran d'accueil membre/nouveau.
@@ -2534,10 +2546,15 @@
   // un (même logique que pour un compte courriel/mot de passe : identifié par courriel) —
   // sinon en crée un nouveau directement, SANS le code de vérification à 6 chiffres habituel
   // (startSignupCode) puisque Google a déjà confirmé que cette personne possède ce courriel.
+  // Appelée pour TOUTE session Supabase Auth active côté élève (Google OU courriel/mot de
+  // passe — sb.auth.onAuthStateChange() ne distingue pas les deux) — pas seulement Google
+  // malgré son nom historique. Le drapeau "googleLinked" n'est posé que si le fournisseur
+  // réel de CETTE session est bien Google, jamais par défaut.
   async function handleGoogleSession(session){
     const email = session && session.user ? session.user.email : null;
     if(!email) return;
     if(state.studentSession && state.studentSession.email.toLowerCase() === email.toLowerCase()) return; // déjà connecté·e
+    const isGoogle = !!(session.user && session.user.app_metadata && session.user.app_metadata.provider === 'google');
     let acct = findStudentAccount(email);
     if(!acct){
       const meta = (session.user && session.user.user_metadata) || {};
@@ -2546,15 +2563,15 @@
       const firstName = meta.given_name || parts[0] || '';
       const lastName = meta.family_name || parts.slice(1).join(' ') || '';
       acct = {
-        email, name: fullName, hash: null, googleLinked: true, phone:'',
+        email, name: fullName, hash: null, googleLinked: isGoogle, phone:'',
         firstName, lastName,
         createdAt: Date.now(), lastVisit:null, firstVisit:null, visitCount:0, cancelCount:0,
         birthday:'', belt:'', notes:{}, familyMembers:[]
       };
       state.data.studentAccounts.push(acct);
       await persist();
-      try{ sb.functions.invoke('koss-send-welcome-email', {body:{email, firstName: firstName||fullName}}); }catch(err){ console.error('Échec envoi courriel de bienvenue (Google):', err); }
-    } else if(!acct.googleLinked){
+      try{ sb.functions.invoke('koss-send-welcome-email', {body:{email, firstName: firstName||fullName}}); }catch(err){ console.error('Échec envoi courriel de bienvenue:', err); }
+    } else if(isGoogle && !acct.googleLinked){
       acct.googleLinked = true;
       await persist();
     }
@@ -6077,6 +6094,18 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'set-new-password'){
+      html = `
+        <div class="modal" style="max-width:340px;">
+          <h3>Choisissez votre mot de passe</h3>
+          <p class="muted" style="color:var(--chalk-dim);">Dernière étape avant de retrouver l’accès à votre compte.</p>
+          ${pwField('new-pw-1', 'Nouveau mot de passe')}
+          ${pwField('new-pw-2', 'Confirmez le mot de passe')}
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="submit-new-password">Enregistrer</button>
+          </div>
+        </div>
+      `;
     }
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
@@ -7424,6 +7453,23 @@
         btn.disabled = false; btn.textContent = originalLabel;
         return;
       }
+      // Le code à 6 chiffres confirme que la personne possède ce courriel — on crée
+      // maintenant le VRAI compte d'authentification (Supabase Auth), plus jamais un mot
+      // de passe comparé dans le navigateur. Si un compte auth existe déjà pour ce courriel
+      // (cas rare : compte migré manuellement), on retombe simplement sur une connexion.
+      try{
+        const { error: signUpErr } = await sb.auth.signUp({
+          email: payload.email,
+          password: payload.password,
+          options: { data: { full_name: payload.name, given_name: payload.firstName, family_name: payload.lastName } }
+        });
+        if(signUpErr && !/already registered|already exists/i.test(signUpErr.message||'')){
+          console.error('Échec création du compte Supabase Auth:', signUpErr);
+        }
+        if(signUpErr && /already registered|already exists/i.test(signUpErr.message||'')){
+          await sb.auth.signInWithPassword({ email: payload.email, password: payload.password });
+        }
+      }catch(err){ console.error('Échec création du compte Supabase Auth:', err); }
       await loadData();
       state.studentSession = {email: payload.email};
       await saveSessionToStorage(payload.email);
@@ -7719,7 +7765,7 @@
         return;
       }
       if(auth.needsCode){
-        state.modal = {type:'confirm-signup-code', payload:{email, name, onVerified: async ()=>{
+        state.modal = {type:'confirm-signup-code', payload:{email, name, password, firstName, lastName, onVerified: async ()=>{
           state.welcomeAuthChoice = null;
           state.view = 'student';
           render();
@@ -7795,7 +7841,7 @@
         return;
       }
       if(auth.needsCode){
-        state.modal = {type:'confirm-signup-code', payload:{email, name, onVerified: async ()=>{
+        state.modal = {type:'confirm-signup-code', payload:{email, name, password, firstName, lastName, onVerified: async ()=>{
           await proceedBooking(classId, dateIso, name, email, false);
           if(!state.modal){
             state.modal = {type:'ask-phone', payload:{email}};
@@ -7880,7 +7926,7 @@
         return;
       }
       if(auth.needsCode){
-        state.modal = {type:'confirm-signup-code', payload:{email, name, onVerified: async ()=>{
+        state.modal = {type:'confirm-signup-code', payload:{email, name, password, firstName, lastName, onVerified: async ()=>{
           if(plan.isIntroProgram){
             state.modal = {type:'choose-intro-program', payload:{plan,name,email,isNewAccount:true}};
           } else {
@@ -9130,10 +9176,22 @@
     else if(action==='student-login'){
       const email = document.getElementById('acc-email').value.trim();
       const password = document.getElementById('acc-password').value;
+      if(!email || !password){
+        markInvalid([!email?'acc-email':null, !password?'acc-password':null].filter(Boolean));
+        showToast('Courriel et mot de passe requis.'); return;
+      }
+      const { error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+      if(signInErr){
+        markInvalid('acc-password');
+        showToast('Courriel ou mot de passe incorrect.');
+        return;
+      }
+      await loadData();
       const acct = findStudentAccount(email);
-      if(!acct){ markInvalid('acc-email'); showToast('Aucun compte trouvé avec ce courriel.'); return; }
-      const hash = await hashPassword(password);
-      if(hash !== acct.hash){ markInvalid('acc-password'); showToast('Mot de passe incorrect.'); return; }
+      if(!acct){
+        showToast("Ce compte n'a pas encore de fiche élève — contactez le studio.");
+        return;
+      }
       state.studentSession = {email: acct.email};
       state.accountExpanded = true;
       await saveSessionToStorage(acct.email);
@@ -9197,8 +9255,8 @@
       const acct = findStudentAccount(state.studentSession.email);
       if(!acct){ showToast('Compte introuvable.'); return; }
       const password = document.getElementById('del-acc-password').value;
-      const hash = await hashPassword(password || '');
-      if(hash !== acct.hash){ markInvalid('del-acc-password'); showToast('Mot de passe incorrect.'); return; }
+      const { error: pwErr } = await sb.auth.signInWithPassword({ email: acct.email, password: password || '' });
+      if(pwErr){ markInvalid('del-acc-password'); showToast('Mot de passe incorrect.'); return; }
 
       // Archive le compte (voir archiveDeletedAccount) au lieu de tout perdre pour toujours
       // tout de suite — Amélie peut le réactiver ou le supprimer pour de bon depuis l'onglet
@@ -9241,14 +9299,37 @@
       const current = document.getElementById('acc-current-pw').value;
       const next = document.getElementById('acc-new-pw').value;
       const confirmPw = document.getElementById('acc-confirm-pw').value;
-      const hash = await hashPassword(current);
-      if(!acct || hash !== acct.hash){ markInvalid('acc-current-pw'); showToast('Mot de passe actuel incorrect.'); return; }
+      if(!acct){ showToast('Compte introuvable.'); return; }
+      const { error: pwErr } = await sb.auth.signInWithPassword({ email: acct.email, password: current || '' });
+      if(pwErr){ markInvalid('acc-current-pw'); showToast('Mot de passe actuel incorrect.'); return; }
       if(!next || next.length < 4){ markInvalid('acc-new-pw'); showToast('Le nouveau mot de passe doit avoir au moins 4 caractères.'); return; }
       if(next !== confirmPw){ markInvalid(['acc-new-pw','acc-confirm-pw']); showToast('La confirmation ne correspond pas.'); return; }
-      acct.hash = await hashPassword(next);
-      await persist();
+      const { error: updateErr } = await sb.auth.updateUser({ password: next });
+      if(updateErr){ console.error('Échec mise à jour du mot de passe:', updateErr); showToast("Échec de la mise à jour. Réessayez."); return; }
       render();
       showToast('Mot de passe mis à jour.');
+    }
+    else if(action==='submit-new-password'){
+      // Arrivée via le lien "Choisissez votre mot de passe" reçu par courriel (compte migré
+      // ou nouveau) — une session valide existe déjà à ce stade (posée par Supabase via le
+      // lien), il ne reste qu'à enregistrer le nouveau mot de passe.
+      const pw1 = document.getElementById('new-pw-1').value;
+      const pw2 = document.getElementById('new-pw-2').value;
+      if(!pw1 || pw1.length < 4){ markInvalid('new-pw-1'); showToast('Le mot de passe doit avoir au moins 4 caractères.'); return; }
+      if(pw1 !== pw2){ markInvalid(['new-pw-1','new-pw-2']); showToast('La confirmation ne correspond pas.'); return; }
+      const { error: updateErr } = await sb.auth.updateUser({ password: pw1 });
+      if(updateErr){ console.error('Échec définition du mot de passe:', updateErr); showToast("Échec de l'enregistrement. Réessayez."); return; }
+      state.modal = null; closeModalDom();
+      await loadData();
+      const { data: sessData } = await sb.auth.getSession();
+      const myEmail = (sessData && sessData.session && sessData.session.user) ? sessData.session.user.email : null;
+      if(myEmail){
+        state.studentSession = {email: myEmail.toLowerCase()};
+        await saveSessionToStorage(myEmail.toLowerCase());
+      }
+      state.view = 'student';
+      render();
+      showToast('Mot de passe enregistré — bienvenue !');
     }
     else if(action==='save-phone'){
       const email = e.currentTarget.dataset.email;
@@ -9517,6 +9598,8 @@
     sb.auth.onAuthStateChange((event, session)=>{
       // Même garde-fou qu'au démarrage : ne jamais traiter une connexion en mode admin
       // comme une connexion élève (voir commentaire plus haut dans boot()).
+      // (PASSWORD_RECOVERY est géré par un écouteur séparé, posé dès la création de `sb`
+      // — voir plus haut — pour ne jamais rater l'événement.)
       if(event === 'SIGNED_IN' && session && !ADMIN_URL_FLAG){ handleGoogleSession(session); }
     });
   }
