@@ -2465,28 +2465,11 @@
   }
 
   // Returns {ok, reason, isNew}. Creates the account on first use of an email.
-  async function verifyOrCreateAccount(email, name, password, firstName, lastName){
-    if(!password){ return {ok:false, reason:'missing'}; }
-    const acct = findStudentAccount(email);
-    const hash = await hashPassword(password);
-    if(acct){
-      if(acct.hash !== hash) return {ok:false, reason:'wrong'};
-      return {ok:true, isNew:false};
-    } else {
-      state.data.studentAccounts.push({
-        email, name, hash, phone:'',
-        firstName: firstName||'', lastName: lastName||'',
-        createdAt:Date.now(), lastVisit:null, firstVisit:null, visitCount:0, cancelCount:0,
-        birthday:'', belt:'', notes:{}, familyMembers:[]
-      });
-      // Courriel de bienvenue — best-effort, ne doit jamais bloquer ni faire échouer la création
-      // de compte si Resend n'est pas configuré ou indisponible.
-      try{
-        sb.functions.invoke('koss-send-welcome-email', {body:{email, firstName: firstName||name}});
-      }catch(err){ console.error('Échec envoi courriel de bienvenue:', err); }
-      return {ok:true, isNew:true};
-    }
-  }
+  // ⚠️ SUPPRIMÉ (sécurité) : verifyOrCreateAccount comparait un hash côté navigateur et créait
+  // des comptes directement dans state.data — c'est exactement le schéma pré-Supabase-Auth
+  // qu'on a éliminé partout ailleurs. Les deux appelants (submit-welcome-auth, submit-booking,
+  // branche "existing") font maintenant un vrai sb.auth.signInWithPassword() à la place —
+  // voir plus bas.
 
   // Étape 1 de la création de compte vérifiée par courriel. Si le courriel a déjà un compte,
   // on retombe simplement sur une connexion normale (aucun code requis — l'usager s'est juste
@@ -7468,6 +7451,16 @@
       // maintenant le VRAI compte d'authentification (Supabase Auth), plus jamais un mot
       // de passe comparé dans le navigateur. Si un compte auth existe déjà pour ce courriel
       // (cas rare : compte migré manuellement), on retombe simplement sur une connexion.
+      //
+      // ⚠️ state.studentSession est posé AVANT sb.auth.signUp() (et non après) — signUp()
+      // déclenche immédiatement l'événement SIGNED_IN de Supabase, capté ailleurs par
+      // sb.auth.onAuthStateChange() → handleGoogleSession(), qui a sa propre logique de
+      // création/connexion. handleGoogleSession() se retire dès qu'elle voit un
+      // state.studentSession déjà posé pour ce courriel — sans ce court-circuit posé tôt,
+      // les deux bouts de code s'exécutent en parallèle (course), ce qui provoquait un
+      // ré-affichage brutal de la page pendant l'inscription (vu en test S24).
+      state.studentSession = {email: payload.email};
+      let signUpFailed = false;
       try{
         const { error: signUpErr } = await sb.auth.signUp({
           email: payload.email,
@@ -7476,13 +7469,20 @@
         });
         if(signUpErr && !/already registered|already exists/i.test(signUpErr.message||'')){
           console.error('Échec création du compte Supabase Auth:', signUpErr);
+          signUpFailed = true;
         }
         if(signUpErr && /already registered|already exists/i.test(signUpErr.message||'')){
-          await sb.auth.signInWithPassword({ email: payload.email, password: payload.password });
+          const { error: signInErr } = await sb.auth.signInWithPassword({ email: payload.email, password: payload.password });
+          if(signInErr){ console.error('Échec connexion de secours après "already registered":', signInErr); signUpFailed = true; }
         }
-      }catch(err){ console.error('Échec création du compte Supabase Auth:', err); }
+      }catch(err){ console.error('Échec création du compte Supabase Auth:', err); signUpFailed = true; }
+      if(signUpFailed){
+        state.studentSession = null;
+        btn.disabled = false; btn.textContent = originalLabel;
+        showToast("Échec de la création du compte de connexion. Réessayez, ou contactez le studio si ça persiste.");
+        return;
+      }
       await loadData();
-      state.studentSession = {email: payload.email};
       await saveSessionToStorage(payload.email);
       try{ await storageBackend.set('my_profile', JSON.stringify({name:payload.name, email:payload.email}), false); }catch(err){}
       const onVerified = payload.onVerified;
@@ -7739,16 +7739,20 @@
           markInvalid([!email?'w-email':null, !password?'w-password':null].filter(Boolean));
           showToast('Courriel et mot de passe requis.'); return;
         }
-        const existing = findStudentAccount(email);
-        if(!existing){
-          markInvalid('w-email');
-          showToast("Aucun compte trouvé avec ce courriel. Choisis plutôt « faire partie de la gang ».");
+        const { error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+        if(signInErr){
+          markInvalid('w-password');
+          showToast('Courriel ou mot de passe incorrect.');
           return;
         }
-        const auth = await verifyOrCreateAccount(email, existing.name, password, existing.firstName, existing.lastName);
-        if(!auth.ok){ markInvalid('w-password'); showToast('Mot de passe incorrect pour ce courriel.'); return; }
-        state.studentSession = {email};
-        await saveSessionToStorage(email);
+        await loadData();
+        const existing = findStudentAccount(email);
+        if(!existing){
+          showToast("Ce compte n'a pas encore de fiche élève — contactez le studio.");
+          return;
+        }
+        state.studentSession = {email: existing.email};
+        await saveSessionToStorage(existing.email);
         try{ await storageBackend.set('my_profile', JSON.stringify({name:existing.name,email}), false); }catch(e){}
         state.welcomeAuthChoice = null;
         state.view = 'student';
@@ -7817,16 +7821,20 @@
           markInvalid([!email?'b-email':null, !password?'b-password':null].filter(Boolean));
           showToast('Courriel et mot de passe requis.'); return;
         }
-        const existing = findStudentAccount(email);
-        if(!existing){
-          markInvalid('b-email');
-          showToast("Aucun compte trouvé avec ce courriel. Choisissez plutôt « Je suis nouveau ici ».");
+        const { error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+        if(signInErr){
+          markInvalid('b-password');
+          showToast('Courriel ou mot de passe incorrect.');
           return;
         }
-        const auth = await verifyOrCreateAccount(email, existing.name, password, existing.firstName, existing.lastName);
-        if(!auth.ok){ markInvalid('b-password'); showToast('Mot de passe incorrect pour ce courriel.'); return; }
-        state.studentSession = {email};
-        await saveSessionToStorage(email);
+        await loadData();
+        const existing = findStudentAccount(email);
+        if(!existing){
+          showToast("Ce compte n'a pas encore de fiche élève — contactez le studio.");
+          return;
+        }
+        state.studentSession = {email: existing.email};
+        await saveSessionToStorage(existing.email);
         try{ await storageBackend.set('my_profile', JSON.stringify({name:existing.name,email}), false); }catch(e){}
         await proceedBooking(classId, dateIso, existing.name, email, false);
         return;
