@@ -2834,7 +2834,7 @@
           </div>
         ` : ''}
       </div>
-    ` : `
+    ` : (state.view==='admin-login') ? '' : `
       <button class="tab-btn ${state.view==='account'?'active':''}" data-action="goto-account">Connexion/Inscription</button>
     `;
     return `
@@ -9481,10 +9481,16 @@
     // Session Google déjà active dans ce navigateur — supabase-js détecte l'URL de retour
     // tout seul et remonte la session via getSession().
     let signedIn = false;
-    try{
-      const { data } = await sb.auth.getSession();
-      if(data && data.session){ await handleGoogleSession(data.session); signedIn = true; }
-    }catch(err){ console.error('Échec vérification session Google:', err); }
+    // ⚠️ Piège corrigé : cette détection de session doit être IGNORÉE en mode admin (?admin).
+    // sb.auth.onAuthStateChange()/getSession() ne distingue pas "connexion Google" de
+    // "connexion gestionnaire par courriel/mot de passe" — sans ce garde-fou, une gestionnaire
+    // qui vient de se connecter à /?admin se faisait basculer de force en mode élève juste après.
+    if(!ADMIN_URL_FLAG){
+      try{
+        const { data } = await sb.auth.getSession();
+        if(data && data.session){ await handleGoogleSession(data.session); signedIn = true; }
+      }catch(err){ console.error('Échec vérification session Google:', err); }
+    }
     // Nettoie l'URL après coup (qu'il y ait eu une erreur ou un succès) — sinon ces
     // paramètres restent collés dans l'adresse et seraient repris par erreur au prochain
     // essai (voir le piège corrigé dans signInWithGoogle()). ⚠️ On ne fait ça QUE s'il
@@ -9509,7 +9515,9 @@
     // complet de toute façon — cet écouteur couvre aussi les cas où Supabase la détecte
     // après coup, sans rechargement complet de la page).
     sb.auth.onAuthStateChange((event, session)=>{
-      if(event === 'SIGNED_IN' && session){ handleGoogleSession(session); }
+      // Même garde-fou qu'au démarrage : ne jamais traiter une connexion en mode admin
+      // comme une connexion élève (voir commentaire plus haut dans boot()).
+      if(event === 'SIGNED_IN' && session && !ADMIN_URL_FLAG){ handleGoogleSession(session); }
     });
   }
 
