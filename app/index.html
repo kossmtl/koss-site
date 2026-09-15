@@ -1438,6 +1438,12 @@
       if(!ADMIN_URL_FLAG && state.studentSession && !findStudentAccount(state.studentSession.email)){
         state.studentSession = null;
         await clearSessionStorage();
+        // ⚠️ Piège corrigé (15 sept 2026) : sans fermer aussi la session Supabase Auth ici,
+        // le jeton reste valide dans ce navigateur — au prochain chargement, boot() la
+        // retrouve encore active et handleGoogleSession() recrée automatiquement un compte
+        // élève tout neuf (même chemin qu'une toute première inscription), ce qui "ressuscite"
+        // le compte qu'on vient tout juste de supprimer. Voir aussi confirm-delete-account-yes.
+        try{ await sb.auth.signOut(); }catch(err){}
         state.view = 'welcome';
         render();
         showToast('Ce compte a été supprimé. Vous avez été déconnecté·e.');
@@ -9305,6 +9311,11 @@
       state.activeProfileId = null;
       state.modal = null; closeModalDom();
       await clearSessionStorage();
+      // ⚠️ Piège corrigé (15 sept 2026) : même raison que dans refreshFromRemote() — sans
+      // fermer la session Supabase Auth ici, le jeton reste valide et le compte se fait
+      // recréer automatiquement au prochain chargement (handleGoogleSession() le traite
+      // comme une toute première inscription).
+      try{ await sb.auth.signOut(); }catch(err){}
       const ok = await persist();
       render();
       showToast(ok ? 'Compte supprimé.' : "Erreur pendant la suppression, réessaie dans un instant.");
