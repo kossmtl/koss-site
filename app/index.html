@@ -615,6 +615,12 @@
     .header{flex-direction:column;align-items:flex-start;}
     .week-divider{display:none;}
   }
+  /* Bouton "Ajouter un raccourci" (installer la PWA) : n'a de sens que sur mobile,
+     caché sur ordinateur (même seuil que les autres adaptations mobile ci-dessus). */
+  .mobile-only-install{display:none;}
+  @media (max-width:700px){
+    .mobile-only-install{display:inline-block;}
+  }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://secure.helcim.app/helcim-pay/services/start.js"></script>
@@ -774,7 +780,7 @@
     'Muay Thaï': "Le Muay Thaï, c'est un sport de combat complet basé sur les poings, les jambes, les genoux et les coudes. Originaire de Thaïlande, il se distingue par son approche directe, son travail de distance et son combat rapproché. Tu y développes ta technique, ton cardio, tes réflexes et ta capacité à rester efficace sous pression.",
     'Yoga': "Le Yoga d'alignement met l'accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, et restauratrice..",
     'Intro au BJJ': "Les cours d\u2019intro ont lieu deux fois par semaine, les lundis et mercredis de 18h à 19h, pour un total de 5 cours. Les classes sont réduites afin de pouvoir accorder à chacun toute l\u2019attention requise, et tous les participants sont des débutants comme toi.\n\nLe but, c\u2019est que tu te sentes à l\u2019aise, que tu puisses t\u2019entraîner sans te sentir jugé et que tu puisses rejoindre les classes régulières en toute confiance à la fin du programme d\u2019intro. C\u2019est une super occasion de découvrir ce sport tout en te familiarisant tranquillement avec notre communauté.\n\nC\u2019est Amélie qui t\u2019enseignera tout ce que tu dois savoir à propos du Jiu-Jitsu. Elle en profitera pour te faire rire (ou pleurer) avec ses meilleures blagues. On ne t\u2019en voudra pas si tu ne les trouves pas drôles, nous non plus d\u2019ailleurs !\n\nOn se voit sur le mat !",
-    'Queers & Allies': "QUEERS & ALLIES est un cours de BJJ gratuit spécialement prévu pour les gens queers et leurs alliés. Ouvert à tous, le respect d\u2019autrui y est primordial et une politique de tolérance zéro sera appliquée envers tout comportement ou commentaire déplacé. Cette politique est d\u2019ailleurs appliquée dans tous nos cours, sans exception.\n\nLe cours se donne en GI et NOGI (come as you are) et est ouvert aux non-initiés une semaine sur deux. Horaire disponible et réservation obligatoire sur MINDBODY. Prêt de GI disponible au coût de 5$ (négociable en cas de besoin).",
+    'Queers & Allies': "QUEERS & ALLIES est un cours de BJJ gratuit spécialement prévu pour les gens queers et leurs alliés. Ouvert à tous, le respect d\u2019autrui y est primordial et une politique de tolérance zéro sera appliquée envers tout comportement ou commentaire déplacé. Cette politique est d\u2019ailleurs appliquée dans tous nos cours, sans exception.\n\nLe cours se donne en GI et NOGI (come as you are) et est ouvert aux non-initiés une semaine sur deux. Horaire disponible et réservation obligatoire sur l’app K-OSS. Prêt de GI disponible au coût de 5$ (négociable en cas de besoin).",
   };
 
   const CATEGORY_ACCENT = {
@@ -859,6 +865,83 @@
     const year = d.getFullYear();
     const endTime = addMinutesToTime(time, durationMinutes||60);
     return `${dayName} ${dayNum} ${monthName} ${year} ${time} \u00e0 ${endTime}`;
+  }
+
+  // ---------- Ajouter au calendrier (Google / Apple / Outlook) ----------
+  // Convertit une date+heure LOCALE de Montréal en instant UTC exact, peu importe
+  // le fuseau horaire de l'appareil qui consulte l'app, et peu importe l'heure d'été/hiver
+  // (le décalage réel de America/Toronto est recalculé pour chaque date via Intl).
+  function montrealInstant(dateIso, time){
+    const [y,mo,d] = dateIso.split('-').map(Number);
+    const [hh,mm] = time.split(':').map(Number);
+    const guess = new Date(Date.UTC(y, mo-1, d, hh, mm, 0));
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone:'America/Toronto', hour12:false,
+      year:'numeric', month:'2-digit', day:'2-digit',
+      hour:'2-digit', minute:'2-digit', second:'2-digit'
+    });
+    const parts = fmt.formatToParts(guess).reduce((o,p)=>{ o[p.type]=p.value; return o; }, {});
+    const hourNum = parts.hour === '24' ? 0 : Number(parts.hour);
+    const asIfUtc = Date.UTC(Number(parts.year), Number(parts.month)-1, Number(parts.day), hourNum, Number(parts.minute), Number(parts.second));
+    const offsetMs = asIfUtc - guess.getTime();
+    return new Date(guess.getTime() - offsetMs);
+  }
+  function icsUtcStamp(date){
+    const p2 = n => String(n).padStart(2,'0');
+    return `${date.getUTCFullYear()}${p2(date.getUTCMonth()+1)}${p2(date.getUTCDate())}T${p2(date.getUTCHours())}${p2(date.getUTCMinutes())}${p2(date.getUTCSeconds())}Z`;
+  }
+  function icsEscape(str){
+    return String(str||'').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
+  }
+  const KOSS_ADDRESS = '1871 rue Bélanger, Villeray, Montréal, QC';
+  function calendarEventForClass(cRaw, dateIso){
+    const c = getEffectiveClass(cRaw, dateIso);
+    const start = montrealInstant(dateIso, c.time);
+    const end = new Date(start.getTime() + (c.durationMinutes||60)*60000);
+    return {
+      start, end,
+      title: c.name,
+      description: c.publicNote || c.description || '',
+      location: KOSS_ADDRESS
+    };
+  }
+  function downloadIcsEvent(evt){
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//K-OSS Jiu-Jitsu//App//FR',
+      'CALSCALE:GREGORIAN',
+      'BEGIN:VEVENT',
+      `UID:${uid()}@kossmtl.ca`,
+      `DTSTAMP:${icsUtcStamp(new Date())}`,
+      `DTSTART:${icsUtcStamp(evt.start)}`,
+      `DTEND:${icsUtcStamp(evt.end)}`,
+      `SUMMARY:${icsEscape(evt.title)}`,
+      `DESCRIPTION:${icsEscape(evt.description)}`,
+      `LOCATION:${icsEscape(evt.location)}`,
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+    const blob = new Blob([ics], {type:'text/calendar;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${evt.title.replace(/[^a-z0-9]+/gi,'-')}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('Fichier de calendrier téléchargé (Apple Calendar, Outlook, etc.)');
+  }
+  function googleCalendarUrlForEvent(evt){
+    const params = new URLSearchParams({
+      action:'TEMPLATE',
+      text: evt.title,
+      dates: `${icsUtcStamp(evt.start)}/${icsUtcStamp(evt.end)}`,
+      details: evt.description || '',
+      location: evt.location || ''
+    });
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
   }
 
   let cropState = null;
@@ -2923,7 +3006,7 @@
           <p class="studio-sub" style="margin-bottom:0;">Plateforme "vibecoder" par Amélie.</p>
           <div style="display:flex;flex-wrap:wrap;gap:10px;">
             <button type="button" class="small-btn" data-action="open-report-bug">🐛 Signaler un bug</button>
-            <button type="button" class="small-btn" data-action="open-install-app">📲 Ajouter un raccourci</button>
+            <button type="button" class="small-btn mobile-only-install" data-action="open-install-app">📲 Ajouter un raccourci</button>
           </div>
           <div class="tabs" style="margin-top:6px;">
             ${(state.view==='admin'||state.view==='admin-login'||state.view==='attendance') ? '' : `<button class="tab-btn ${state.view==='student'?'active':''}" data-action="goto-student">Réserver</button>`}
@@ -3052,6 +3135,7 @@
                   <span style="color:var(--chalk-dim);font-family:var(--font-d);font-size:11px;min-width:50px;">${dayShort} ${formatDayNum(d)}</span>
                   <span style="flex:1;padding:0 10px;">${c?escapeHtml(c.name):'—'} · ${c?c.time:''}</span>
                   ${statusBadge(b.status)}
+                  <button class="small-btn" style="margin-left:8px;" data-action="open-add-to-calendar" data-class="${b.classId}" data-date="${b.dateIso}" title="Ajouter au calendrier">📅</button>
                   <button class="small-btn" style="margin-left:8px;" data-action="student-cancel-booking" data-id="${b.id}" title="Annuler cette réservation">✕</button>
                 </div>
               `;
@@ -3605,7 +3689,7 @@
             <button class="btn btn-primary" data-action="choose-welcome-auth" data-choice="existing" style="width:100%;">Je suis cool, je suis membre</button>
             <button class="btn btn-secondary" data-action="choose-welcome-auth" data-choice="new" style="width:100%;">J'ai envie de faire partie de la gang</button>
           </div>
-          <p style="margin-top:18px;"><button type="button" class="small-btn" data-action="open-install-app">Ajouter un raccourci sur l’écran d’accueil</button></p>
+          <p class="mobile-only-install" style="margin-top:18px;"><button type="button" class="small-btn" data-action="open-install-app">Ajouter un raccourci sur l’écran d’accueil</button></p>
         </div>
       `;
     }
@@ -6265,6 +6349,20 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'add-to-calendar'){
+      const {classId, dateIso} = m.payload;
+      const cRaw = state.data.classes.find(cl=>cl.id===classId);
+      html = `
+        <div class="modal" style="max-width:340px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Ajouter au calendrier</h3>
+          ${cRaw ? `<p class="muted" style="color:var(--chalk-dim);">${escapeHtml(cRaw.name)} — ${formatFullClassDateTime(dateIso, cRaw.time, cRaw.durationMinutes)}</p>` : ''}
+          <div class="btn-row" style="flex-direction:column;gap:8px;">
+            <button class="btn btn-primary" style="width:100%;" data-action="add-to-google-calendar" data-class="${classId}" data-date="${dateIso}">Google Calendar</button>
+            <button class="btn btn-secondary" style="width:100%;" data-action="add-to-ics-calendar" data-class="${classId}" data-date="${dateIso}">Apple Calendar / Outlook (.ics)</button>
+          </div>
+        </div>
+      `;
     }
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
@@ -7971,6 +8069,28 @@
       state.welcomeAuthChoice = null;
       state.view = 'student';
       render();
+    }
+    else if(action==='open-add-to-calendar'){
+      const classId = e.currentTarget.dataset.class;
+      const dateIso = e.currentTarget.dataset.date;
+      state.modal = {type:'add-to-calendar', payload:{classId, dateIso}};
+      render();
+    }
+    else if(action==='add-to-google-calendar'){
+      const classId = e.currentTarget.dataset.class;
+      const dateIso = e.currentTarget.dataset.date;
+      const cRaw = state.data.classes.find(cl=>cl.id===classId);
+      if(!cRaw){ showToast('Ce cours n’existe plus.'); return; }
+      const evt = calendarEventForClass(cRaw, dateIso);
+      window.open(googleCalendarUrlForEvent(evt), '_blank', 'noopener');
+    }
+    else if(action==='add-to-ics-calendar'){
+      const classId = e.currentTarget.dataset.class;
+      const dateIso = e.currentTarget.dataset.date;
+      const cRaw = state.data.classes.find(cl=>cl.id===classId);
+      if(!cRaw){ showToast('Ce cours n’existe plus.'); return; }
+      const evt = calendarEventForClass(cRaw, dateIso);
+      downloadIcsEvent(evt);
     }
     else if(action==='submit-booking'){
       const classId = e.currentTarget.dataset.class;
