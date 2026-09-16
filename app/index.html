@@ -3486,8 +3486,8 @@
   }
 
   // --- Avis "phase de test" avant inscription (remplace l'ancienne fausse page d'erreur 403) ---
-  // Le bouton "J'ai compris" (action enter-welcome-gate) envoie directement
-  // sur l'écran de création de compte (renderWelcome, choix "new").
+  // Le bouton "J'ai compris" (action enter-welcome-gate) envoie sur l'écran
+  // de choix membre existant / nouvelle inscription (renderWelcome).
   function renderGate(){
     const points = [
       ['01','Sécurité',"Tes données sont protégées par une vraie authentification, comme n'importe quelle app sérieuse."],
@@ -7765,7 +7765,6 @@
     }
     else if(action==='enter-welcome-gate'){
       state.view = 'welcome';
-      state.welcomeAuthChoice = 'new';
       render();
     }
     else if(action==='choose-welcome-auth'){
