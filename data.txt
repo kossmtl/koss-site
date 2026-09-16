@@ -15,8 +15,8 @@
 # --- Dates ---
 date_essai_enfants=23 septembre 2026
 heure_essai_enfants=17h
-date_intro_bjj=5 octobre 2026
-date_parents_enfants=10 octobre 2026
+date_intro_bjj=7 septembre 2026
+date_parents_enfants=12 septembre 2026
 date_babillard_queers=20 septembre 2026
 date_babillard_championnat=3 octobre 2026 · Centre Pierre-Charbonneau
 
@@ -26,10 +26,13 @@ courriel=kossmtl@gmail.com
 instagram=https://www.instagram.com/k.oss.montreal/
 instagram_dm=https://ig.me/m/k.oss.montreal
 facebook=https://www.facebook.com/k.oss.montreal/
-lien_parents_enfants=https://clients.mindbodyonline.com/classic/ws?studioid=5736529&stype=-7&sVT=8&sView=day&sLoc=0
-lien_mindbody_general=https://www.mindbodyonline.com/explore/locations/jiu-jitsu-k-oss-inc
+lien_parents_enfants=https://kossmtl.ca/app/
+lien_mindbody_general=https://kossmtl.ca/app/
 
 # Note : les liens de réservation pour "Intro BJJ" et le "cours d'essai
-# enfants" ne sont PAS dans ce fichier — ils se construisent tout seuls
-# à partir des dates ci-dessus (date_intro_bjj / date_essai_enfants).
-# Change la date, le bouton de réservation suit automatiquement.
+# enfants" ne sont PAS dans ce fichier — ils pointent en dur vers l'app
+# directement dans index.html / a-propos.html (plus besoin de date, ce
+# n'est plus une réservation Mindbody datée).
+#
+# lien_parents_enfants / lien_mindbody_general pointent maintenant vers
+# l'app K-OSS (https://kossmtl.ca/app/) plutôt que vers Mindbody.
