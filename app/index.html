@@ -953,9 +953,9 @@
       }
     }catch(e){}
     // Page publique : on choisit l'écran de départ selon le contexte.
-    // Un visiteur qui n'a pas encore de session tombe d'abord sur la fausse
-    // page d'erreur (renderGate) pour décourager les curieux — le vrai accueil
-    // membre/nouveau (renderWelcome) n'est atteignable qu'en cliquant le 0 caché.
+    // Un visiteur qui n'a pas encore de session tombe d'abord sur l'avis
+    // "phase de test" (renderGate) — bouton "J'ai compris" envoie direct
+    // sur la création de compte (renderWelcome, choix "new").
     if(ADMIN_URL_FLAG){
       state.view = state.adminUnlocked ? 'admin' : 'admin-login';
     } else if(!state.studentSession){
@@ -3485,17 +3485,41 @@
     `;
   }
 
-  // --- Fausse page d'erreur (décourage les visiteurs curieux) ---
-  // Le "0" de "403" est le seul moyen d'atteindre le vrai écran d'accueil
-  // (renderWelcome) — volontairement sans style ni curseur différent pour
-  // qu'il ne se distingue pas du reste du texte.
+  // --- Avis "phase de test" avant inscription (remplace l'ancienne fausse page d'erreur 403) ---
+  // Le bouton "J'ai compris" (action enter-welcome-gate) envoie directement
+  // sur l'écran de création de compte (renderWelcome, choix "new").
   function renderGate(){
+    const points = [
+      ['01','Sécurité',"Tes données sont protégées par une vraie authentification, comme n'importe quelle app sérieuse."],
+      ['02','Paiements',"Les paiements passent par Helcim. Aucune information de carte n'est conservée sur nos serveurs."],
+      ['03','Ça bug ?',"Si quelque chose cloche, dis-le-nous — bouton «Signaler un bug» directement dans l'app."],
+      ['04','Ça ne marche vraiment pas ?','Appelle Amélie au <a href="tel:+14388699187" style="color:var(--chalk-dim);">438-869-9187</a> ou écris à <a href="mailto:kossmtl@gmail.com" style="color:var(--chalk-dim);">kossmtl@gmail.com</a>.'],
+    ];
+    const rows = points.map(([num,title,desc],i)=>`
+      <div style="display:flex;gap:14px;padding:16px 0;border-top:1px solid var(--border);${i===points.length-1?'border-bottom:1px solid var(--border);':''}">
+        <div style="font-family:var(--font-d);font-size:22px;color:var(--border);width:30px;flex-shrink:0;">${num}</div>
+        <div>
+          <div style="font-family:var(--font-d);font-size:13px;text-transform:uppercase;letter-spacing:0.02em;">${title}</div>
+          <div style="font-size:12.5px;color:var(--chalk-dim);margin-top:3px;line-height:1.45;">${desc}</div>
+        </div>
+      </div>
+    `).join('');
     return `
-      <div style="max-width:420px;margin:70px auto 0;font-family:var(--font-b);">
-        <div style="background:var(--coral);color:#1a1a1a;font-family:var(--font-d);font-size:12px;letter-spacing:0.08em;text-transform:uppercase;padding:9px 14px;border-radius:6px 6px 0 0;">Système — avis officiel</div>
-        <div style="background:#181818;border:1px solid #2a2a2e;border-top:none;border-radius:0 0 6px 6px;padding:22px 18px;">
-          <div style="font-family:monospace;font-size:30px;color:var(--chalk);letter-spacing:0.02em;margin-bottom:10px;">4<span data-action="enter-through-403" style="cursor:default;">0</span>3</div>
-          <p style="color:var(--chalk-dim);font-size:13px;line-height:1.6;margin:0;">Cette page n'est pas valide. Erreur de redirection.</p>
+      <div style="max-width:420px;margin:36px auto 0;font-family:var(--font-b);position:relative;padding-bottom:10px;">
+        <div style="position:absolute;top:0;left:0;right:0;height:340px;overflow:hidden;">
+          <div style="position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px, transparent 1px),linear-gradient(90deg, var(--border) 1px, transparent 1px);background-size:38px 38px;background-position:-1px -1px;"></div>
+          <div style="position:absolute;inset:0;background:linear-gradient(180deg, rgba(40,41,46,0.55), var(--bg) 100%);"></div>
+        </div>
+        <div style="position:relative;padding:26px 22px 0;overflow:hidden;">
+          <div style="position:absolute;top:22px;right:-46px;background:var(--coral);color:var(--ink);font-family:var(--font-d);font-size:11px;letter-spacing:0.12em;text-transform:uppercase;padding:6px 52px;transform:rotate(40deg);">Bêta</div>
+          <div style="font-family:var(--font-d);font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--sage);margin-bottom:16px;">Phase de test</div>
+          <h2 style="font-family:var(--font-d);text-transform:uppercase;letter-spacing:0.01em;font-size:28px;line-height:1.22;margin:0;max-width:260px;">Bienvenue sur<br>la nouvelle plateforme<br>K-OSS</h2>
+        </div>
+        <div style="position:relative;padding:0 22px;">
+          ${rows}
+          <div style="margin-top:26px;">
+            <button class="btn btn-primary" data-action="enter-welcome-gate" style="width:100%;padding:16px 20px;font-size:15px;text-transform:uppercase;letter-spacing:0.04em;">J'ai compris</button>
+          </div>
         </div>
       </div>
     `;
@@ -7735,8 +7759,9 @@
       state.modal.payload.authChoice = choice;
       render();
     }
-    else if(action==='enter-through-403'){
+    else if(action==='enter-welcome-gate'){
       state.view = 'welcome';
+      state.welcomeAuthChoice = 'new';
       render();
     }
     else if(action==='choose-welcome-auth'){
