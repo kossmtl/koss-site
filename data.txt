@@ -15,8 +15,8 @@
 # --- Dates ---
 date_essai_enfants=23 septembre 2026
 heure_essai_enfants=17h
-date_intro_bjj=7 septembre 2026
-date_parents_enfants=12 septembre 2026
+date_intro_bjj=5 octobre 2026
+date_parents_enfants=10 octobre 2026
 date_babillard_queers=20 septembre 2026
 date_babillard_championnat=3 octobre 2026 · Centre Pierre-Charbonneau
 
