@@ -84,6 +84,29 @@
     }
   }
 
+  // Adresses "propres" (sans #) pour les vraies sections du site.
+  // Chacune correspond à un dossier de redirection à la racine (ex. /important/
+  // qui redirige vers index.html#important) — après ce redirect (ou un clic sur
+  // un lien interne #ancre), on nettoie tout de suite la barre d'adresse pour
+  // qu'elle affiche le chemin propre plutôt que le #. Tous les autres # du site
+  // (modales, album photo, avis clients, etc.) ne sont PAS touchés — ce sont des
+  // mécanismes internes de la page, pas des sections à adresse propre.
+  var CLEAN_HASH_SLUGS = [
+    "important", "horaire", "inscris-toi", "communaute",
+    "classes", "instructeurs", "prix", "a-propos"
+  ];
+
+  function cleanHashUrl() {
+    var slug = window.location.hash.replace(/^#/, "");
+    if (CLEAN_HASH_SLUGS.indexOf(slug) === -1) return;
+    var cleanPath = "/" + slug;
+    if (window.location.pathname === cleanPath) return;
+    window.history.replaceState(null, "", cleanPath + window.location.search);
+  }
+
+  cleanHashUrl();
+  window.addEventListener("hashchange", cleanHashUrl);
+
   fetch("data.txt", { cache: "no-store" })
     .then(function (r) {
       if (!r.ok) throw new Error("data.txt introuvable");
