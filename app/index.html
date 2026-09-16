@@ -903,6 +903,8 @@
     return {
       config: { name: 'Mon Studio', pin: '1234' },
       classes: [],
+      classOverrides: [],
+      classCancelRules: [],
       bookings: [],
       membershipPlans: [],
       memberships: [],
@@ -1092,6 +1094,8 @@
       changed = true;
     }
     if(!state.data.classNotes) state.data.classNotes = [];
+    if(!state.data.classOverrides) state.data.classOverrides = [];
+    if(!state.data.classCancelRules) state.data.classCancelRules = [];
     if(!state.data.notebookEntries) state.data.notebookEntries = [];
     if(!state.data.sharedItems) state.data.sharedItems = [];
     if(!state.data.notebookSettings) state.data.notebookSettings = {};
@@ -1613,6 +1617,33 @@
   function waitlistFor(classId, dateIso){
     return state.data.bookings.filter(b => b.classId===classId && b.dateIso===dateIso && b.status==='liste_attente')
       .sort((a,b)=>a.createdAt-b.createdAt);
+  }
+  // Exception ponctuelle pour UNE date précise d'un cours (nom/places différents,
+  // note publique, ou annulation) — n'affecte jamais l'horaire régulier (state.data.classes),
+  // seulement l'affichage/la réservation pour ce classId+dateIso précis.
+  function getClassOverride(classId, dateIso){
+    return (state.data.classOverrides||[]).find(o=>o.classId===classId && o.dateIso===dateIso) || null;
+  }
+  // Annulation "cette classe et toutes les suivantes" — une seule règle active
+  // par cours (classId). Toute date >= fromDateIso de ce cours est annulée,
+  // jusqu'à ce que la règle soit retirée.
+  function getClassCancelRule(classId){
+    return (state.data.classCancelRules||[]).find(r=>r.classId===classId) || null;
+  }
+  function isCancelledByRule(classId, dateIso){
+    const rule = getClassCancelRule(classId);
+    return !!(rule && dateIso >= rule.fromDateIso);
+  }
+  function getEffectiveClass(c, dateIso){
+    const ov = c ? getClassOverride(c.id, dateIso) : null;
+    const cancelledByRule = c ? isCancelledByRule(c.id, dateIso) : false;
+    if(!ov && !cancelledByRule) return c;
+    return Object.assign({}, c, {
+      name: (ov && ov.name) || c.name,
+      capacity: (ov && ov.capacity!=null && ov.capacity!=='') ? ov.capacity : c.capacity,
+      publicNote: (ov && ov.note) || '',
+      cancelled: !!(ov && ov.cancelled) || cancelledByRule,
+    });
   }
   function isProgramClass(c){ return !!(c && c.startDate && c.endDate); }
 
@@ -2882,7 +2913,17 @@
     `;
   }
 
-  function buildStudentTileHtml(c, dateIso){
+  function buildStudentTileHtml(cRaw, dateIso){
+    const c = getEffectiveClass(cRaw, dateIso);
+    if(c.cancelled){
+      return `
+        <div class="class-tile" style="opacity:.55;border-left-color:var(--border);">
+          <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">· ${categoryLabel(c.category)}</span></div>
+          <div class="class-name" style="text-decoration:line-through;color:var(--chalk-dim);">${escapeHtml(c.name)}</div>
+          <div class="class-spots" style="color:var(--coral);">Annulé</div>
+        </div>
+      `;
+    }
     const booked = bookedCount(c.id, dateIso);
     const full = booked >= c.capacity;
     const numDots = Math.ceil(c.capacity/2);
@@ -3395,18 +3436,19 @@
     `;
   }
 
-  function buildAttendanceTileHtml(c, dateIso){
+  function buildAttendanceTileHtml(cRaw, dateIso){
+    const c = getEffectiveClass(cRaw, dateIso);
     const count = state.data.bookings.filter(b=>b.classId===c.id && b.dateIso===dateIso && b.status==='confirmee').length;
     const accent = categoryAccent(c.category);
     const isRainbow = c.name && c.name.trim()==='Queers & Allies';
     const nameColor = isRainbow ? '#FFFBF8' : accent;
     const tint = categoryTint(c.category);
-    const tileStyle = isRainbow ? '' : ` style="border-left-color:${accent};${tint ? `background:${tint};` : ''}"`;
+    const tileStyle = isRainbow ? '' : ` style="border-left-color:${accent};${tint ? `background:${tint};` : ''}${c.cancelled?'opacity:.55;':''}"`;
     const tileInner = `
       <div class="class-tile"${tileStyle} data-action="open-attendance" data-class="${c.id}" data-date="${dateIso}">
         <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">· ${categoryLabel(c.category)}</span> ${c.free ? '<span style="color:var(--sage);">· gratuit</span>' : ''}</div>
-        <div class="class-name" style="color:${nameColor};">${escapeHtml(c.name)}</div>
-        <div class="class-spots">${count} inscrit(s)</div>
+        <div class="class-name" style="color:${nameColor};${c.cancelled?'text-decoration:line-through;':''}">${escapeHtml(c.name)}${c.cancelled?' <span style="color:var(--coral);font-size:11px;">(annulé)</span>':''}</div>
+        <div class="class-spots">${c.cancelled ? 'Annulé' : count+' inscrit(s)'}</div>
       </div>
     `;
     return isRainbow ? `<div class="rainbow-wrap">${tileInner}</div>` : tileInner;
@@ -3517,7 +3559,7 @@
         </div>
         <div style="position:relative;padding:0 22px;">
           <div style="background:rgba(226,114,91,0.12);border:1.5px solid var(--coral);border-radius:8px;padding:14px 16px;margin-top:22px;">
-            <div style="font-family:var(--font-d);font-size:15px;text-transform:uppercase;letter-spacing:0.04em;color:var(--coral);margin-bottom:6px;">⚠ Attention</div>
+            <div style="font-family:var(--font-d);font-size:15px;text-transform:uppercase;letter-spacing:0.04em;color:var(--coral);margin-bottom:6px;">Attention</div>
             <div style="font-size:12.5px;color:var(--chalk);line-height:1.5;">Si tu as déjà un compte Mindbody, tu peux encore t'inscrire sur Mindbody pour toutes les classes régulières — sauf pour les cours d'intro et les cours parents-enfants.</div>
           </div>
           ${rows}
@@ -3538,10 +3580,10 @@
           <h2 style="font-family:var(--font-d);margin-bottom:6px;">Bienvenue chez K-OSS</h2>
           <p class="muted" style="margin-bottom:24px;">Dis-nous qui tu es pour continuer.</p>
           <div class="btn-row" style="flex-direction:column;gap:10px;">
-            <button class="btn btn-primary" data-action="choose-welcome-auth" data-choice="existing" style="width:100%;">😎 Je suis cool, je suis membre</button>
-            <button class="btn btn-secondary" data-action="choose-welcome-auth" data-choice="new" style="width:100%;">🤙 J'ai envie de faire partie de la gang</button>
+            <button class="btn btn-primary" data-action="choose-welcome-auth" data-choice="existing" style="width:100%;">Je suis cool, je suis membre</button>
+            <button class="btn btn-secondary" data-action="choose-welcome-auth" data-choice="new" style="width:100%;">J'ai envie de faire partie de la gang</button>
           </div>
-          <p style="margin-top:18px;"><button type="button" class="small-btn" data-action="open-install-app">📲 Ajouter un raccourci sur l’écran d’accueil</button></p>
+          <p style="margin-top:18px;"><button type="button" class="small-btn" data-action="open-install-app">Ajouter un raccourci sur l’écran d’accueil</button></p>
         </div>
       `;
     }
@@ -4597,7 +4639,19 @@
       `;
     } else if(m.type === 'book-class'){
       const {classId, dateIso, showParticipants} = m.payload;
-      const c = state.data.classes.find(cl=>cl.id===classId);
+      const cRaw = state.data.classes.find(cl=>cl.id===classId);
+      const c = getEffectiveClass(cRaw, dateIso);
+      if(c.cancelled){
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>${escapeHtml(c.name)}</h3>
+            <p class="muted">${formatFullClassDateTime(dateIso, c.time, c.durationMinutes)}</p>
+            <p style="color:var(--coral);font-size:13px;">Ce cours est annulé pour cette date.</p>
+            <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+          </div>
+        `;
+      } else {
       const full = bookedCount(classId,dateIso) >= c.capacity;
       const acct = state.studentSession ? findStudentAccount(state.studentSession.email) : null;
       const isProgram = isProgramClass(c);
@@ -4621,6 +4675,7 @@
           <h3 data-action="toggle-class-description" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">${escapeHtml(c.name)}</h3>
           ${m.payload.showDescription ? `<p style="font-size:13px;color:var(--chalk-dim);white-space:pre-line;">${escapeHtml(c.description || 'Aucune description disponible pour ce cours.')}</p>` : ''}
           <p class="muted">${formatFullClassDateTime(dateIso, c.time, c.durationMinutes)} · ${payLabel}</p>
+          ${c.publicNote ? `<p style="background:rgba(147,180,143,0.14);border:1px solid var(--sage);border-radius:8px;padding:9px 11px;color:var(--chalk);font-size:12.5px;line-height:1.45;">${escapeHtml(c.publicNote)}</p>` : ''}
           ${introBlock}
           ${full ? '<p style="color:var(--amber);font-size:13px;">Ce cours est complet — vous pouvez rejoindre la liste d\u2019attente.</p>' : ''}
           <div class="btn-row" style="margin-top:6px;"><button class="small-btn" data-action="toggle-participants">Voir les participants (${confirmedList.length})</button></div>
@@ -4675,6 +4730,7 @@
           `}
         </div>
       `;
+      }
     } else if(m.type === 'need-membership'){
       const {name,email,intro,neededCategory,requireCreditsOnly,profileId,classId,dateIso} = m.payload;
       if(!m.payload.expandedGroups){
@@ -5015,6 +5071,9 @@
     } else if(m.type === 'attendance'){
       const {classId, dateIso, searchQuery, searchResults, searchTried, showGuestForm, warning} = m.payload;
       const c = state.data.classes.find(cl=>cl.id===classId);
+      const ov = getClassOverride(classId, dateIso);
+      const cancelRule = getClassCancelRule(classId);
+      const cancelledByRule = isCancelledByRule(classId, dateIso);
       const participants = state.data.bookings.filter(b=>b.classId===classId && b.dateIso===dateIso && b.status==='confirmee');
       const waitlist = state.data.bookings.filter(b=>b.classId===classId && b.dateIso===dateIso && b.status==='liste_attente');
 
@@ -5099,6 +5158,33 @@
           <label style="margin-top:10px;">Note sur ce cours</label>
           <textarea id="att-class-note" rows="2" placeholder="Note pour les gestionnaires...">${escapeHtml((state.data.classNotes.find(n=>n.classId===classId && n.dateIso===dateIso)||{}).note||'')}</textarea>
           <div class="btn-row"><button class="btn btn-secondary" data-action="save-class-note" data-class="${classId}" data-date="${dateIso}">Enregistrer la note du cours</button></div>
+          <label style="margin-top:14px;">Note pour les étudiants (${dateIso})</label>
+          <p class="muted" style="font-size:11px;margin-top:-2px;">Visible dans la fenêtre de réservation, seulement pour cette date.</p>
+          <textarea id="ov-note" rows="2" placeholder="Ex. Ouvert aux nouveaux étudiants">${escapeHtml(ov&&ov.note?ov.note:'')}</textarea>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="save-class-public-note" data-class="${classId}" data-date="${dateIso}">Enregistrer la note</button>
+            ${ov && ov.note ? `<button class="btn btn-secondary" data-action="clear-class-public-note" data-class="${classId}" data-date="${dateIso}">Retirer la note</button>` : ''}
+          </div>
+
+          <label style="margin-top:18px;">Modifier ce cours pour cette date seulement</label>
+          <p class="muted" style="font-size:11px;margin-top:-2px;">Ne touche pas à l’horaire régulier — seulement cette date.</p>
+          <input id="ov-name" placeholder="Nom (vide = ${escapeHtml(c.name)})" value="${escapeHtml(ov&&ov.name?ov.name:'')}">
+          <input id="ov-capacity" type="number" min="0" style="margin-top:8px;" placeholder="Places (vide = ${c.capacity})" value="${ov&&ov.capacity!=null&&ov.capacity!==''?ov.capacity:''}">
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="save-class-override" data-class="${classId}" data-date="${dateIso}">Enregistrer</button>
+            ${ov && (ov.name||ov.capacity!=null) ? `<button class="btn btn-secondary" data-action="clear-class-override" data-class="${classId}" data-date="${dateIso}">Retirer</button>` : ''}
+          </div>
+          <div class="btn-row">
+            <button class="btn ${ov&&ov.cancelled?'btn-sage':'btn-danger'}" data-action="toggle-cancel-class-occurrence" data-class="${classId}" data-date="${dateIso}" ${cancelledByRule?'disabled':''}>${ov&&ov.cancelled?'Réactiver ce cours':'Annuler ce cours (cette date)'}</button>
+          </div>
+
+          <label style="margin-top:18px;">Annuler ce cours et tous les suivants</label>
+          <p class="muted" style="font-size:11px;margin-top:-2px;">${cancelledByRule ? `Annulé depuis le ${cancelRule.fromDateIso} (toutes les occurrences à partir de cette date).` : 'Annule cette date et toutes les occurrences futures de ce cours, jusqu’à réactivation.'}</p>
+          <div class="btn-row">
+            ${cancelledByRule
+              ? `<button class="btn btn-sage" data-action="clear-class-cancel-rule" data-class="${classId}" data-date="${dateIso}">Réactiver ce cours et les suivants</button>`
+              : `<button class="btn btn-danger" data-action="cancel-class-and-following" data-class="${classId}" data-date="${dateIso}">Annuler cette classe et les suivantes</button>`}
+          </div>
           ${addSectionHtml}
         </div>
       `;
@@ -9203,6 +9289,109 @@
       entry.authorName = mgr ? mgr.name : '';
       await persist();
       showToast('Note du cours enregistrée.');
+    }
+    else if(action==='save-class-public-note'){
+      const classId = e.currentTarget.dataset.class;
+      const dateIso = e.currentTarget.dataset.date;
+      const note = document.getElementById('ov-note').value.trim();
+      let entry = getClassOverride(classId, dateIso);
+      if(!entry){
+        entry = {id:uid(), classId, dateIso, name:'', capacity:null, cancelled:false, createdAt:Date.now()};
+        state.data.classOverrides.push(entry);
+      }
+      entry.note = note;
+      entry.updatedAt = Date.now();
+      await persist();
+      render();
+      showToast('Note enregistrée — visible immédiatement pour tout le monde.');
+    }
+    else if(action==='clear-class-public-note'){
+      const classId = e.currentTarget.dataset.class;
+      const dateIso = e.currentTarget.dataset.date;
+      let entry = getClassOverride(classId, dateIso);
+      if(entry){
+        entry.note = '';
+        entry.updatedAt = Date.now();
+        if(!entry.name && (entry.capacity==null || entry.capacity==='') && !entry.cancelled){
+          state.data.classOverrides = state.data.classOverrides.filter(o=>o.id!==entry.id);
+        }
+      }
+      await persist();
+      render();
+      showToast('Note retirée.');
+    }
+    else if(action==='save-class-override'){
+      const classId = e.currentTarget.dataset.class;
+      const dateIso = e.currentTarget.dataset.date;
+      const name = document.getElementById('ov-name').value.trim();
+      const capacityRaw = document.getElementById('ov-capacity').value.trim();
+      const capacity = capacityRaw==='' ? null : parseInt(capacityRaw,10);
+      if(capacityRaw!=='' && (isNaN(capacity) || capacity<0)){
+        showToast('Nombre de places invalide.'); return;
+      }
+      let entry = getClassOverride(classId, dateIso);
+      if(!entry){
+        entry = {id:uid(), classId, dateIso, note:'', cancelled:false, createdAt:Date.now()};
+        state.data.classOverrides.push(entry);
+      }
+      entry.name = name;
+      entry.capacity = capacity;
+      entry.updatedAt = Date.now();
+      await persist();
+      render();
+      showToast('Exception enregistrée pour cette date.');
+    }
+    else if(action==='clear-class-override'){
+      const classId = e.currentTarget.dataset.class;
+      const dateIso = e.currentTarget.dataset.date;
+      let entry = getClassOverride(classId, dateIso);
+      if(entry){
+        entry.name = '';
+        entry.capacity = null;
+        entry.updatedAt = Date.now();
+        if(!entry.note && !entry.cancelled){
+          state.data.classOverrides = state.data.classOverrides.filter(o=>o.id!==entry.id);
+        }
+      }
+      await persist();
+      render();
+      showToast('Exception retirée — l’horaire régulier s’applique de nouveau.');
+    }
+    else if(action==='toggle-cancel-class-occurrence'){
+      const classId = e.currentTarget.dataset.class;
+      const dateIso = e.currentTarget.dataset.date;
+      let entry = getClassOverride(classId, dateIso);
+      if(!entry){
+        entry = {id:uid(), classId, dateIso, name:'', capacity:null, note:'', createdAt:Date.now()};
+        state.data.classOverrides.push(entry);
+      }
+      entry.cancelled = !entry.cancelled;
+      entry.updatedAt = Date.now();
+      await persist();
+      render();
+      showToast(entry.cancelled ? 'Cours annulé pour cette date.' : 'Cours réactivé pour cette date.');
+    }
+    else if(action==='cancel-class-and-following'){
+      const classId = e.currentTarget.dataset.class;
+      const dateIso = e.currentTarget.dataset.date;
+      let rule = getClassCancelRule(classId);
+      if(!rule){
+        rule = {id:uid(), classId, fromDateIso:dateIso, createdAt:Date.now()};
+        state.data.classCancelRules.push(rule);
+      } else {
+        rule.fromDateIso = dateIso;
+      }
+      rule.updatedAt = Date.now();
+      await persist();
+      render();
+      showToast('Ce cours et toutes ses occurrences suivantes sont annulés.');
+    }
+    else if(action==='clear-class-cancel-rule'){
+      const classId = e.currentTarget.dataset.class;
+      state.data.classCancelRules = (state.data.classCancelRules||[]).filter(r=>r.classId!==classId);
+      await persist();
+      render();
+      showToast('Le cours et ses occurrences suivantes sont réactivés.');
     }
     else if(action==='new-manager'){
       if(!currentManager() || currentManager().role!=='super'){ showToast('Seul le super gestionnaire peut faire ceci.'); return; }
