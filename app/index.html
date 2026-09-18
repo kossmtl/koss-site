@@ -542,9 +542,23 @@
   }
   .sticker-free.dragging{ cursor:grabbing; opacity:0.85; z-index:5; }
   .sticker-free img{ display:block; border-radius:6px; }
-  .textnote-free.selected, .sticker-free.selected{
+  .textnote-free.selected, .sticker-free.selected, .postit-free.selected{
     outline:2px dashed var(--amber);
     outline-offset:5px;
+  }
+  .textnote-free.text-select-mode .textnote-content, .postit-free.text-select-mode .postit-text{
+    cursor:text;
+  }
+  #nb-canvas.quick-text-drawing{ cursor:crosshair; }
+  .quick-text-preview{
+    position:absolute; border:2px dashed var(--amber); background:rgba(242,166,90,0.14);
+    border-radius:4px; pointer-events:none; z-index:7;
+  }
+  .textnote-free.quick-editing{ cursor:text; }
+  .quick-text-textarea{
+    display:block; box-sizing:border-box; resize:none; outline:none; border:1px dashed var(--amber);
+    background:rgba(255,255,255,0.55); border-radius:4px; padding:6px 8px; line-height:1.25;
+    font-family:inherit; box-shadow:0 1px 4px rgba(0,0,0,0.1);
   }
   .free-handle{
     position:absolute;
@@ -948,6 +962,7 @@
   let cropTargetManager = false; // true = la photo recadrée s'applique au gestionnaire connecté, pas à l'élève
   let pendingPostitPhoto = null;
   let pendingStickerImage = null;
+  let lastContentClick = {id:null, time:0};
   let pendingBugScreenshot = null; // capture d'écran optionnelle jointe à un signalement de bug
 
   let state = {
@@ -970,6 +985,9 @@
     notebookFilterCategory: null,
     notebookSelectedEntry: null,
     notebookEditMode: false,
+    notebookQuickTextDraw: false,
+    notebookQuickEditId: null,
+    notebookTextSelectId: null,
     membershipSearchQuery: '',
     membershipSearchTried: false,
     bugSearchQuery: '',
@@ -2123,7 +2141,15 @@
     return m;
   }
 
-  function resizeImageFile(file, maxSize, maxBytes){
+  function resizeImageFile(file, maxSize, maxBytes, opts){
+    opts = opts || {};
+    // Demandé par Amélie (S41) : pour un autocollant fourni en PNG, garder le fond
+    // transparent plutôt que de le convertir en JPEG (qui compose sur du noir/blanc).
+    // On ne le fait QUE si l'appelant le demande explicitement (opts.keepTransparency)
+    // ET que le fichier source est bien un PNG — sinon comportement JPEG inchangé
+    // (photos de post-it, captures d'écran de bug, etc., où la transparence n'a pas
+    // d'importance et où JPEG donne un fichier bien plus léger).
+    const keepPng = !!opts.keepTransparency && /image\/png/i.test(file.type||'');
     maxBytes = maxBytes || 220000; // ~ dataURL char length ceiling, keeps saved data small enough to persist reliably
     return new Promise((resolve, reject)=>{
       const reader = new FileReader();
@@ -2132,6 +2158,28 @@
         const img = new Image();
         img.onerror = ()=>reject(new Error('decode failed'));
         img.onload = ()=>{
+          if(keepPng){
+            // Un PNG n'a pas de curseur de "qualité" comme le JPEG — seule la réduction
+            // de taille permet de faire baisser le poids si besoin.
+            const pngMaxBytes = Math.max(maxBytes, 350000);
+            const sizes = [maxSize, Math.round(maxSize*0.75), Math.round(maxSize*0.6), Math.round(maxSize*0.45), Math.round(maxSize*0.32)];
+            let result = null;
+            for(const size of sizes){
+              let w = img.width, h = img.height;
+              if(w > h){ if(w > size){ h = Math.round(h*size/w); w = size; } }
+              else { if(h > size){ w = Math.round(w*size/h); h = size; } }
+              const canvas = document.createElement('canvas');
+              canvas.width = w; canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, w, h); // canvas neuf = déjà transparent, pas de fond à effacer
+              const dataUrl = canvas.toDataURL('image/png');
+              result = dataUrl;
+              if(dataUrl.length <= pngMaxBytes) break;
+            }
+            if(result && result.length <= pngMaxBytes*1.8) resolve(result);
+            else reject(new Error('image too large after compression'));
+            return;
+          }
           const attempts = [
             {size:maxSize, q:0.82},
             {size:maxSize, q:0.6},
@@ -2200,7 +2248,8 @@
     state.data.stickers.forEach(s=>{ if(s.category && s.category.trim()) set.add(s.category.trim()); });
     return Array.from(set).sort((a,b)=>a.localeCompare(b));
   }
-  const POSTIT_COLORS = ['#F2E27A','#F2A65A','#8FCBD9','#93B48F','#E8A9A0','#B79FDB','#FFFBF8'];
+  // 15 couleurs de post-it — identique à la palette du carnet CVM (Option A validée).
+  const POSTIT_COLORS = ['#EDE7DD','#E4D9C6','#DCD6CC','#EFE3D2','#E0E7E2','#FFFFFF','#F2A65A','#F2E27A','#8FCBD9','#93B48F','#E8A9A0','#B79FDB','#FFE066','#FF9EB5','#7FD9C4'];
   const TEXTNOTE_FONTS = [
     {key:'marker', label:'Manuscrite (Sharpie)', css:"'Permanent Marker', cursive"},
     {key:'sans', label:'Sans-serif', css:"'Work Sans', sans-serif"},
@@ -2847,7 +2896,7 @@
     }
 
     attachHandlers();
-    if(state.view === 'notebook') { attachNotebookDrag(); attachFreeHandles(); }
+    if(state.view === 'notebook') { attachNotebookDrag(); attachFreeHandles(); attachQuickTextDraw(); attachQuickTextEditor(); attachTextSelectEditor(); attachNotebookTextEdit(); }
     if(state.view === 'notebook' && !state.notebookOpened){ attachCoverLogoDrag(); }
 
     const wirePhotoInput = (inputId, forManager)=>{
@@ -2974,7 +3023,7 @@
             ${acct.photo && !activeProfileId ? `<img src="${acct.photo}" class="avatar-img">` : `<span class="avatar-fallback">${escapeHtml((activeName||'?').trim().charAt(0).toUpperCase())}</span>`}
             <span>${escapeHtml(headerShortName(activeName))}</span>
           </button>
-          ${(()=>{ const n = unreadInboxCountForAccount(acct); return n ? `<span data-action="open-received-items" data-owner="${escapeHtml(notebookOwnerKey(acct.email, activeProfileId))}" title="Nouveau message ou autocollant reçu" style="cursor:pointer;position:absolute;top:-6px;left:-6px;background:var(--coral);color:#fff;border-radius:50%;min-width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;z-index:2;">${n>9?'9+':n}</span>` : ''; })()}
+          ${(()=>{ const n = unreadInboxCountForAccount(acct); return n ? `<span data-action="open-received-items" data-owner="${escapeHtml(notebookOwnerKey(acct.email, activeProfileId))}" title="Nouveau message ou autocollant reçu" style="cursor:pointer;position:absolute;top:-6px;right:-6px;background:var(--coral);color:#fff;border-radius:50%;min-width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;z-index:2;">${n>9?'9+':n}</span>` : ''; })()}
         </div>
         ${headerMembershipHtml}
         ${state.accountMenuOpen ? `
@@ -3005,7 +3054,7 @@
         <div class="header-bottom">
           <p class="studio-sub" style="margin-bottom:0;">Plateforme "vibecoder" par Amélie.</p>
           <div style="display:flex;flex-wrap:wrap;gap:10px;">
-            <button type="button" class="small-btn" data-action="open-report-bug">🐛 Signaler un bug</button>
+            <button type="button" class="small-btn" data-action="open-report-bug">🐛 Bug et suggestions</button>
             <button type="button" class="small-btn mobile-only-install" data-action="open-install-app">📲 Ajouter un raccourci</button>
           </div>
           <div class="tabs" style="margin-top:6px;">
@@ -3470,11 +3519,17 @@
             ${leftTabs.map(p=>`<div class="nb-tab ${p===activePage?'active':''}" data-action="goto-notebook-page" data-page="${p}">${p}</div>`).join('')}
           </div>
           <div class="notebook-canvas notebook-page" style="${notebookPageBgCss(settings)}" id="nb-canvas">
-            ${pageEntries.filter(n=>n.kind!=='text' && n.kind!=='sticker').map(n=>`
-              <div class="postit postit-free" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;background:${n.color};">
-                <div class="postit-cat">${escapeHtml(n.category)}</div>
-                <div class="postit-text">${escapeHtml(n.text)}</div>
+            ${pageEntries.filter(n=>n.kind!=='text' && n.kind!=='sticker').map(n=>{
+              const pSize = n.size||150; const pScale = pSize/150;
+              return `
+              <div class="postit postit-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;transform:rotate(${n.rotation||0}deg);background:${n.color};width:${pSize}px;min-height:${Math.round(130*pScale)}px;">
+                <div class="postit-cat" style="font-size:${(10*pScale).toFixed(1)}px;">${escapeHtml(n.category)}</div>
+                <div class="postit-text" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="font-size:${(15*pScale).toFixed(1)}px;">${escapeHtml(n.text)}</div>
                 ${n.photo ? `<img src="${n.photo}">` : ''}
+                ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
+                  <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
+                  <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
+                ` : ''}
                 ${state.notebookEditMode ? `
                 <div class="postit-actions">
                   <button data-action="edit-postit" data-id="${n.id}">Modifier</button>
@@ -3483,15 +3538,22 @@
                 </div>
                 ` : ''}
               </div>
-            `).join('')}
+            `;}).join('')}
             ${pageEntries.filter(n=>n.kind==='text').map(n=>{
+              if(n.id===state.notebookQuickEditId){
+                return `
+                <div class="textnote-free quick-editing" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;">
+                  <textarea id="quick-text-input" class="quick-text-textarea" data-id="${n.id}" placeholder="Écris ici..." style="width:${n.boxWidth||160}px;height:${Math.max(28,n.boxHeight||28)}px;font-family:${textnoteFontCss(n.fontFamily||'sans')};font-size:${n.fontSize||10}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};">${escapeHtml(n.text||'')}</textarea>
+                </div>
+                `;
+              }
               const hAlign = n.hAlign||'left';
               const tx = hAlign==='right' ? '-100%' : (hAlign==='center' ? '-50%' : '0');
               const wide = (hAlign==='center' || hAlign==='justify');
-              const wrapStyle = wide ? 'width:200px;' : '';
-              const contentStyle = wide ? 'display:block;width:100%;' : '';
+              const wrapStyle = n.boxWidth ? `width:${n.boxWidth}px;` : (wide ? 'width:200px;' : '');
+              const contentStyle = n.boxWidth ? 'display:block;width:100%;' : (wide ? 'display:block;width:100%;' : '');
               return `
-              <div class="textnote-free ${n.id===state.notebookSelectedEntry?'selected':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;translate:${tx} 0;transform:rotate(${n.rotation||0}deg);text-align:${hAlign};${wrapStyle}font-family:${textnoteFontCss(n.fontFamily)};font-size:${n.fontSize||16}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};"><span class="textnote-content" style="${contentStyle}">${escapeHtml(n.text)}</span>
+              <div class="textnote-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;translate:${tx} 0;transform:rotate(${n.rotation||0}deg);text-align:${hAlign};${n.boxWidth?`max-width:${n.boxWidth}px;`:''}${wrapStyle}font-family:${textnoteFontCss(n.fontFamily)};font-size:${n.fontSize||16}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};"><span class="textnote-content" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="${contentStyle}">${escapeHtml(n.text)}</span>
                 ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
                   <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
                   <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
@@ -3525,13 +3587,15 @@
             `;
             }).join('')}
             <div class="btn-row" style="position:absolute;bottom:10px;right:10px;">
-              <button class="btn btn-primary" data-action="new-postit" style="font-family:var(--font-b);">+ Note</button>
-              <button class="btn btn-secondary" data-action="new-textnote" style="font-family:var(--font-b);">+ Texte</button>
+              <button class="btn btn-primary" data-action="new-postit" style="font-family:var(--font-b);">+ Post-it</button>
+              <button class="btn btn-secondary" data-action="new-textnote" style="font-family:var(--font-b);">+ Note</button>
+              <button class="btn btn-secondary ${state.notebookQuickTextDraw?'active':''}" data-action="start-quick-text" style="font-family:var(--font-b);${state.notebookQuickTextDraw?'background:var(--amber);color:var(--ink);':''}">+ Texte</button>
               <button class="btn btn-secondary" data-action="open-sticker-picker" style="font-family:var(--font-b);">+ Autocollant</button>
               ${pageCount < MAX_NOTEBOOK_PAGES ? `<button class="btn btn-secondary" data-action="add-notebook-page" style="font-family:var(--font-b);">+ Page</button>` : ''}
               ${pageCount > 1 ? `<button class="btn btn-secondary" data-action="delete-notebook-page" style="font-family:var(--font-b);">🗑 Supprimer la page</button>` : ''}
             </div>
-            ${!pageEntries.length ? `<p style="font-family:var(--font-b);color:rgba(40,41,46,0.55);">Page ${activePage} vide — clique sur + Note, + Texte ou + Autocollant, ou glisse une note d’une autre page ici.</p>` : ''}
+            ${state.notebookQuickTextDraw ? `<p style="font-family:var(--font-b);position:absolute;top:8px;left:12px;background:var(--bg-panel);color:var(--chalk);padding:4px 10px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,0.25);">Dessine un rectangle sur la page pour écrire.</p>` : ''}
+            ${!pageEntries.length ? `<p style="font-family:var(--font-b);color:rgba(40,41,46,0.55);">Page ${activePage} vide — clique sur + Post-it, + Note, + Texte ou + Autocollant, ou glisse une note d’une autre page ici.</p>` : ''}
           </div>
           <div class="notebook-tabs right">
             ${rightTabs.map(p=>`<div class="nb-tab ${p===activePage?'active':''}" data-action="goto-notebook-page" data-page="${p}">${p}</div>`).join('')}
@@ -3640,7 +3704,7 @@
     const points = [
       ['01','Sécurité',"Tes données sont protégées par une vraie authentification, comme n'importe quelle app sérieuse."],
       ['02','Paiements',"Les paiements passent par Helcim. Aucune information de carte n'est conservée sur nos serveurs."],
-      ['03','Ça bug ?',"Si quelque chose cloche, dis-le-nous — bouton «Signaler un bug» directement dans l'app."],
+      ['03','Ça bug ?',"Si quelque chose cloche (ou que tu as une idée), dis-le-nous — bouton «Bug et suggestions» directement dans l'app."],
       ['04','Ça ne marche vraiment pas ?','Appelle Amélie au <a href="tel:+14388699187" style="color:var(--chalk-dim);">438-869-9187</a> ou écris à <a href="mailto:kossmtl@gmail.com" style="color:var(--chalk-dim);">kossmtl@gmail.com</a>.'],
     ];
     const rows = points.map(([num,title,desc],i)=>`
@@ -4048,7 +4112,7 @@
         const q = state.bugSearchQuery || '';
         const qn = normalizeStr(q);
         const bugs = q ? allBugs.filter(b=> normalizeStr((b.text||'')+' '+(b.reporter||'')).includes(qn)) : allBugs;
-        return adminCard('bug-reports', `🐛 Bugs signalés ${allBugs.length ? '('+allBugs.length+')' : ''}`, `
+        return adminCard('bug-reports', `🐛 Bugs et suggestions ${allBugs.length ? '('+allBugs.length+')' : ''}`, `
           <div class="btn-row" style="margin-bottom:10px;">
             <input id="bug-search-input" placeholder="Rechercher un mot-clé..." value="${escapeHtml(q)}" style="flex:1;">
             <button class="btn btn-secondary" data-action="run-bug-search">Chercher</button>
@@ -4313,9 +4377,9 @@
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
-          <h3>🐛 Signaler un bug</h3>
-          <p class="muted" style="color:var(--chalk-dim);">Décris ce qui ne fonctionne pas, le plus précisément possible (ce que tu faisais, ce qui s’est passé, ce que tu attendais).</p>
-          <label>Description du bug</label>
+          <h3>🐛 Bug et suggestions</h3>
+          <p class="muted" style="color:var(--chalk-dim);">Décris ce qui ne fonctionne pas (ce que tu faisais, ce qui s’est passé, ce que tu attendais), ou propose une idée.</p>
+          <label>Description du bug ou de la suggestion</label>
           <textarea id="bugreport-text" rows="6" placeholder="Ex. : Quand je clique sur « Payer maintenant » sur mon iPhone, rien ne se passe..."></textarea>
           <label style="margin-top:10px;">Capture d’écran (optionnel)</label>
           <input type="file" id="bugreport-screenshot-file" accept="image/*">
@@ -4770,6 +4834,14 @@
       const isFirstOcc = isProgram && isFirstProgramOccurrence(c, dateIso);
       const confirmedList = state.data.bookings.filter(b=>b.classId===classId && b.dateIso===dateIso && b.status==='confirmee');
       const payLabel = c.free ? 'Cours gratuit' : 'Cours payant';
+      // Demandé par Amélie (S41) : pouvoir annuler sa présence directement en cliquant sur
+      // le cours (pas seulement via le ✕ dans "Mes réservations cette semaine"). On liste ici
+      // TOUTES les réservations actives de ce compte (élève + famille) pour cette occurrence.
+      const myBookings = acct ? state.data.bookings.filter(b=>
+        b.classId===classId && b.dateIso===dateIso &&
+        b.studentEmail.toLowerCase()===acct.email.toLowerCase() &&
+        (b.status==='confirmee' || b.status==='liste_attente')
+      ) : [];
 
       let introBlock = '';
       if(isProgram && !isFirstOcc){
@@ -4791,6 +4863,17 @@
           ${full ? '<p style="color:var(--amber);font-size:13px;">Ce cours est complet — vous pouvez rejoindre la liste d\u2019attente.</p>' : ''}
           <div class="btn-row" style="margin-top:6px;"><button class="small-btn" data-action="toggle-participants">Voir les participants (${confirmedList.length})</button></div>
           ${showParticipants ? `<ul class="link-list">${confirmedList.length ? confirmedList.map(b=>`<li>${escapeHtml(formatDisplayName(b.studentName))}</li>`).join('') : '<li style="color:var(--chalk-dim);">Aucun participant confirmé.</li>'}</ul>` : ''}
+          ${myBookings.length ? `
+          <div style="margin-top:10px;padding:10px 12px;background:rgba(232,149,90,0.12);border:1px solid var(--amber);border-radius:8px;">
+            <p style="font-size:12.5px;margin:0 0 6px;color:var(--chalk);">Vous avez déjà une place ici :</p>
+            ${myBookings.map(b=>`
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">
+                <span style="font-size:13px;">${escapeHtml(formatDisplayName(b.studentName))}${b.status==='liste_attente'?' <span class="muted">(liste d’attente)</span>':''}</span>
+                <button class="small-btn" data-action="student-cancel-booking" data-id="${b.id}" style="color:var(--coral);">Annuler</button>
+              </div>
+            `).join('')}
+          </div>
+          ` : ''}
           ${acct ? `
             <p class="muted" style="margin-top:10px;">Compte : <strong style="color:var(--chalk);">${escapeHtml(acct.name)}</strong> (${escapeHtml(acct.email)})<br><button class="small-btn" data-action="student-logout-inline" style="margin-top:6px;">Ce n\u2019est pas moi</button></p>
             ${(acct.familyMembers||[]).length ? `
@@ -5719,7 +5802,7 @@
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
-          <h3>${entry ? 'Modifier la note' : 'Nouvelle note'}</h3>
+          <h3>${entry ? 'Modifier le post-it' : 'Nouveau post-it'}</h3>
           <label>Catégorie</label>
           <input id="postit-category-input" list="postit-category-list" placeholder="Tape ta catégorie (ex. Étranglement)" value="${escapeHtml(category)}">
           <datalist id="postit-category-list">
@@ -5760,7 +5843,7 @@
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
-          <h3>${entry ? 'Modifier la note texte' : 'Nouvelle note texte'}</h3>
+          <h3>${entry ? (entry.boxWidth ? 'Modifier un texte' : 'Modifier une note') : 'Nouvelle note'}</h3>
           <label>Catégorie</label>
           <input id="textnote-category-input" list="textnote-category-list" placeholder="Tape ta catégorie (ex. Étranglement)" value="${escapeHtml(category)}">
           <datalist id="textnote-category-list">
@@ -6516,7 +6599,7 @@
           const f = ev.target.files[0];
           if(!f) return;
           try{
-            pendingStickerImage = await resizeImageFile(f, 200);
+            pendingStickerImage = await resizeImageFile(f, 200, null, {keepTransparency:true});
             showToast('Image prête à être enregistrée avec l’autocollant.');
           }catch(err){
             showToast('Impossible de traiter cette image.');
@@ -6680,17 +6763,27 @@
           entry.y = parseFloat(el.style.top);
           await persist();
         }
-      } else if(el.classList.contains('textnote-free') || el.classList.contains('sticker-free')){
+      } else if(el.classList.contains('textnote-free') || el.classList.contains('sticker-free') || el.classList.contains('postit-free')){
         state.notebookSelectedEntry = state.notebookSelectedEntry === dragId ? null : dragId;
         render();
       }
     }
     canvas.addEventListener('mousedown', (ev)=>{
-      if(ev.target === canvas && state.notebookSelectedEntry){ state.notebookSelectedEntry = null; render(); }
+      if(state.notebookQuickTextDraw) return;
+      if(state.notebookQuickEditId) return; // laisse le blur naturel sauvegarder le texte rapide sans re-rendu concurrent
+      if(state.notebookTextSelectId) return; // laisse le blur naturel sauvegarder l'édition en cours sans re-rendu concurrent
+      if(ev.target === canvas && (state.notebookSelectedEntry || state.notebookTextSelectId)){
+        state.notebookSelectedEntry = null; state.notebookTextSelectId = null; render();
+      }
     });
     canvas.querySelectorAll('.postit-free, .textnote-free, .sticker-free').forEach(node=>{
       const startDrag = (ev)=>{
         if(ev.target.closest('button')) return;
+        // L'édition du texte (double-clic) est gérée indépendamment du mode édition par
+        // attachNotebookTextEdit() — si ce node est déjà en édition de texte, on laisse le
+        // texte se sélectionner/s'éditer nativement plutôt que de démarrer un glisser.
+        if(node.dataset.id === state.notebookTextSelectId) return;
+        if(state.notebookTextSelectId && state.notebookTextSelectId !== node.dataset.id) state.notebookTextSelectId = null;
         const point = ev.touches ? ev.touches[0] : ev;
         dragEl = node;
         dragId = node.dataset.id;
@@ -6711,12 +6804,39 @@
     });
   }
 
+  // ---------- Édition du texte par double-clic : fonctionne QUE le mode édition soit
+  // ouvert ou non (contrairement au glisser/redimensionner/pivoter, réservés au mode édition). ----------
+  function attachNotebookTextEdit(){
+    const canvas = document.getElementById('nb-canvas');
+    if(!canvas) return;
+    if(state.notebookQuickTextDraw || state.notebookQuickEditId) return;
+    canvas.querySelectorAll('.postit-text[data-id], .textnote-content[data-id]').forEach(el=>{
+      if(el.isContentEditable) return; // déjà en édition
+      const id = el.dataset.id;
+      const onDown = (ev)=>{
+        if(state.notebookTextSelectId === id) return; // déjà en mode édition : laisse le texte se sélectionner nativement
+        const now = Date.now();
+        const isDoubleClick = lastContentClick.id === id && (now - lastContentClick.time) < 400;
+        lastContentClick = {id, time: now};
+        if(isDoubleClick){
+          ev.preventDefault();
+          ev.stopPropagation();
+          state.notebookSelectedEntry = id;
+          state.notebookTextSelectId = id;
+          render();
+        }
+      };
+      el.addEventListener('mousedown', onDown);
+      el.addEventListener('touchstart', onDown, {passive:false});
+    });
+  }
+
   function attachFreeHandles(){
     const canvas = document.getElementById('nb-canvas');
     if(!canvas) return;
 
     canvas.querySelectorAll('.rotate-handle').forEach(handle=>{
-      const wrap = handle.closest('.textnote-free, .sticker-free');
+      const wrap = handle.closest('.textnote-free, .sticker-free, .postit-free');
       if(!wrap) return;
       const id = handle.dataset.id;
       const start = (ev)=>{
@@ -6754,10 +6874,11 @@
     });
 
     canvas.querySelectorAll('.resize-handle').forEach(handle=>{
-      const wrap = handle.closest('.textnote-free, .sticker-free');
+      const wrap = handle.closest('.textnote-free, .sticker-free, .postit-free');
       if(!wrap) return;
       const id = handle.dataset.id;
       const isSticker = wrap.classList.contains('sticker-free');
+      const isPostit = wrap.classList.contains('postit-free');
       const start = (ev)=>{
         ev.preventDefault(); ev.stopPropagation();
         const point = ev.touches ? ev.touches[0] : ev;
@@ -6765,9 +6886,9 @@
         const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
         const startDist = Math.max(20, Math.hypot(point.clientX-cx, point.clientY-cy));
         const entry = state.data.notebookEntries.find(n=>n.id===id);
-        const startSize = isSticker ? (entry.size||60) : (entry.fontSize||16);
-        const minSize = isSticker ? 24 : 10;
-        const maxSize = isSticker ? 240 : 60;
+        const startSize = isSticker ? (entry.size||60) : isPostit ? (entry.size||150) : (entry.fontSize||16);
+        const minSize = isSticker ? 24 : isPostit ? 100 : 10;
+        const maxSize = isSticker ? 240 : isPostit ? 400 : 60;
         let pendingSize = startSize;
         function onMove(mv){
           const p = mv.touches ? mv.touches[0] : mv;
@@ -6777,6 +6898,12 @@
           if(isSticker){
             wrap.style.width = pendingSize+'px';
             const img = wrap.querySelector('img'); if(img) img.style.width = pendingSize+'px';
+          } else if(isPostit){
+            const pScale = pendingSize/150;
+            wrap.style.width = pendingSize+'px';
+            wrap.style.minHeight = Math.round(130*pScale)+'px';
+            const cat = wrap.querySelector('.postit-cat'); if(cat) cat.style.fontSize = (10*pScale).toFixed(1)+'px';
+            const txt = wrap.querySelector('.postit-text'); if(txt) txt.style.fontSize = (15*pScale).toFixed(1)+'px';
           } else {
             wrap.style.fontSize = pendingSize+'px';
           }
@@ -6787,7 +6914,7 @@
           document.removeEventListener('touchmove', onMove);
           document.removeEventListener('touchend', onEnd);
           if(entry){
-            if(isSticker) entry.size = pendingSize; else entry.fontSize = pendingSize;
+            if(isSticker || isPostit) entry.size = pendingSize; else entry.fontSize = pendingSize;
             await persist();
           }
         }
@@ -6798,6 +6925,124 @@
       };
       handle.addEventListener('mousedown', start);
       handle.addEventListener('touchstart', start, {passive:false});
+    });
+  }
+
+  function attachQuickTextDraw(){
+    const canvas = document.getElementById('nb-canvas');
+    if(!canvas) return;
+    if(!state.notebookQuickTextDraw) return;
+    canvas.classList.add('quick-text-drawing');
+    let startX=0, startY=0, previewEl=null;
+    function onMove(ev){
+      if(!previewEl) return;
+      const point = ev.touches ? ev.touches[0] : ev;
+      const rect = canvas.getBoundingClientRect();
+      const curX = Math.max(0, Math.min(rect.width, point.clientX-rect.left));
+      const curY = Math.max(0, Math.min(rect.height, point.clientY-rect.top));
+      const left = Math.min(startX, curX), top = Math.min(startY, curY);
+      const w = Math.abs(curX-startX), h = Math.abs(curY-startY);
+      previewEl.style.left = left+'px'; previewEl.style.top = top+'px';
+      previewEl.style.width = w+'px'; previewEl.style.height = h+'px';
+    }
+    async function onUp(){
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onUp);
+      if(!previewEl) return;
+      const rect = canvas.getBoundingClientRect();
+      const boxWidthPx = Math.max(60, parseFloat(previewEl.style.width)||160);
+      const boxHeightPx = Math.max(28, parseFloat(previewEl.style.height)||28);
+      const leftPx = parseFloat(previewEl.style.left)||0;
+      const topPx = parseFloat(previewEl.style.top)||0;
+      previewEl.remove(); previewEl = null;
+      const acct = findStudentAccount(state.studentSession.email);
+      const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
+      const nb = getOrCreateActiveNotebook(ownerKey);
+      const entry = {
+        id: uid(), ownerKey, notebookId: nb.id, kind:'text', page: state.notebookActivePage||1,
+        x: Math.max(0, Math.min(85, (leftPx/rect.width)*100)),
+        y: Math.max(0, Math.min(88, (topPx/rect.height)*100)),
+        boxWidth: Math.round(boxWidthPx),
+        boxHeight: Math.round(boxHeightPx),
+        text:'', fontFamily:'sans', fontSize:10, color:TEXTNOTE_INK_COLORS[0], rotation:0, hAlign:'left',
+        createdAt: Date.now(),
+      };
+      state.data.notebookEntries.push(entry);
+      state.notebookQuickTextDraw = false;
+      state.notebookQuickEditId = entry.id;
+      render();
+    }
+    const startDraw = (ev)=>{
+      if(ev.target.closest('button') || ev.target.closest('.btn-row')) return;
+      const point = ev.touches ? ev.touches[0] : ev;
+      const rect = canvas.getBoundingClientRect();
+      startX = Math.max(0, Math.min(rect.width, point.clientX-rect.left));
+      startY = Math.max(0, Math.min(rect.height, point.clientY-rect.top));
+      previewEl = document.createElement('div');
+      previewEl.className = 'quick-text-preview';
+      previewEl.style.left = startX+'px'; previewEl.style.top = startY+'px';
+      previewEl.style.width = '0px'; previewEl.style.height = '0px';
+      canvas.appendChild(previewEl);
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      document.addEventListener('touchmove', onMove, {passive:false});
+      document.addEventListener('touchend', onUp);
+      ev.preventDefault();
+    };
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('touchstart', startDraw, {passive:false});
+  }
+
+  function attachQuickTextEditor(){
+    if(!state.notebookQuickEditId) return;
+    const ta = document.getElementById('quick-text-input');
+    if(!ta) return;
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    let done = false;
+    async function finish(){
+      if(done) return; done = true;
+      const val = ta.value.trim();
+      const entry = state.data.notebookEntries.find(n=>n.id===state.notebookQuickEditId);
+      if(entry){
+        if(!val){
+          state.data.notebookEntries = state.data.notebookEntries.filter(n=>n.id!==entry.id);
+        } else {
+          entry.text = val;
+        }
+        await persist();
+      }
+      state.notebookQuickEditId = null;
+      render();
+    }
+    ta.addEventListener('blur', finish);
+    ta.addEventListener('keydown', (ev)=>{
+      if(ev.key==='Escape'){ ev.preventDefault(); ta.blur(); }
+    });
+  }
+
+  function attachTextSelectEditor(){
+    if(!state.notebookTextSelectId) return;
+    const canvas = document.getElementById('nb-canvas');
+    if(!canvas) return;
+    const el = canvas.querySelector(`[contenteditable="true"][data-id="${state.notebookTextSelectId}"]`);
+    if(!el) return;
+    setTimeout(()=>{ el.focus(); }, 0); // après le focus par défaut du mousedown, pour ne pas se faire écraser
+    let done = false;
+    async function finish(){
+      if(done) return; done = true;
+      const val = (el.innerText || el.textContent || '').replace(/\n+$/,'');
+      const entry = state.data.notebookEntries.find(n=>n.id===state.notebookTextSelectId);
+      if(entry){ entry.text = val; await persist(); }
+      state.notebookTextSelectId = null;
+      render();
+    }
+    el.addEventListener('blur', finish);
+    el.addEventListener('keydown', (ev)=>{
+      if(ev.key==='Enter'){ ev.preventDefault(); el.blur(); }
+      if(ev.key==='Escape'){ ev.preventDefault(); el.blur(); }
     });
   }
 
@@ -7010,6 +7255,11 @@
       const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
       const nb = getOrCreateActiveNotebook(ownerKey);
       state.modal = {type:'postit-form', payload:{ownerKey, entry:null, notebookId:nb.id, pageCount:nb.pageCount||1}};
+      render();
+    }
+    else if(action==='start-quick-text'){
+      state.notebookQuickTextDraw = !state.notebookQuickTextDraw;
+      if(state.notebookQuickTextDraw) showToast('Dessine un rectangle sur la page pour écrire.');
       render();
     }
     else if(action==='edit-postit'){
@@ -7466,6 +7716,7 @@
       const removedEntry = state.data.notebookEntries.find(n=>n.id===id);
       if(removedEntry){ removedEntry.trashed = true; removedEntry.trashedAt = Date.now(); }
       if(state.notebookSelectedEntry===id) state.notebookSelectedEntry = null;
+      if(state.notebookTextSelectId===id) state.notebookTextSelectId = null;
       await persist();
       render();
       showToast('Retiré — envoyé à la corbeille du carnet.');
