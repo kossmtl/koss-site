@@ -1,0 +1,2512 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Carnet — CVM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Oswald:wght@500;600;700&family=Work+Sans:wght@400;500;600&family=Great+Vibes&family=Caveat:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* Palette "Béton clair" (mode pâle) — formation Revit Structure */
+    --bg:#F1EFEC;
+    --bg-panel:#FFFFFF;
+    --bg-tile:#F7F5F2;
+    --chalk:#2E2B27;
+    --chalk-dim:#7A756C;
+    --border:#DEDAD3;
+    --amber:#EFE3D2;
+    --coral:#B5502E;
+    --sage:#8C8477;
+    --lilac:#D9D2C6;
+    --ink:#241F1B;
+    --font-d:'Oswald',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--chalk);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{max-width:760px;margin:0 auto;padding:16px;padding-bottom:60px;}
+  #app.wide{max-width:1100px;padding-top:10px;padding-bottom:14px;}
+  #app.wide .bottom-actions{margin-top:8px;}
+  #app.wide .interior-wrap .category-chip{padding:4px 11px;}
+  h1,h2,h3{font-family:var(--font-d);font-weight:600;margin:0 0 10px;}
+  h1{font-size:22px;} h2{font-size:18px;} h3{font-size:15px;}
+  p{line-height:1.5;}
+  .muted{color:var(--chalk-dim);}
+  input, textarea, select{
+    width:100%; padding:10px 12px; margin-bottom:10px;
+    background:var(--bg-tile); border:1px solid var(--border); border-radius:8px;
+    color:var(--chalk); font-size:14px; font-family:inherit;
+  }
+  input:focus, textarea:focus, select:focus{outline:1px solid var(--sage);}
+  label{display:block;font-size:12px;color:var(--chalk-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em;}
+  .btn{
+    display:inline-block; padding:10px 16px; border-radius:8px; border:1px solid transparent;
+    cursor:pointer; font-size:14px; font-weight:600; text-align:center;
+  }
+  .btn-primary{background:var(--sage); color:var(--ink);}
+  .btn-secondary{background:transparent; border-color:var(--border); color:var(--chalk);}
+  .btn-danger{background:transparent; border-color:var(--coral); color:var(--coral);}
+  .small-btn{
+    font-size:12px; padding:5px 10px; border-radius:6px;
+    border:1px solid var(--border); background:transparent; color:var(--chalk); cursor:pointer;
+  }
+  .small-btn.active{background:var(--amber);border-color:var(--amber);font-weight:700;}
+  .btn-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  .card{background:var(--bg-panel); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:14px;}
+  .center-screen{max-width:340px; margin:60px auto 0; text-align:center;}
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:var(--sage); color:var(--ink); padding:10px 18px; border-radius:8px;
+    font-size:13px; font-weight:600; z-index:99; max-width:90vw; text-align:center;
+  }
+  .top-bar{display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:8px;}
+  .bottom-actions{
+    display:flex; flex-direction:row; flex-wrap:wrap; justify-content:flex-end;
+    align-items:center; gap:8px; margin-top:14px;
+  }
+  .bottom-actions .save-note{color:var(--chalk-dim); font-size:12px; margin-right:auto; margin-left:-4px;}
+  .bottom-actions .small-btn{background:var(--bg-panel); box-shadow:0 1px 4px rgba(0,0,0,0.08);}
+  .tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;}
+  .tab-btn{
+    padding:7px 14px; border-radius:20px; border:1px solid var(--border);
+    background:transparent; color:var(--chalk-dim); cursor:pointer; font-size:13px;
+  }
+  .tab-btn.active{background:var(--sage); color:var(--ink); border-color:var(--sage); font-weight:600;}
+  .nb-switch-select{width:auto;flex:1;min-width:140px;margin-bottom:0;}
+  /* ---------- Couverture du carnet ---------- */
+  .notebook-cover{
+    border-radius:10px; padding:90px 24px 50px; text-align:center; min-height:340px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.18); position:relative; overflow:hidden;
+  }
+  .cover-title{
+    font-family:'Permanent Marker',cursive; font-size:34px; line-height:1.15;
+    border:3px solid currentColor; padding:10px 22px; display:inline-block; max-width:90%;
+  }
+  .cover-owner{ font-family:'Permanent Marker',cursive; font-size:24px; margin-top:4px; }
+  .cover-wrap{max-width:640px;margin:0 auto;}
+  .cover-wrap > div:first-child .bottom-actions{margin-top:0;}
+  .cover-delete-row{display:flex;justify-content:flex-end;max-width:640px;margin:8px auto 0;}
+  .small-btn-cover{
+    font-size:12px; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:600;
+    background:rgba(0,0,0,0.32); border:1px solid rgba(255,255,255,0.55);
+  }
+  /* ---------- Carrousel de vignettes (couverture) ---------- */
+  .cover-carousel{margin-top:14px;max-width:950px;margin-left:auto;margin-right:auto;}
+  .cover-carousel-label{font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--chalk-dim);margin-bottom:8px;text-align:center;}
+  .carousel-row{display:flex;align-items:center;gap:6px;}
+  .carousel-arrow{
+    flex-shrink:0;width:28px;height:80px;border-radius:6px;border:1px solid var(--border);background:var(--bg-panel);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--chalk-dim);font-size:15px;
+  }
+  .carousel-track{display:flex;gap:8px;overflow-x:auto;flex:1;padding:2px;scroll-behavior:smooth;}
+  .thumb-cover{
+    flex-shrink:0;width:104px;height:80px;border-radius:7px;box-shadow:0 2px 6px rgba(0,0,0,0.18);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;
+    border:2px solid transparent;position:relative;
+  }
+  .thumb-cover.active{border-color:var(--coral);}
+  .thumb-cover .tname{font-family:'Permanent Marker',cursive;font-size:12px;color:#fff;text-align:center;padding:0 5px;line-height:1.15;
+    text-shadow:0 1px 2px rgba(0,0,0,0.4);}
+  /* ---------- Page lignée + onglets ---------- */
+  .interior-wrap{max-width:1040px;margin:0 auto;}
+  .interior-wrap > div:first-child .bottom-actions{margin-top:0;}
+  .interior-wrap > *:not(.notebook-frame):not(.card){
+    padding-left:100px; padding-right:20px; box-sizing:border-box;
+  }
+  .notebook-frame{display:flex; align-items:stretch; gap:0;}
+  .notebook-tabs{display:flex; flex-direction:column; gap:3px; justify-content:flex-start; padding-top:8px; flex-shrink:0;}
+  .notebook-tabs.left{align-items:flex-end;}
+  .nb-tab{
+    width:18px; min-height:22px; background:var(--bg-tile); border:1px solid var(--border);
+    color:var(--chalk-dim); font-size:9px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; padding:1px; border-radius:6px 0 0 6px; margin-right:-1px; writing-mode:vertical-rl;
+  }
+  .notebook-tabs.right .nb-tab{border-radius:0 6px 6px 0; margin-right:0; margin-left:-1px;}
+  .nb-tab.active{background:var(--coral); color:#fff; border-color:var(--coral); font-weight:700;}
+  .nb-tab.nb-search{font-size:13px; writing-mode:horizontal-tb; width:22px;}
+  /* ---------- Colonne de vignettes verticale (intérieur) ---------- */
+  .thumb-col-wrap{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;margin-right:12px;}
+  .thumb-vscroll-arrow{
+    width:64px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;
+    color:var(--chalk-dim);font-size:12px;background:var(--bg-tile);border:1px solid var(--border);border-radius:4px;
+  }
+  .thumb-vtrack{display:flex;flex-direction:column;gap:8px;overflow-y:auto;max-height:400px;scroll-behavior:smooth;}
+  .thumb-cover-v{
+    width:64px;height:50px;border-radius:6px;box-shadow:0 2px 5px rgba(0,0,0,0.18);cursor:pointer;
+    border:2px solid transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .thumb-cover-v.active{border-color:var(--coral);}
+  .thumb-cover-v .tname{font-family:'Permanent Marker',cursive;font-size:9px;color:#fff;text-align:center;line-height:1.1;padding:0 4px;
+    text-shadow:0 1px 1px rgba(0,0,0,0.4);}
+  .notebook-page{
+    border-radius:0 10px 10px 0; padding:16px 20px 16px 46px; position:relative;
+    flex:1; min-height:480px;
+    background-image:linear-gradient(90deg, rgba(200,60,60,0.28) 2px, transparent 2px),
+      repeating-linear-gradient(var(--nb-page-color,#FFFDF9) 0px, var(--nb-page-color,#FFFDF9) 27px, rgba(120,140,180,0.20) 28px);
+    background-position:32px 0, 0 6px; background-size:auto, 100% 28px; background-color:var(--nb-page-color,#FFFDF9);
+  }
+  .notebook-page.style-point{
+    background-image:radial-gradient(rgba(40,41,46,0.22) 1.5px, transparent 2px);
+    background-size:18px 18px; background-position:0 0;
+  }
+  .notebook-page.style-vierge{ background-image:none; }
+  .notebook-canvas{overflow:hidden;}
+  .notebook-postits{display:flex; flex-wrap:wrap; gap:16px; padding-top:4px;}
+  .postit{
+    width:150px; min-height:120px; padding:12px 10px; box-shadow:2px 4px 8px rgba(0,0,0,0.2);
+    font-family:'Permanent Marker',cursive; color:#28292E; position:relative;
+    display:flex; flex-direction:column; justify-content:space-between; cursor:pointer;
+    transform:rotate(var(--tilt,-2deg)); border-radius:2px;
+  }
+  .postit .postit-cat{font-family:var(--font-d);font-size:10px;text-transform:uppercase;letter-spacing:0.04em;opacity:0.65;}
+  .postit .postit-text{white-space:pre-wrap; word-break:break-word; font-size:15px; line-height:1.25;}
+  .postit .postit-actions{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
+  .postit .postit-actions button{
+    font-family:-apple-system,sans-serif; font-size:10px; padding:3px 7px; border-radius:5px;
+    border:1px solid rgba(0,0,0,0.2); background:rgba(255,255,255,0.55); cursor:pointer;
+  }
+  .postit img{max-width:100%;border-radius:4px;margin-top:6px;}
+  /* ---------- Éléments en positionnement libre sur la page ---------- */
+  .postit-free{position:absolute; width:150px; min-height:110px; cursor:grab; touch-action:none;}
+  .postit-free.dragging{cursor:grabbing; opacity:0.85; z-index:5;}
+  .textnote-free{
+    position:absolute; cursor:grab; touch-action:none; padding:4px 8px; max-width:260px; line-height:1.25;
+  }
+  .textnote-content{display:inline-block; white-space:pre-wrap; word-break:break-word;}
+  .textnote-free.dragging{cursor:grabbing; opacity:0.85; z-index:5;}
+  .sticker-free{position:absolute; cursor:grab; touch-action:none;}
+  .sticker-free.dragging{cursor:grabbing; opacity:0.85; z-index:5;}
+  .sticker-free img{display:block; border-radius:6px;}
+  .textnote-free.selected, .sticker-free.selected, .postit-free.selected{
+    outline:2px dashed var(--coral); outline-offset:6px;
+  }
+  .textnote-free.text-select-mode .textnote-content, .postit-free.text-select-mode .postit-text{
+    cursor:text;
+  }
+  .free-handle{
+    position:absolute; width:26px; height:26px; border-radius:50%; background:var(--amber); color:var(--ink);
+    border:2px solid var(--bg-panel); font-size:14px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; touch-action:none; padding:0; z-index:6;
+  }
+  .rotate-handle{top:-17px; left:-17px; cursor:grab;}
+  .resize-handle{bottom:-17px; right:-17px; cursor:nwse-resize;}
+  .textnote-toolbar{position:absolute; bottom:-28px; left:0; display:flex; gap:4px; flex-wrap:nowrap; white-space:nowrap; width:max-content; z-index:3;}
+  .textnote-toolbar button{
+    font-size:10px; padding:3px 7px; border-radius:5px; border:1px solid var(--border);
+    background:var(--bg-panel); cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.15);
+  }
+  #nb-canvas.quick-text-drawing{cursor:crosshair;}
+  .quick-text-preview{
+    position:absolute; border:2px dashed var(--amber); background:rgba(242,166,90,0.14);
+    border-radius:4px; pointer-events:none; z-index:7;
+  }
+  .textnote-free.quick-editing{cursor:text;}
+  .quick-text-textarea{
+    display:block; box-sizing:border-box; resize:none; outline:none; border:1px dashed var(--amber);
+    background:rgba(255,255,255,0.55); border-radius:4px; padding:6px 8px; line-height:1.25;
+    font-family:inherit; box-shadow:0 1px 4px rgba(0,0,0,0.1);
+  }
+  .sticker-chip{
+    display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:20px;
+    background:var(--bg-tile); border:1px solid var(--border); font-size:13px; margin:0 6px 6px 0;
+    cursor:pointer;
+  }
+  .category-chip{
+    font-size:12px; padding:5px 12px; border-radius:20px; border:1px solid var(--border);
+    background:var(--bg-panel); color:var(--chalk-dim); cursor:pointer; margin:0 6px 6px 0; display:inline-block;
+  }
+  .category-chip.active{background:var(--sage); color:var(--ink); border-color:var(--sage); font-weight:600;}
+  .sticker-picker-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(74px,1fr)); gap:10px;}
+  .sticker-picker-item{text-align:center; cursor:pointer; padding:8px 6px; border-radius:8px; border:1px solid var(--border); background:var(--bg-tile);}
+  .sticker-picker-item img{width:100%; max-width:56px; border-radius:5px;}
+  .sticker-picker-item .sname{font-size:10px; color:var(--chalk-dim); margin-top:4px; line-height:1.2;}
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex;
+    align-items:center; justify-content:center; z-index:50; padding:16px;
+  }
+  .modal{
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:12px;
+    padding:20px; width:100%; max-width:420px; max-height:86vh; overflow-y:auto; position:relative;
+  }
+  .close-x{
+    position:absolute; top:10px; right:12px; background:none; border:none; color:var(--chalk-dim);
+    font-size:18px; cursor:pointer;
+  }
+  .badge{
+    display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px;
+    border-radius:9px; background:var(--coral); color:#fff; font-size:11px; font-weight:700; padding:0 5px;
+  }
+  .list-row{
+    display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 0;
+    border-bottom:1px solid var(--border); font-size:13px;
+  }
+  .list-row:last-child{border-bottom:none;}
+  .link-list{list-style:none; margin:0; padding:0;}
+  .link-list li{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .link-list li:last-child{border-bottom:none;}
+  .color-swatches{display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+  .swatch{width:28px; height:28px; border-radius:50%; cursor:pointer; border:2px solid transparent;}
+  .swatch.selected{border-color:var(--chalk);}
+  .sq-swatch{width:26px; height:26px; border-radius:4px; cursor:pointer; border:2px solid transparent; display:inline-block;}
+  .invalid{outline:1px solid var(--coral) !important;}
+  .flagged-box{border:1px solid var(--coral) !important;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  const SUPABASE_URL = 'https://kwifgwyyiqinhiebmyqy.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_bDuifvFbk4Y_C7_iTqDHsQ_YU6iFfEP';
+  const sb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
+
+  const MAX_NOTEBOOK_PAGES = 30; // 15 pages max par côté (hauteur fixe du carnet)
+  // 15 couleurs de post-it (Option A validée) : 6 tons béton + tons vifs + tons standards.
+  const POSTIT_COLORS = ['#EDE7DD','#E4D9C6','#DCD6CC','#EFE3D2','#E0E7E2','#FFFFFF','#F2A65A','#F2E27A','#8FCBD9','#93B48F','#E8A9A0','#B79FDB','#FFE066','#FF9EB5','#7FD9C4'];
+  // 15 couleurs de couverture : 5 familles (béton/ardoise/terracotta/sauge/prune) × 3 intensités (foncé/moyen/pâle).
+  const COVER_COLORS = [
+    '#3A342C','#2C3038','#43302A','#35402E','#3E2F3B', // foncé
+    '#65615A','#5A5E64','#6C5E59','#616A5C','#685D66', // moyen
+    '#8D8985','#85878C','#928783','#8A9086','#8F868D', // pâle
+  ];
+  const PAGE_COLORS = ['#FFFDF9','#FBF4EC','#F6F0E4','#FFFFFF'];
+  const TEXTURES = [
+    {key:'', label:'Aucune'},
+    {key:'cuir', label:'Cuir'},
+    {key:'tisse', label:'Tissé'},
+    {key:'kraft', label:'Kraft'},
+    {key:'denim', label:'Denim'},
+    {key:'pointille', label:'Pointillé'},
+  ];
+  // Polices des notes-texte, palettes d'encre — portées telles quelles de K-OSS
+  // (couleurs de notes, pas de marque : pas besoin de rethème).
+  const TEXTNOTE_FONTS = [
+    {key:'marker', label:'Manuscrite (Sharpie)', css:"'Permanent Marker', cursive"},
+    {key:'sans', label:'Sans-serif', css:"'Work Sans', sans-serif"},
+    {key:'title', label:'Titre (Oswald)', css:"'Oswald', sans-serif"},
+    {key:'serif', label:'Serif classique', css:"Georgia, serif"},
+    {key:'mono', label:'Machine à écrire', css:"'Courier New', monospace"},
+    {key:'calligraphy', label:'Calligraphie', css:"'Great Vibes', cursive"},
+    {key:'handwriting', label:'Écriture manuscrite', css:"'Caveat', cursive"},
+  ];
+  const TEXTNOTE_INK_COLORS = ['#28292E','#7A3B12','#1D5C43','#8B1E3F','#2A4B7C'];
+  const TEXTNOTE_PALETTES = [
+    {key:'pastel', label:'Pastel doux', colors:['#C97B84','#E8A87C','#E3C567','#A8C08A','#8FCBD9','#A6B9D9','#B9A6D9','#D9A6C9','#C9B79F','#9FB8B0']},
+    {key:'vif', label:'Vif', colors:['#E4573D','#E8912D','#D9B92D','#7FB83D','#2DB894','#2D8FE8','#5A5FE8','#A83DE8','#E83DA8','#E83D5F']},
+    {key:'classique', label:'Classique', colors:['#000000','#1D3B7A','#1D5C3D','#7A1D2D','#5C3A1D','#1D5C6B','#4A1D5C','#7A5C1D','#3D5C1D','#5C1D3A']},
+    {key:'melange', label:'Mélange', colors:['#E8A87C','#E4573D','#1D5C3D','#8FCBD9','#A83DE8','#7A3B12','#E3C567','#0B1D3A','#E83D5F','#9C9C9C']},
+    {key:'contrastes', label:'Contrastes', colors:['#F2C6A0','#3D1D5C','#A8D8C4','#5C1D1D','#F2E6A0','#1D3D5C','#D9A0C6','#1D5C2E','#A0C6F2','#5C3D1D']},
+  ];
+  function textnotePaletteColors(key){
+    const p = TEXTNOTE_PALETTES.find(p=>p.key===key);
+    return p ? p.colors : TEXTNOTE_PALETTES[0].colors;
+  }
+  function renderTextnoteSwatchesHtml(colors, selected){
+    return colors.map(col=>`<span class="textnote-color-swatch sq-swatch" data-color="${col}" style="background:${col};border-color:${selected===col?'var(--amber)':'transparent'};"></span>`).join('');
+  }
+  function textnoteFontCss(key){ return (TEXTNOTE_FONTS.find(f=>f.key===key)||TEXTNOTE_FONTS[0]).css; }
+  function isWhiteish(c){ return /^#f?fff?fff?$/i.test((c||'').replace('#','')) || (c||'').toUpperCase()==='#FFFFFF'; }
+  function postitSwatchBorder(c, selected){ return selected ? 'var(--amber)' : (isWhiteish(c) ? 'rgba(0,0,0,0.35)' : 'transparent'); }
+  function textureCss(key){
+    switch(key){
+      case 'cuir': return 'background-image:repeating-linear-gradient(45deg, rgba(0,0,0,0.14) 0px, rgba(0,0,0,0.14) 3px, transparent 3px, transparent 9px);';
+      case 'tisse': return 'background-image:repeating-linear-gradient(0deg, rgba(255,255,255,0.09) 0px, rgba(255,255,255,0.09) 1px, transparent 1px, transparent 7px), repeating-linear-gradient(90deg, rgba(255,255,255,0.09) 0px, rgba(255,255,255,0.09) 1px, transparent 1px, transparent 7px);';
+      case 'kraft': return 'background-image:repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.08) 1px, transparent 1px, transparent 14px);';
+      case 'denim': return 'background-image:repeating-linear-gradient(65deg, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 2px, transparent 2px, transparent 6px);';
+      case 'pointille': return 'background-image:radial-gradient(rgba(0,0,0,0.18) 1px, transparent 1.5px);background-size:8px 8px;';
+      default: return '';
+    }
+  }
+  function notebookPageBgCss(nb){
+    const color = nb.pageColor || '#FFFDF9';
+    const style = nb.pageStyle || 'ligne';
+    if(style === 'vierge') return `background-image:none;background-color:${color};`;
+    if(style === 'point') return `background-image:radial-gradient(rgba(40,41,46,0.22) 1.5px, transparent 2px);background-size:18px 18px;background-position:0 0;background-color:${color};`;
+    return `background-image:linear-gradient(90deg, rgba(200,60,60,0.28) 2px, transparent 2px), repeating-linear-gradient(${color} 0px, ${color} 27px, rgba(120,140,180,0.20) 28px);background-position:32px 0, 0 6px;background-size:auto, 100% 28px;background-color:${color};`;
+  }
+
+  function uid(){ return Math.random().toString(36).slice(2)+Date.now().toString(36); }
+  function escapeHtml(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function normalizeStr(s){
+    return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  }
+  function formatDate(ts){
+    if(!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleDateString('fr-CA', {day:'numeric', month:'short', year:'numeric'});
+  }
+  function resizeImageFile(file, maxDim){
+    return new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = ()=>{
+        const img = new Image();
+        img.onerror = reject;
+        img.onload = ()=>{
+          let {width, height} = img;
+          if(width > maxDim || height > maxDim){
+            if(width > height){ height = Math.round(height * maxDim / width); width = maxDim; }
+            else { width = Math.round(width * maxDim / height); height = maxDim; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const state = {
+    view: 'login', // login | notebook | manager-login | manager
+    session: null, // {name, code}
+    managerCode: null,
+    data: null, // {notebooks, entries, activeNotebookId, stickers, receivedItems, stickerGrants}
+    managerData: null, // {meta, accounts}
+    managerTab: 'comptes',
+    modal: null,
+    loading: false,
+    // --- état transitoire du carnet (jamais persisté) ---
+    notebookOpened: false,
+    notebookActivePage: 1,
+    notebookEditMode: false,
+    notebookSelectedEntry: null,
+    notebookQuickTextDraw: false,
+    notebookQuickEditId: null,
+    notebookTextSelectId: null,
+    notebookSearchOpen: false,
+    notebookSearchQuery: '',
+    notebookFilterCategory: null,
+    shareRecipientType: 'coach',
+    shareSearchQuery: '',
+    shareSelectedRecipient: null,
+    expandedStickerGroups: {},
+    stickerSearchQuery: '',
+    expandedArchivedNotes: {},
+  };
+  let pendingPostitPhoto = null;
+  let pendingStickerImage = null;
+  let lastContentClick = {id:null, time:0};
+
+  function loadStoredSession(){
+    try{
+      const raw = localStorage.getItem('cvm_session');
+      if(raw) state.session = JSON.parse(raw);
+      const mgr = localStorage.getItem('cvm_manager_code');
+      if(mgr) state.managerCode = mgr;
+    }catch(e){}
+  }
+  function storeSession(session){
+    try{
+      if(session) localStorage.setItem('cvm_session', JSON.stringify(session));
+      else localStorage.removeItem('cvm_session');
+    }catch(e){}
+  }
+  function storeManagerCode(code){
+    try{
+      if(code) localStorage.setItem('cvm_manager_code', code);
+      else localStorage.removeItem('cvm_manager_code');
+    }catch(e){}
+  }
+
+  function showToast(msg){
+    document.querySelectorAll('.toast').forEach(t=>t.remove());
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(()=>t.remove(), 2600);
+  }
+  function markInvalid(ids){
+    (Array.isArray(ids)?ids:[ids]).forEach(id=>{
+      const el = document.getElementById(id);
+      if(el){ el.classList.add('invalid'); setTimeout(()=>el.classList.remove('invalid'), 1500); }
+    });
+  }
+
+  // ---------- Appels Supabase (RPC uniquement — les tables ne sont pas accessibles directement) ----------
+  async function rpcLoad(name, code){
+    const {data, error} = await sb.rpc('cvm_load', {p_name:name, p_code:code});
+    if(error){ console.error(error); return null; }
+    return data;
+  }
+  async function rpcSave(name, code, notebook){
+    const {data, error} = await sb.rpc('cvm_save', {p_name:name, p_code:code, p_notebook:notebook});
+    if(error){ console.error(error); return false; }
+    return !!data;
+  }
+  async function rpcManagerLoad(code){
+    const {data, error} = await sb.rpc('cvm_manager_load', {p_code:code});
+    if(error){ console.error(error); return null; }
+    return data;
+  }
+  async function rpcManagerAction(code, action, payload){
+    const {data, error} = await sb.rpc('cvm_manager_action', {p_code:code, p_action:action, p_payload:payload});
+    if(error){ console.error(error); return {ok:false, error:'Erreur de connexion.'}; }
+    return data;
+  }
+  async function rpcShareItem(name, code, item){
+    const {data, error} = await sb.rpc('cvm_share_to_coach', {p_name:name, p_code:code, p_item:item});
+    if(error){ console.error(error); return false; }
+    return !!data;
+  }
+  async function rpcReportBug(name, code, text){
+    const {data, error} = await sb.rpc('cvm_report_bug', {p_name:name, p_code:code, p_text:text});
+    if(error){ console.error(error); return false; }
+    return !!data;
+  }
+  async function rpcPersonAction(name, code, action, payload){
+    const {data, error} = await sb.rpc('cvm_person_action', {p_name:name, p_code:code, p_action:action, p_payload:payload});
+    if(error){ console.error(error); return {ok:false}; }
+    return data;
+  }
+  async function rpcSearchAccounts(name, code, query){
+    const {data, error} = await sb.rpc('cvm_search_accounts', {p_name:name, p_code:code, p_query:query});
+    if(error){ console.error(error); return []; }
+    return data || [];
+  }
+
+  // ---------- Modèle de données ----------
+  function emptyPersonData(){
+    return { notebooks: [], entries: [], activeNotebookId: null };
+  }
+  function notebookBlobFromData(){
+    return { notebooks: state.data.notebooks, entries: state.data.entries, activeNotebookId: state.data.activeNotebookId };
+  }
+  function getNotebooks(){ return state.data.notebooks.slice().sort((a,b)=>a.createdAt-b.createdAt); }
+  function getOrCreateActiveNotebook(){
+    let list = getNotebooks();
+    if(!list.length){
+      const nb = {
+        id: uid(), name:'Mon carnet', pageCount:1,
+        coverColor: COVER_COLORS[0], coverTexture:'', coverTextColor:'#F4EFE7',
+        pageColor: PAGE_COLORS[0], pageStyle:'ligne', postitColor: POSTIT_COLORS[0],
+        titleFont:'marker', titleSize:32, nameFont:'sans', nameSize:14, inkPalette:'pastel',
+        createdAt: Date.now(),
+      };
+      state.data.notebooks.push(nb);
+      list = [nb];
+    }
+    if(!state.data.activeNotebookId || !list.find(nb=>nb.id===state.data.activeNotebookId)){
+      state.data.activeNotebookId = list[0].id;
+    }
+    return list.find(nb=>nb.id===state.data.activeNotebookId);
+  }
+  function userNotebookCategories(){
+    const set = new Set();
+    state.data.entries.forEach(n=>{ if(!n.trashed && n.category && n.category.trim()) set.add(n.category.trim()); });
+    return Array.from(set).sort((a,b)=>a.localeCompare(b));
+  }
+  function usedStickerCategories(){
+    const set = new Set();
+    (state.managerData ? (state.managerData.meta.stickers||[]) : []).forEach(s=>{ if(s.category && s.category.trim()) set.add(s.category.trim()); });
+    return Array.from(set).sort((a,b)=>a.localeCompare(b));
+  }
+  function trashedItems(){
+    return state.data.entries.filter(n=>n.trashed).sort((a,b)=>(b.trashedAt||0)-(a.trashedAt||0));
+  }
+  function sharedItemContentFromEntry(entry){
+    const base = {kind: entry.kind, category: entry.category||''};
+    if(entry.kind === 'text'){
+      Object.assign(base, {text:entry.text, fontFamily:entry.fontFamily, color:entry.color, hAlign:entry.hAlign});
+    } else if(entry.kind === 'sticker'){
+      Object.assign(base, {stickerId:entry.stickerId});
+    } else {
+      Object.assign(base, {text:entry.text, color:entry.color, photo:entry.photo||null});
+    }
+    return base;
+  }
+  function sharedContentPreviewHtml(c){
+    if(c.kind === 'sticker'){
+      const sticker = (state.data ? state.data.stickers : (state.managerData ? state.managerData.meta.stickers : [])||[]).find(s=>s.id===c.stickerId);
+      return sticker ? `<img src="${sticker.image}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;"><div class="muted" style="font-size:11px;margin-top:4px;">${escapeHtml(sticker.name)}</div>` : '<p class="muted">Autocollant introuvable.</p>';
+    }
+    const isText = c.kind === 'text';
+    return `
+      <div class="postit" style="cursor:default;background:${isText ? 'var(--bg-tile)' : (c.color||POSTIT_COLORS[0])};${isText ? 'box-shadow:none;border:1px dashed var(--border);font-family:'+textnoteFontCss(c.fontFamily)+';color:'+(c.color||TEXTNOTE_INK_COLORS[0])+';' : ''}max-width:220px;">
+        ${c.category ? `<div class="postit-cat">${escapeHtml(c.category)}</div>` : ''}
+        <div class="postit-text">${escapeHtml(c.text||'')}</div>
+        ${c.photo ? `<img src="${c.photo}">` : ''}
+      </div>
+    `;
+  }
+
+  let saveTimer = null;
+  function persist(){
+    return new Promise(resolve=>{
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(async ()=>{
+        if(!state.session || !state.data){ resolve(false); return; }
+        const ok = await rpcSave(state.session.name, state.session.code, notebookBlobFromData());
+        resolve(ok);
+      }, 400);
+    });
+  }
+  async function persistManagerMeta(){
+    if(!state.managerCode || !state.managerData) return;
+    const res = await rpcManagerAction(state.managerCode, 'save_meta', state.managerData.meta);
+    if(!res || !res.ok) showToast('Erreur de sauvegarde.');
+  }
+
+  // ---------- Rendu ----------
+  function render(){
+    closeModalDom();
+    const app = document.getElementById('app');
+    app.classList.toggle('wide', state.view==='notebook');
+    app.innerHTML = renderView();
+    attachHandlers(app);
+    if(state.modal) renderModal();
+    attachNotebookDrag();
+    attachFreeHandles();
+    attachQuickTextDraw();
+    attachQuickTextEditor();
+    attachTextSelectEditor();
+  }
+  function closeModalDom(){
+    const b = document.getElementById('modal-backdrop');
+    if(b) b.remove();
+  }
+
+  function renderView(){
+    if(state.view==='login') return renderLogin();
+    if(state.view==='notebook') return renderNotebook();
+    if(state.view==='manager-login') return renderManagerLogin();
+    if(state.view==='manager') return renderManager();
+    return renderLogin();
+  }
+
+  function renderLogin(){
+    return `
+      <div class="center-screen">
+        <h1>Carnet — CVM</h1>
+        <p class="muted" style="margin-bottom:20px;">Entre ton nom et ton code pour ouvrir ton carnet.</p>
+        <div class="card" style="text-align:left;">
+          <label>Nom</label>
+          <input id="lg-name" placeholder="Ton nom" value="${escapeHtml(state.session?state.session.name:'')}">
+          <label>Code</label>
+          <input id="lg-code" type="text" placeholder="Ton code" value="${escapeHtml(state.session?state.session.code:'')}">
+          <div class="btn-row">
+            <button class="btn btn-primary" style="width:100%;" data-action="do-login">Ouvrir mon carnet</button>
+          </div>
+        </div>
+        <p style="margin-top:18px;"><button class="small-btn" data-action="goto-manager-login">Espace gestionnaire</button></p>
+      </div>
+    `;
+  }
+
+  function renderManagerLogin(){
+    return `
+      <div class="center-screen">
+        <h1>Espace gestionnaire</h1>
+        <div class="card" style="text-align:left;">
+          <label>Code gestionnaire</label>
+          <input id="mg-code" type="text" placeholder="Code gestionnaire">
+          <div class="btn-row">
+            <button class="btn btn-primary" style="width:100%;" data-action="do-manager-login">Entrer</button>
+          </div>
+        </div>
+        <p style="margin-top:18px;"><button class="small-btn" data-action="goto-login">&larr; Retour au carnet</button></p>
+      </div>
+    `;
+  }
+
+  function inboxTotalCount(){
+    return (state.data.receivedItems||[]).length + (state.data.stickerGrants||[]).length;
+  }
+  function bottomActionsHtml(){
+    const n = inboxTotalCount();
+    return `
+      <div class="bottom-actions">
+        <span class="save-note">Sauvegarde automatique</span>
+        <button class="small-btn" data-action="open-received-items">📥 Reçu ${n?`<span class="badge">${n}</span>`:''}</button>
+        <button class="small-btn" data-action="open-report-bug">🐛 Signaler un bug</button>
+        <button class="small-btn" data-action="logout">Me déconnecter</button>
+      </div>
+    `;
+  }
+
+  function notebookSwitcherHtml(activeNotebook){
+    const list = getNotebooks();
+    if(list.length <= 1) return '';
+    return `
+      <div class="btn-row" style="margin-top:0;margin-bottom:8px;">
+        <select id="nb-select" class="nb-switch-select">
+          ${list.map(nb=>`<option value="${nb.id}" ${nb.id===activeNotebook.id?'selected':''}>${escapeHtml(nb.name)}</option>`).join('')}
+        </select>
+        <button class="small-btn" data-action="switch-notebook">Changer</button>
+      </div>
+    `;
+  }
+
+  function coverCarouselHtml(activeNotebook){
+    const list = getNotebooks();
+    if(list.length <= 1) return '';
+    return `
+      <div class="cover-carousel">
+        <div class="cover-carousel-label">Basculer vers un autre carnet</div>
+        <div class="carousel-row">
+          <div class="carousel-arrow" data-action="scroll-cover-carousel" data-dir="-1">◁</div>
+          <div class="carousel-track" id="cover-carousel-track">
+            ${list.map(nb=>`
+              <div class="thumb-cover ${nb.id===activeNotebook.id?'active':''}" data-action="switch-notebook-thumb" data-notebook="${nb.id}" title="${escapeHtml(nb.name)}" style="background:${nb.coverColor};${textureCss(nb.coverTexture)}">
+                <div class="tname">${escapeHtml(nb.name)}</div>
+              </div>
+            `).join('')}
+          </div>
+          <div class="carousel-arrow" data-action="scroll-cover-carousel" data-dir="1">▷</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function sideThumbColumnHtml(activeNotebook){
+    const list = getNotebooks();
+    if(list.length <= 1) return '';
+    return `
+      <div class="thumb-col-wrap">
+        <div class="thumb-vscroll-arrow" data-action="scroll-side-thumbs" data-dir="-1">▲</div>
+        <div class="thumb-vtrack" id="side-thumb-track">
+          ${list.map(nb=>`
+            <div class="thumb-cover-v ${nb.id===activeNotebook.id?'active':''}" data-action="switch-notebook-thumb" data-notebook="${nb.id}" title="${escapeHtml(nb.name)}" style="background:${nb.coverColor};${textureCss(nb.coverTexture)}">
+              <div class="tname">${escapeHtml(nb.name)}</div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="thumb-vscroll-arrow" data-action="scroll-side-thumbs" data-dir="1">▼</div>
+      </div>
+    `;
+  }
+
+  function renderNotebook(){
+    const activeNotebook = getOrCreateActiveNotebook();
+
+    if(!state.notebookOpened){
+      const coverStyle = `background:${activeNotebook.coverColor};${textureCss(activeNotebook.coverTexture)}`;
+      return `
+        <div class="cover-wrap">
+          <div style="margin-top:0;margin-bottom:10px;">${bottomActionsHtml()}</div>
+          ${notebookSwitcherHtml(activeNotebook)}
+          <div class="notebook-cover" style="${coverStyle}">
+            <div class="cover-title" style="color:${activeNotebook.coverTextColor};font-family:${textnoteFontCss(activeNotebook.titleFont||'marker')};font-size:${activeNotebook.titleSize||32}px;">${escapeHtml(activeNotebook.name)}</div>
+            <div class="cover-owner" style="color:${activeNotebook.coverTextColor};opacity:0.85;font-family:${textnoteFontCss(activeNotebook.nameFont||'sans')};font-size:${activeNotebook.nameSize||14}px;">${escapeHtml(state.session.name)}</div>
+            <div class="btn-row" style="justify-content:center;">
+              <button class="btn btn-primary" data-action="open-notebook-cover" style="margin-top:8px;">Ouvrir mon carnet</button>
+              <button class="btn btn-secondary" data-action="new-notebook" style="margin-top:8px;background:rgba(255,255,255,0.14);border-color:rgba(255,255,255,0.55);">+ Nouveau carnet</button>
+              <button class="small-btn-cover" data-action="open-notebook-settings" style="margin-top:8px;color:${activeNotebook.coverTextColor};border-color:${activeNotebook.coverTextColor};">⚙ Personnaliser</button>
+            </div>
+          </div>
+          <div class="cover-delete-row">
+            <button class="small-btn" data-action="delete-notebook" data-notebook="${activeNotebook.id}" style="color:var(--coral);border-color:var(--coral);">🗑 Supprimer ce carnet</button>
+          </div>
+        </div>
+        ${coverCarouselHtml(activeNotebook)}
+      `;
+    }
+
+    const entries = state.data.entries.filter(n=>n.notebookId===activeNotebook.id && !n.trashed).sort((a,b)=>b.createdAt-a.createdAt);
+    const usedCategories = Array.from(new Set(entries.map(n=>(n.category||'').trim()).filter(Boolean)));
+    const pageCount = activeNotebook.pageCount || 1;
+    const activePage = Math.min(state.notebookActivePage || 1, pageCount);
+    const searchOpen = !!state.notebookSearchOpen;
+    const searchQuery = state.notebookSearchQuery || '';
+
+    let searchHtml = '';
+    if(searchOpen){
+      const qn = normalizeStr(searchQuery);
+      const matches = qn ? entries.filter(n=> normalizeStr(n.text||'').includes(qn) || normalizeStr(n.category||'').includes(qn)) : [];
+      searchHtml = `
+        <div class="card" style="margin-bottom:12px;">
+          <input id="nb-search-input" placeholder="Chercher un mot-clé..." value="${escapeHtml(searchQuery)}">
+          <div class="btn-row"><button class="btn btn-secondary" data-action="run-notebook-search">Chercher</button><button class="small-btn" data-action="toggle-notebook-search">Fermer</button></div>
+          ${qn ? (matches.length ? `<ul class="link-list" style="margin-top:8px;">${matches.map(n=>`
+            <li><span>${escapeHtml(n.category)} — ${escapeHtml((n.text||'').slice(0,60))}${(n.text||'').length>60?'…':''}<br><span class="muted" style="font-size:11px;">Page ${n.page||1}</span></span>
+            <span><button class="small-btn" data-action="goto-notebook-page" data-page="${n.page||1}">Aller à la page</button></span></li>
+          `).join('')}</ul>` : '<p class="muted" style="margin-top:8px;">Aucun résultat.</p>') : ''}
+        </div>
+      `;
+    }
+
+    if(state.notebookFilterCategory){
+      const filtered = entries.filter(n=>n.category===state.notebookFilterCategory);
+      return `
+        <div class="interior-wrap">
+        <div style="margin-bottom:10px;">${bottomActionsHtml()}</div>
+        ${notebookSwitcherHtml(activeNotebook)}
+        ${notebookToolbarHtml(activeNotebook)}
+        ${categoryChipsHtml(usedCategories)}
+        ${searchHtml}
+        <div class="notebook-page" style="${notebookPageBgCss(activeNotebook)}">
+          <div class="notebook-postits">
+            ${filtered.map(n=> n.kind==='text' ? `
+              <div class="postit" style="background:transparent;box-shadow:none;border:1px dashed var(--border);font-family:${textnoteFontCss(n.fontFamily)};color:${n.color||TEXTNOTE_INK_COLORS[0]};">
+                <div class="postit-cat" style="color:var(--chalk-dim);">${escapeHtml(n.category)}</div>
+                <div class="postit-text">${escapeHtml(n.text)}</div>
+                <div class="postit-actions">
+                  <button data-action="goto-notebook-page" data-page="${n.page||1}">Page ${n.page||1}</button>
+                  <button data-action="edit-entry" data-id="${n.id}">Modifier</button>
+                  <button data-action="open-share" data-id="${n.id}">Partager</button>
+                </div>
+              </div>
+            ` : n.kind==='sticker' ? (()=>{
+              const sticker = state.data.stickers.find(s=>s.id===n.stickerId);
+              return sticker ? `
+              <div class="postit" style="background:var(--bg-tile);align-items:center;">
+                <img src="${sticker.image}" style="width:50px;height:50px;object-fit:cover;">
+                <div class="postit-text" style="font-size:12px;">${escapeHtml(sticker.name)}</div>
+                <div class="postit-actions">
+                  <button data-action="goto-notebook-page" data-page="${n.page||1}">Page ${n.page||1}</button>
+                  <button data-action="delete-entry" data-id="${n.id}">Retirer</button>
+                </div>
+              </div>` : '';
+            })() : `
+              <div class="postit" style="background:${n.color};">
+                <div class="postit-cat">${escapeHtml(n.category)}</div>
+                <div class="postit-text">${escapeHtml(n.text)}</div>
+                ${n.photo ? `<img src="${n.photo}">` : ''}
+                <div class="postit-actions">
+                  <button data-action="goto-notebook-page" data-page="${n.page||1}">Page ${n.page||1}</button>
+                  <button data-action="edit-entry" data-id="${n.id}">Modifier</button>
+                  <button data-action="open-share" data-id="${n.id}">Partager</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        </div>
+      `;
+    }
+
+    const leftTabs = []; for(let p=1;p<=Math.min(15,pageCount);p++) leftTabs.push(p);
+    const rightTabs = []; for(let p=16;p<=Math.min(pageCount,30);p++) rightTabs.push(p);
+    const pageEntries = entries.filter(n=>(n.page||1)===activePage);
+    const styleClass = activeNotebook.pageStyle==='point' ? 'style-point' : (activeNotebook.pageStyle==='vierge' ? 'style-vierge' : '');
+
+    return `
+      <div class="interior-wrap">
+      <div style="margin-bottom:6px;">${bottomActionsHtml()}</div>
+      ${notebookSwitcherHtml(activeNotebook)}
+      ${notebookToolbarHtml(activeNotebook)}
+      ${categoryChipsHtml(usedCategories)}
+      ${searchHtml}
+      <div class="notebook-frame">
+        ${sideThumbColumnHtml(activeNotebook)}
+        <div class="notebook-tabs left">
+          <div class="nb-tab nb-search" data-action="toggle-notebook-search" title="Chercher">🔍</div>
+          ${leftTabs.map(p=>`<div class="nb-tab ${p===activePage?'active':''}" data-action="goto-notebook-page" data-page="${p}">${p}</div>`).join('')}
+        </div>
+        <div class="notebook-canvas notebook-page ${styleClass}" style="--nb-page-color:${activeNotebook.pageColor};" id="nb-canvas">
+          ${pageEntries.filter(n=>n.kind!=='text'&&n.kind!=='sticker').map(n=>{
+            const pSize = n.size||150; const pScale = pSize/150;
+            return `
+            <div class="postit postit-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;transform:rotate(${n.rotation||0}deg);background:${n.color};width:${pSize}px;min-height:${Math.round(110*pScale)}px;">
+              <div class="postit-cat" style="font-size:${(10*pScale).toFixed(1)}px;">${escapeHtml(n.category)}</div>
+              <div class="postit-text" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="font-size:${(15*pScale).toFixed(1)}px;">${escapeHtml(n.text)}</div>
+              ${n.photo ? `<img src="${n.photo}">` : ''}
+              ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
+                <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
+                <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
+              ` : ''}
+              ${state.notebookEditMode ? `
+              <div class="postit-actions">
+                <button data-action="edit-entry" data-id="${n.id}">Modifier</button>
+                <button data-action="delete-entry" data-id="${n.id}">Retirer</button>
+                <button data-action="open-share" data-id="${n.id}">Partager</button>
+              </div>` : ''}
+            </div>
+          `;}).join('')}
+          ${pageEntries.filter(n=>n.kind==='text').map(n=>{
+            if(n.id===state.notebookQuickEditId){
+              return `
+              <div class="textnote-free quick-editing" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;">
+                <textarea id="quick-text-input" class="quick-text-textarea" data-id="${n.id}" placeholder="Écris ici..." style="width:${n.boxWidth||160}px;height:${Math.max(28,n.boxHeight||28)}px;font-family:${textnoteFontCss(n.fontFamily||'sans')};font-size:${n.fontSize||10}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};">${escapeHtml(n.text||'')}</textarea>
+              </div>
+              `;
+            }
+            const hAlign = n.hAlign||'left';
+            const tx = hAlign==='right' ? '-100%' : (hAlign==='center' ? '-50%' : '0');
+            const wide = (hAlign==='center'||hAlign==='justify');
+            const boxCss = n.boxWidth ? `display:block;width:${n.boxWidth}px;` : (wide?'display:block;width:100%;':'');
+            return `
+            <div class="textnote-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;translate:${tx} 0;transform:rotate(${n.rotation||0}deg);text-align:${hAlign};${n.boxWidth?`width:${n.boxWidth}px;max-width:${n.boxWidth}px;`:''}font-family:${textnoteFontCss(n.fontFamily)};font-size:${n.fontSize||16}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};">
+              <span class="textnote-content" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="${boxCss}">${escapeHtml(n.text)}</span>
+              ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
+                <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
+                <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
+              ` : ''}
+              ${state.notebookEditMode ? `
+              <div class="textnote-toolbar">
+                <button data-action="edit-entry" data-id="${n.id}">Modifier</button>
+                <button data-action="delete-entry" data-id="${n.id}">Retirer</button>
+                <button data-action="open-share" data-id="${n.id}">Partager</button>
+              </div>` : ''}
+            </div>
+          `;}).join('')}
+          ${pageEntries.filter(n=>n.kind==='sticker').map(n=>{
+            const sticker = state.data.stickers.find(s=>s.id===n.stickerId);
+            if(!sticker) return '';
+            return `
+            <div class="sticker-free ${n.id===state.notebookSelectedEntry?'selected':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;transform:rotate(${n.rotation||0}deg);width:${n.size||60}px;">
+              <img src="${sticker.image}" style="width:${n.size||60}px;">
+              ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
+                <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
+                <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
+              ` : ''}
+              ${state.notebookEditMode ? `
+              <div class="textnote-toolbar">
+                <button data-action="delete-entry" data-id="${n.id}">Retirer</button>
+                <button data-action="open-share" data-id="${n.id}">Partager</button>
+              </div>` : ''}
+            </div>
+          `;}).join('')}
+          <div class="btn-row" style="position:absolute;bottom:10px;right:10px;">
+            <button class="btn btn-primary" data-action="new-postit">+ Post-it</button>
+            <button class="btn btn-secondary" data-action="new-textnote">+ Note</button>
+            <button class="btn btn-secondary ${state.notebookQuickTextDraw?'active':''}" data-action="start-quick-text" style="${state.notebookQuickTextDraw?'background:var(--amber);border-color:var(--amber);':''}">+ Texte</button>
+            <button class="btn btn-secondary" data-action="open-sticker-picker">+ Autocollant</button>
+            ${pageCount < MAX_NOTEBOOK_PAGES ? `<button class="btn btn-secondary" data-action="add-notebook-page">+ Page</button>` : ''}
+            ${pageCount > 1 ? `<button class="btn btn-secondary" data-action="delete-notebook-page">🗑 Supprimer la page</button>` : ''}
+          </div>
+          ${state.notebookQuickTextDraw ? `<p class="muted" style="font-family:inherit;position:absolute;top:8px;left:52px;background:var(--bg-panel);padding:4px 10px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,0.12);">Dessine un rectangle sur la page pour écrire.</p>` : ''}
+          ${!pageEntries.length ? `<p class="muted" style="font-family:inherit;">Page ${activePage} vide — clique sur + Post-it, + Note ou + Autocollant.</p>` : ''}
+        </div>
+        <div class="notebook-tabs right">
+          ${rightTabs.map(p=>`<div class="nb-tab ${p===activePage?'active':''}" data-action="goto-notebook-page" data-page="${p}">${p}</div>`).join('')}
+        </div>
+      </div>
+      <p class="muted" style="font-size:11px;margin-top:4px;margin-bottom:0;">Page ${activePage} sur ${pageCount} (max 15 par côté) · glisse une note pour la repositionner.</p>
+      </div>
+    `;
+  }
+
+  function notebookToolbarHtml(activeNotebook){
+    return `
+      <div class="btn-row" style="margin-bottom:6px;">
+        <button class="small-btn" data-action="close-notebook-cover">← Fermer le carnet</button>
+        <button class="small-btn" data-action="open-notebook-settings">⚙ Personnaliser</button>
+        <button class="small-btn" data-action="new-notebook">+ Nouveau carnet</button>
+        <button class="small-btn ${state.notebookEditMode?'active':''}" data-action="toggle-notebook-edit-mode">${state.notebookEditMode ? '✓ Mode édition' : '✎ Modifier le carnet'}</button>
+        <button class="small-btn" data-action="open-notebook-trash">🗑 Corbeille${trashedItems().length?' ('+trashedItems().length+')':''}</button>
+        <button class="small-btn" data-action="delete-notebook" data-notebook="${activeNotebook.id}" style="color:var(--coral);">🗑 Supprimer ce carnet</button>
+      </div>
+    `;
+  }
+  function categoryChipsHtml(usedCategories){
+    return `
+      <div style="margin-bottom:6px;">
+        <button class="category-chip ${!state.notebookFilterCategory?'active':''}" data-action="filter-notebook-category" data-category="">Tous</button>
+        ${usedCategories.map(cat=>`<button class="category-chip ${state.notebookFilterCategory===cat?'active':''}" data-action="filter-notebook-category" data-category="${escapeHtml(cat)}">${escapeHtml(cat)}</button>`).join('')}
+      </div>
+    `;
+  }
+
+  // ---------- Espace gestionnaire ----------
+  function renderManager(){
+    const md = state.managerData;
+    const tabs = [
+      ['comptes','Comptes'],
+      ['stickers','Autocollants'],
+      ['notes','Notes & modération'],
+      ['bugs','Bugs'],
+      ['parametres','Paramètres'],
+    ];
+    const tabsHtml = tabs.map(([k,label])=>{
+      let count = 0;
+      if(k==='notes') count = pendingModerationItems().length + flaggedInappropriateItems().length;
+      return `<button class="tab-btn ${state.managerTab===k?'active':''}" data-action="manager-tab" data-tab="${k}">${label}${count?` (${count})`:''}</button>`;
+    }).join('');
+
+    let body = '';
+    if(state.managerTab==='comptes'){
+      body = `
+        <div class="card">
+          <h3>Ajouter un compte</h3>
+          <label>Nom</label>
+          <input id="acc-name" placeholder="Nom de la personne">
+          <label>Code (donne-le à la personne)</label>
+          <input id="acc-code" placeholder="Ex. 8K2M9Q">
+          <div class="btn-row"><button class="btn btn-primary" data-action="create-account">Créer le compte</button></div>
+        </div>
+        <div class="card">
+          <h3>Comptes existants (${md.accounts.length})</h3>
+          ${md.accounts.length ? md.accounts.map(a=>`
+            <div class="list-row">
+              <span><strong>${escapeHtml(a.name)}</strong><br><span class="muted" style="font-size:11px;">créé le ${formatDate(a.createdAt)}</span></span>
+              <span>
+                <button class="small-btn" data-action="open-sticker-grant-picker" data-name="${escapeHtml(a.name)}">🎁 Autocollant</button>
+                <button class="small-btn" data-action="open-send-note-form" data-name="${escapeHtml(a.name)}">✉️ Note</button>
+                <button class="small-btn" data-action="delete-account" data-name="${escapeHtml(a.name)}">Supprimer</button>
+              </span>
+            </div>
+          `).join('') : '<p class="muted">Aucun compte pour l’instant.</p>'}
+        </div>
+      `;
+    } else if(state.managerTab==='stickers'){
+      body = managerStickerBankHtml();
+    } else if(state.managerTab==='notes'){
+      body = managerNotesModerationHtml();
+    } else if(state.managerTab==='bugs'){
+      const bugs = md.meta.bugReports || [];
+      body = `
+        <div class="card">
+          <h3>Signalements de bugs (${bugs.length})</h3>
+          ${bugs.length ? bugs.slice().reverse().map(b=>`
+            <div class="list-row" style="align-items:flex-start;">
+              <span><strong>${escapeHtml(b.fromName)}</strong> · <span class="muted" style="font-size:11px;">${formatDate(b.createdAt)}</span><br>${escapeHtml(b.text)}</span>
+              <button class="small-btn" data-action="delete-bug" data-id="${b.id}">Supprimer</button>
+            </div>
+          `).join('') : '<p class="muted">Aucun bug signalé.</p>'}
+        </div>
+      `;
+    } else if(state.managerTab==='parametres'){
+      body = `
+        <div class="card">
+          <h3>Changer le code gestionnaire</h3>
+          <label>Nouveau code</label>
+          <input id="new-mgr-code" placeholder="Nouveau code gestionnaire">
+          <div class="btn-row"><button class="btn btn-primary" data-action="change-manager-code">Enregistrer</button></div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="top-bar">
+        <h1>Espace gestionnaire</h1>
+        <button class="small-btn" data-action="manager-logout">Me déconnecter</button>
+      </div>
+      <div class="tabs">${tabsHtml}</div>
+      ${body}
+    `;
+  }
+
+  function pendingModerationItems(){
+    return (state.managerData.meta.sharedItems||[]).filter(s=>s.anonymous && s.status==='pending_review');
+  }
+  function flaggedInappropriateItems(){
+    return (state.managerData.meta.sharedItems||[]).filter(s=>s.inappropriate && s.status!=='archived');
+  }
+  function managerInboxItems(){
+    return (state.managerData.meta.sharedItems||[]).filter(s=>s.recipientType==='coach' && s.status==='delivered');
+  }
+  function managerArchivedItems(){
+    return (state.managerData.meta.sharedItems||[]).filter(s=>s.recipientType==='coach' && s.status==='archived').sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  }
+
+  function managerStickerBankHtml(){
+    const md = state.managerData;
+    const stickers = md.meta.stickers || [];
+    const q = normalizeStr(state.stickerSearchQuery||'');
+    const visible = q ? stickers.filter(s=>normalizeStr(s.name||'').includes(q)||normalizeStr(s.category||'').includes(q)) : stickers;
+    const stickerLi = s => `
+      <li>
+        <span><img src="${s.image}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;vertical-align:middle;margin-right:8px;"><strong>${escapeHtml(s.name)}</strong> — ${s.availableToAll ? 'Toutes les personnes' : ((s.assignedNames&&s.assignedNames.length) ? escapeHtml(s.assignedNames.length+' personne(s)') : 'En banque (non assigné)')}</span>
+        <span>
+          <button class="small-btn" data-action="edit-sticker" data-id="${s.id}">Modifier</button>
+          <button class="small-btn" data-action="delete-sticker" data-id="${s.id}">Supprimer</button>
+        </span>
+      </li>
+    `;
+    const groups = usedStickerCategories().map(c=>({key:c,label:c}));
+    groups.push({key:'', label:'Sans catégorie'});
+    const groupRows = groups.map(g=>{
+      const items = visible.filter(s=>(s.category||'')===g.key);
+      if(!items.length) return '';
+      const isOpen = !!state.expandedStickerGroups[g.key] || !!q;
+      return `
+        <div style="margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+          <button type="button" data-action="toggle-admin-sticker-group" data-group="${escapeHtml(g.key)}" style="width:100%;display:flex;justify-content:space-between;align-items:center;border:none;border-radius:0;background:var(--bg-tile);color:var(--chalk);padding:10px 12px;cursor:pointer;font-family:var(--font-d);font-size:13px;text-transform:uppercase;letter-spacing:0.02em;">
+            <span>${escapeHtml(g.label)} (${items.length})</span><span>${isOpen?'▲':'▼'}</span>
+          </button>
+          ${isOpen ? `<ul class="link-list" style="padding:6px 12px;margin:0;">${items.map(stickerLi).join('')}</ul>` : ''}
+        </div>
+      `;
+    }).join('');
+    return `
+      <div class="card">
+        <h3>Banque d’autocollants (${stickers.length})</h3>
+        <label>Rechercher (nom ou catégorie)</label>
+        <input id="sticker-search-input" placeholder="Rechercher..." value="${escapeHtml(state.stickerSearchQuery||'')}">
+        <div class="btn-row"><button class="btn btn-secondary" data-action="run-sticker-search">Rechercher</button></div>
+        ${stickers.length ? (groupRows || '<p class="muted" style="margin-top:10px;">Aucun résultat.</p>') : '<p class="muted">Aucun autocollant. Ajoutez-en un ci-dessous.</p>'}
+        <div class="btn-row"><button class="btn btn-primary" data-action="new-sticker">+ Ajouter un autocollant</button></div>
+      </div>
+    `;
+  }
+
+  function managerNotesModerationHtml(){
+    const pending = pendingModerationItems();
+    const flagged = flaggedInappropriateItems();
+    const inbox = managerInboxItems();
+    const archived = managerArchivedItems();
+    let out = '';
+    if(pending.length){
+      out += `
+        <div class="card">
+          <h3>Notes anonymes à approuver (${pending.length})</h3>
+          <p class="muted">Vous voyez le contenu, jamais qui l’envoie ni à qui elle est destinée. Si un message est inacceptable, utilisez « 🚩 Signaler » pour voir d’où il vient (politique de tolérance zéro).</p>
+          ${pending.map(it=>`
+            <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+              ${sharedContentPreviewHtml(it)}
+              <div class="btn-row" style="margin-top:8px;">
+                <button class="small-btn" data-action="approve-shared-item" data-id="${it.id}">Approuver</button>
+                <button class="small-btn" data-action="refuse-shared-item" data-id="${it.id}">Refuser</button>
+                <button class="small-btn" data-action="confirm-flag-shared-item" data-id="${it.id}" style="color:var(--coral);">🚩 Signaler comme inapproprié</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+    if(inbox.length){
+      out += `
+        <div class="card">
+          <h3>Notes reçues (${inbox.length})</h3>
+          ${inbox.map(it=>`
+            <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+              ${sharedContentPreviewHtml(it)}
+              <div class="btn-row" style="margin-top:8px;"><button class="small-btn" data-action="archive-shared-item" data-id="${it.id}">Marquer comme lu</button></div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+    if(flagged.length){
+      out += `
+        <div class="card">
+          <h3>🚩 Messages signalés inappropriés (${flagged.length})</h3>
+          <p class="muted">Exception à l’anonymat : origine et destination sont révélées ici.</p>
+          ${flagged.map(it=>`
+            <div class="flagged-box" style="border-radius:8px;padding:10px;margin-bottom:10px;">
+              ${sharedContentPreviewHtml(it)}
+              <p style="font-size:12px;color:var(--chalk-dim);margin:6px 0;">De : <span style="color:var(--chalk);">${escapeHtml(it.senderName||'inconnu')}</span><br>À : <span style="color:var(--chalk);">${it.recipientType==='coach' ? 'Coach' : escapeHtml(it.recipientName||'inconnu')}</span></p>
+              <div class="btn-row" style="margin-top:8px;">
+                <button class="small-btn" data-action="archive-shared-item" data-id="${it.id}">Marquer comme traité</button>
+                <button class="small-btn" data-action="unflag-shared-item" data-id="${it.id}">Annuler le signalement</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+    if(archived.length){
+      out += `
+        <div class="card">
+          <h3>Archivées (${archived.length})</h3>
+          ${archived.map(it=>{
+            const isOpen = !!state.expandedArchivedNotes[it.id];
+            const snippet = it.kind==='sticker' ? '🎟️ Autocollant offert' : (escapeHtml((it.text||'').slice(0,46)) + ((it.text||'').length>46?'…':''));
+            return `
+            <div style="border:1px solid var(--border);border-radius:8px;padding:${isOpen?'10px':'6px 10px'};margin-bottom:8px;">
+              <button type="button" data-action="toggle-archived-note" data-id="${it.id}" style="width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px;background:transparent;border:none;padding:0;cursor:pointer;text-align:left;">
+                <span style="font-size:12px;color:var(--chalk-dim);">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-CA'):''} — ${snippet}</span>
+                <span style="font-family:var(--font-d);font-size:12px;">${isOpen?'▲':'▼'}</span>
+              </button>
+              ${isOpen ? `<div style="margin-top:10px;">${sharedContentPreviewHtml(it)}<div class="btn-row" style="margin-top:8px;"><button class="small-btn" data-action="delete-shared-item-admin" data-id="${it.id}" style="color:var(--coral);">Supprimer définitivement</button></div></div>` : ''}
+            </div>
+          `;}).join('')}
+        </div>
+      `;
+    }
+    if(!out) out = '<div class="card"><p class="muted">Rien à modérer pour l’instant.</p></div>';
+    return out;
+  }
+
+  // ---------- Modales ----------
+  function renderModal(){
+    const m = state.modal;
+    let html = '';
+
+    if(m.type==='postit-form'){
+      const entry = m.payload.entry;
+      const nb = getOrCreateActiveNotebook();
+      const maxPage = nb.pageCount || 1;
+      const category = entry ? entry.category : '';
+      const color = entry ? entry.color : POSTIT_COLORS[0];
+      const currentPage = entry ? (entry.page||1) : (state.notebookActivePage||1);
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>${entry ? 'Modifier le post-it' : 'Nouveau post-it'}</h3>
+          <label>Catégorie</label>
+          <input id="postit-category-input" list="postit-category-list" placeholder="Tape ta catégorie" value="${escapeHtml(category)}">
+          <datalist id="postit-category-list">${userNotebookCategories().map(c=>`<option value="${escapeHtml(c)}">`).join('')}</datalist>
+          <label style="margin-top:10px;">Note</label>
+          <textarea id="postit-text" rows="4">${entry?escapeHtml(entry.text):''}</textarea>
+          <label style="margin-top:10px;">Couleur</label>
+          <div class="color-swatches">
+            ${POSTIT_COLORS.map(c=>`<span class="sq-swatch" data-action="pick-postit-color" data-color="${c}" style="background:${c};border-color:${postitSwatchBorder(c,color===c)};"></span>`).join('')}
+          </div>
+          <input type="hidden" id="postit-color-value" value="${color}">
+          ${entry ? `<label style="margin-top:10px;">Page (1 à ${maxPage})</label><input id="postit-page" type="number" min="1" max="${maxPage}" value="${currentPage}">` : ''}
+          <label style="margin-top:10px;">Photo (optionnel)</label>
+          <input type="file" id="postit-photo-file" accept="image/*">
+          ${entry && entry.photo ? `<img src="${entry.photo}" style="max-width:100px;margin-top:6px;border-radius:4px;display:block;">` : ''}
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="save-postit" data-id="${entry?entry.id:''}">Enregistrer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type==='textnote-form'){
+      const entry = m.payload.entry;
+      const nb = getOrCreateActiveNotebook();
+      const maxPage = nb.pageCount || 1;
+      const category = entry ? entry.category : '';
+      const fontFamily = entry ? (entry.fontFamily||'marker') : 'marker';
+      const paletteKey = (entry && entry.inkPalette) || nb.inkPalette || 'pastel';
+      const paletteColors = textnotePaletteColors(paletteKey);
+      const color = entry ? (entry.color||paletteColors[0]) : paletteColors[0];
+      const hAlign = entry ? (entry.hAlign||'left') : 'left';
+      const currentPage = entry ? (entry.page||1) : (state.notebookActivePage||1);
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>${entry ? (entry.boxWidth ? 'Modifier un texte' : 'Modifier une note') : 'Nouvelle note'}</h3>
+          <label>Catégorie</label>
+          <input id="textnote-category-input" list="textnote-category-list" placeholder="Tape ta catégorie" value="${escapeHtml(category)}">
+          <datalist id="textnote-category-list">${userNotebookCategories().map(c=>`<option value="${escapeHtml(c)}">`).join('')}</datalist>
+          <label style="margin-top:10px;">Texte</label>
+          <textarea id="textnote-text" rows="4">${entry?escapeHtml(entry.text):''}</textarea>
+          <label style="margin-top:10px;">Police</label>
+          <select id="textnote-font">
+            ${TEXTNOTE_FONTS.map(f=>`<option value="${f.key}" style="font-family:${f.css};" ${fontFamily===f.key?'selected':''}>${escapeHtml(f.label)}</option>`).join('')}
+          </select>
+          <label style="margin-top:10px;">Palette de couleurs</label>
+          <div class="btn-row" id="textnote-palette-row" style="margin-top:0;">
+            ${TEXTNOTE_PALETTES.map(p=>`<button type="button" class="small-btn textnote-palette-btn ${p.key===paletteKey?'active':''}" data-palette="${p.key}">${escapeHtml(p.label)}</button>`).join('')}
+          </div>
+          <input type="hidden" id="textnote-palette-value" value="${paletteKey}">
+          <label style="margin-top:10px;">Couleur du texte</label>
+          <div class="color-swatches" id="textnote-swatch-row">${renderTextnoteSwatchesHtml(paletteColors, color)}</div>
+          <input type="hidden" id="textnote-color-value" value="${color}">
+          <label style="margin-top:10px;">Alignement du texte</label>
+          <div class="btn-row" style="margin-top:0;">
+            <button type="button" class="small-btn textnote-align-btn ${hAlign==='left'?'active':''}" data-value="left">⟸ Gauche</button>
+            <button type="button" class="small-btn textnote-align-btn ${hAlign==='center'?'active':''}" data-value="center">↔ Centré</button>
+            <button type="button" class="small-btn textnote-align-btn ${hAlign==='right'?'active':''}" data-value="right">Droite ⟹</button>
+            <button type="button" class="small-btn textnote-align-btn ${hAlign==='justify'?'active':''}" data-value="justify">☰ Justifié</button>
+          </div>
+          <input type="hidden" id="textnote-halign-value" value="${hAlign}">
+          ${entry ? `<label style="margin-top:10px;">Page (1 à ${maxPage})</label><input id="textnote-page" type="number" min="1" max="${maxPage}" value="${currentPage}">` : ''}
+          <p class="muted" style="font-size:11px;margin-top:8px;">Une fois enregistrée, la note se déplace, se redimensionne et pivote directement sur la page.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="save-textnote" data-id="${entry?entry.id:''}">Enregistrer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type==='sticker-picker'){
+      const studioStickers = (state.data.stickers||[]).filter(s=>s.availableToAll || (s.assignedNames||[]).some(n=>n.toLowerCase()===state.session.name.toLowerCase()));
+      const gifted = (state.data.stickerGrants||[]).map(g=>{
+        const s = state.data.stickers.find(x=>x.id===g.stickerId);
+        return s ? Object.assign({}, s, {grantId:g.id, grantMessage:g.message||''}) : null;
+      }).filter(Boolean);
+      const giftedIds = new Set(gifted.map(s=>s.id));
+      const studioOnly = studioStickers.filter(s=>!giftedIds.has(s.id));
+      const grid = list => `<div class="sticker-picker-grid">${list.map(s=>`
+        <div class="sticker-picker-item" data-action="pick-sticker" data-sticker="${s.id}" ${s.grantId?`data-grant="${s.grantId}"`:''}>
+          <img src="${s.image}"><div class="sname">${escapeHtml(s.name)}</div>
+          ${s.grantMessage ? `<div class="sname" style="font-style:italic;">"${escapeHtml(s.grantMessage)}"</div>` : ''}
+        </div>
+      `).join('')}</div>`;
+      html = `
+        <div class="modal" style="max-width:420px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Ajouter un autocollant</h3>
+          ${gifted.length ? `<label style="color:var(--coral);">🎁 Cadeaux du coach</label>${grid(gifted)}` : ''}
+          ${studioOnly.length ? `<label style="margin-top:${gifted.length?'14px':'0'};">Autocollants disponibles</label>${grid(studioOnly)}` : ''}
+          ${(!gifted.length && !studioOnly.length) ? '<p class="muted">Aucun autocollant disponible pour l’instant.</p>' : ''}
+          <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+        </div>
+      `;
+    } else if(m.type==='share-form'){
+      const {entryId} = m.payload;
+      const entry = state.data.entries.find(n=>n.id===entryId);
+      const recipientType = state.shareRecipientType || 'coach';
+      const selected = state.shareSelectedRecipient;
+      const searchQuery = state.shareSearchQuery || '';
+      const searchResults = state.shareSearchResults || [];
+      html = entry ? `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Partager cette note</h3>
+          <div style="margin:10px 0;">${sharedContentPreviewHtml(entry)}</div>
+          <label>Destinataire</label>
+          <div class="btn-row" style="margin-top:0;">
+            <button type="button" class="small-btn ${recipientType==='coach'?'active':''}" data-action="set-share-recipient-type" data-value="coach">Coach</button>
+            <button type="button" class="small-btn ${recipientType==='person'?'active':''}" data-action="set-share-recipient-type" data-value="person">Une autre personne</button>
+          </div>
+          ${recipientType==='person' ? (selected ? `
+            <p style="margin:10px 0;">Sélectionné : <strong>${escapeHtml(selected)}</strong> <button type="button" class="small-btn" data-action="clear-share-recipient">Changer</button></p>
+          ` : `
+            <label style="margin-top:10px;">Chercher un nom</label>
+            <input id="share-search-input" placeholder="Nom..." value="${escapeHtml(searchQuery)}">
+            <div class="btn-row"><button class="btn btn-secondary" data-action="run-share-search">Chercher</button></div>
+            ${searchQuery ? (searchResults.length ? `<ul class="link-list" style="margin-top:8px;">${searchResults.map(r=>`<li><span>${escapeHtml(r.name)}</span><span><button class="small-btn" data-action="pick-share-recipient" data-name="${escapeHtml(r.name)}">Choisir</button></span></li>`).join('')}</ul>` : '<p class="muted" style="margin-top:8px;">Aucun résultat.</p>') : ''}
+          `) : ''}
+          <p class="muted" style="font-size:11px;margin-top:14px;">Ton nom est toujours joint à la note que tu envoies — livrée immédiatement.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="send-share" data-entry="${entryId}">Envoyer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      ` : '<div class="modal"><p>Note introuvable.</p><div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div></div>';
+    } else if(m.type==='received-items'){
+      const items = state.data.receivedItems || [];
+      const gifted = state.data.stickerGrants || [];
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>📥 Reçu</h3>
+          ${items.map(it=>`
+            <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+              ${sharedContentPreviewHtml(it)}
+              ${it.senderName && !it.anonymous ? `<p class="muted" style="font-size:11px;margin:4px 0 0;">De : ${escapeHtml(it.senderName)}</p>` : ''}
+              <div class="btn-row" style="margin-top:8px;">
+                <button class="small-btn" data-action="claim-shared-item" data-id="${it.id}">Placer sur la page</button>
+                <button class="small-btn" data-action="delete-shared-item" data-id="${it.id}" style="color:var(--coral);">Supprimer</button>
+              </div>
+            </div>
+          `).join('')}
+          ${gifted.map(g=>{
+            const sticker = state.data.stickers.find(s=>s.id===g.stickerId);
+            if(!sticker) return '';
+            return `
+            <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+              <img src="${sticker.image}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;"><div>🎁 ${escapeHtml(sticker.name)}</div>
+              ${g.message ? `<p style="font-style:italic;color:var(--chalk-dim);font-size:12px;">"${escapeHtml(g.message)}"</p>` : ''}
+              <div class="btn-row" style="margin-top:8px;">
+                <button class="small-btn" data-action="claim-gifted-sticker" data-grant="${g.id}">Placer sur la page</button>
+                <button class="small-btn" data-action="delete-gifted-sticker" data-grant="${g.id}" style="color:var(--coral);">Supprimer</button>
+              </div>
+            </div>
+          `;}).join('')}
+          ${(!items.length && !gifted.length) ? '<p class="muted">Rien de nouveau pour l’instant.</p>' : ''}
+          <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+        </div>
+      `;
+    } else if(m.type==='notebook-trash'){
+      const items = trashedItems();
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>🗑 Corbeille</h3>
+          <p class="muted" style="font-size:12px;">Les notes, post-its et autocollants retirés du carnet restent ici — tu peux les remettre sur la page, ou les renvoyer là où ils ont été reçus.</p>
+          ${items.length ? items.map(it=>`
+            <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+              ${sharedContentPreviewHtml(it)}
+              <div class="btn-row" style="margin-top:8px;">
+                <button class="small-btn" data-action="restore-entry" data-id="${it.id}">↩ Restaurer sur la page</button>
+                ${it.shareId ? `<button class="small-btn" data-action="return-shared-to-origin" data-id="${it.id}">📥 Remettre dans mes reçus</button>` : ''}
+                ${it.kind==='sticker' && it.grantId ? `<button class="small-btn" data-action="return-sticker-to-bank" data-id="${it.id}">📥 Remettre dans mes reçus</button>` : ''}
+                <button class="small-btn" data-action="permanently-delete-entry" data-id="${it.id}" style="color:var(--coral);">Supprimer définitivement</button>
+              </div>
+            </div>
+          `).join('') : '<p class="muted">La corbeille est vide.</p>'}
+          <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+        </div>
+      `;
+    } else if(m.type==='sticker-grant-picker'){
+      const name = m.payload.name;
+      const grantedIds = new Set((state.managerData.meta.stickerGrants||[]).filter(g=>g.name.toLowerCase()===name.toLowerCase() && !g.used).map(g=>g.stickerId));
+      const stickers = state.managerData.meta.stickers || [];
+      html = `
+        <div class="modal" style="max-width:420px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Attribuer un autocollant à ${escapeHtml(name)}</h3>
+          <label style="margin-top:6px;">Petit message (optionnel)</label>
+          <input id="grant-message-input" placeholder="ex. Bravo !" style="margin-bottom:10px;">
+          ${stickers.length ? `<div class="sticker-picker-grid">${stickers.map(s=>`
+            <div class="sticker-picker-item" data-action="grant-sticker" data-sticker="${s.id}" data-name="${escapeHtml(name)}" style="${grantedIds.has(s.id)?'opacity:0.4;':''}">
+              <img src="${s.image}"><div class="sname">${escapeHtml(s.name)}${grantedIds.has(s.id)?' ✓':''}</div>
+            </div>
+          `).join('')}</div>` : '<p class="muted">Aucun autocollant dans la banque.</p>'}
+          <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+        </div>
+      `;
+    } else if(m.type==='send-note-form'){
+      const name = m.payload.name;
+      html = `
+        <div class="modal" style="max-width:420px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>✉️ Envoyer une note à ${escapeHtml(name)}</h3>
+          <p class="muted" style="font-size:12px;">La note apparaît directement dans son carnet (📥 Reçu), signée par vous — livrée tout de suite.</p>
+          <label style="margin-top:10px;">Message</label>
+          <textarea id="coach-note-text" rows="4" placeholder="ex. Belle progression cette semaine !"></textarea>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="send-coach-note" data-name="${escapeHtml(name)}">Envoyer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type==='sticker-form'){
+      const entry = m.payload.entry;
+      const pendingAll = m.payload.pendingAll;
+      const pendingAssigned = m.payload.pendingAssigned || [];
+      const searchQuery = m.payload.searchQuery || '';
+      const searchResults = m.payload.searchResults || [];
+      html = `
+        <div class="modal" style="max-width:440px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>${entry ? 'Modifier l’autocollant' : 'Nouvel autocollant'}</h3>
+          <label>Nom</label>
+          <input id="sticker-name" value="${entry?escapeHtml(entry.name):''}" placeholder="ex. Ceinture jaune">
+          <label style="margin-top:10px;">Catégorie</label>
+          <input id="sticker-category" list="sticker-category-list" placeholder="Tape ou choisis une catégorie (optionnel)" value="${escapeHtml(entry&&entry.category?entry.category:'')}">
+          <datalist id="sticker-category-list">${usedStickerCategories().map(c=>`<option value="${escapeHtml(c)}">`).join('')}</datalist>
+          <label style="margin-top:10px;">Image</label>
+          <input type="file" id="sticker-image-file" accept="image/*">
+          ${entry && entry.image ? `<img src="${entry.image}" style="max-width:80px;margin-top:6px;border-radius:6px;display:block;">` : ''}
+          <label style="margin-top:14px;display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" data-action="toggle-sticker-all" style="width:auto;" ${pendingAll?'checked':''}>
+            <span style="color:var(--chalk);font-size:13px;">Disponible à tout le monde</span>
+          </label>
+          ${!pendingAll ? `
+            <p class="muted" style="font-size:11px;margin-top:6px;">Sans personne assignée ci-dessous, l’autocollant reste en banque — tu pourras l’attribuer plus tard.</p>
+            <label style="margin-top:10px;">Donner à des personnes spécifiques</label>
+            <input id="sticker-assign-search" placeholder="Nom" value="${escapeHtml(searchQuery)}">
+            <div class="btn-row"><button class="btn btn-secondary" data-action="sticker-assign-search">Rechercher</button></div>
+            ${searchResults.length ? `<ul class="link-list" style="margin-top:8px;">${searchResults.map(a=>`<li><span>${escapeHtml(a.name)}</span><span><button class="small-btn" data-action="sticker-assign-add" data-name="${escapeHtml(a.name)}">Ajouter</button></span></li>`).join('')}</ul>` : ''}
+            <label style="margin-top:10px;">Personnes assignées (${pendingAssigned.length})</label>
+            ${pendingAssigned.length ? `<ul class="link-list">${pendingAssigned.map(a=>`<li><span>${escapeHtml(a)}</span><span><button class="small-btn" data-action="sticker-assign-remove" data-name="${escapeHtml(a)}">Retirer</button></span></li>`).join('')}</ul>` : '<p class="muted" style="font-size:12px;">Aucune pour l’instant.</p>'}
+          ` : ''}
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="save-sticker" data-id="${entry?entry.id:''}">Enregistrer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type==='notebook-settings'){
+      const nb = getOrCreateActiveNotebook();
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Personnaliser ce carnet</h3>
+          <label>Nom du carnet</label>
+          <input id="nb-name-input" value="${escapeHtml(nb.name)}">
+          <label style="margin-top:10px;">Police du titre</label>
+          <select id="nb-title-font-input">${TEXTNOTE_FONTS.map(f=>`<option value="${f.key}" style="font-family:${f.css};" ${(nb.titleFont||'marker')===f.key?'selected':''}>${escapeHtml(f.label)}</option>`).join('')}</select>
+          <label style="margin-top:8px;">Taille du titre (px)</label>
+          <input id="nb-title-size-input" type="number" min="14" max="60" value="${nb.titleSize||32}" style="width:90px;">
+          <label style="margin-top:10px;">Police de ton nom</label>
+          <select id="nb-name-font-input">${TEXTNOTE_FONTS.map(f=>`<option value="${f.key}" style="font-family:${f.css};" ${(nb.nameFont||'sans')===f.key?'selected':''}>${escapeHtml(f.label)}</option>`).join('')}</select>
+          <label style="margin-top:8px;">Taille de ton nom (px)</label>
+          <input id="nb-name-size-input" type="number" min="10" max="36" value="${nb.nameSize||14}" style="width:90px;">
+          <label style="margin-top:14px;">Couleur de la couverture</label>
+          <div style="display:flex;gap:8px;margin:6px 0;flex-wrap:wrap;">
+            ${COVER_COLORS.map(c=>`<span class="nb-cover-swatch sq-swatch" data-color="${c}" style="background:${c};border-color:${nb.coverColor===c?'var(--amber)':'transparent'};"></span>`).join('')}
+          </div>
+          <input type="hidden" id="nb-cover-color-value" value="${nb.coverColor}">
+          <label style="margin-top:10px;">Texture de la couverture</label>
+          <div style="display:flex;gap:8px;margin:6px 0;flex-wrap:wrap;">
+            ${TEXTURES.map(t=>`<span class="nb-texture-swatch sq-swatch" data-texture="${t.key}" title="${escapeHtml(t.label)}" style="width:30px;height:30px;background:${nb.coverColor};${textureCss(t.key)}border-color:${nb.coverTexture===t.key?'var(--amber)':'var(--border)'};"></span>`).join('')}
+          </div>
+          <input type="hidden" id="nb-texture-value" value="${nb.coverTexture}">
+          <label style="margin-top:10px;">Couleur du texte de la couverture</label>
+          <input id="nb-cover-text-color-input" type="color" value="${nb.coverTextColor}" style="width:60px;height:36px;padding:2px;cursor:pointer;">
+          <label style="margin-top:14px;">Couleur de la page</label>
+          <div style="display:flex;gap:8px;margin:6px 0;">
+            ${PAGE_COLORS.map(c=>`<span class="nb-page-swatch sq-swatch" data-color="${c}" style="background:${c};border-color:${nb.pageColor===c?'var(--amber)':'var(--border)'};"></span>`).join('')}
+          </div>
+          <input type="hidden" id="nb-page-color-value" value="${nb.pageColor}">
+          <label style="margin-top:10px;">Style des feuilles</label>
+          <select id="nb-page-style-input">
+            <option value="ligne" ${(nb.pageStyle||'ligne')==='ligne'?'selected':''}>Ligné</option>
+            <option value="vierge" ${(nb.pageStyle||'ligne')==='vierge'?'selected':''}>Vierge</option>
+            <option value="point" ${(nb.pageStyle||'ligne')==='point'?'selected':''}>Pointillé</option>
+          </select>
+          <label style="margin-top:10px;">Couleur par défaut des post-it</label>
+          <div style="display:flex;gap:8px;margin:6px 0;">
+            ${POSTIT_COLORS.map(c=>`<span class="nb-postit-swatch sq-swatch" data-color="${c}" style="background:${c};border-color:${postitSwatchBorder(c,nb.postitColor===c)};"></span>`).join('')}
+          </div>
+          <input type="hidden" id="nb-postit-color-value" value="${nb.postitColor}">
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="save-notebook-settings" data-notebook="${nb.id}">Enregistrer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+          <div class="btn-row" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
+            <button class="btn btn-danger" data-action="delete-notebook" data-notebook="${nb.id}">🗑 Supprimer ce carnet</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type==='confirm-delete-notebook'){
+      const {notebookId} = m.payload;
+      const nb = state.data.notebooks.find(x=>x.id===notebookId);
+      const itemCount = state.data.entries.filter(n=>n.notebookId===notebookId).length;
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Supprimer « ${escapeHtml(nb?nb.name:'')} » ?</h3>
+          <p class="muted">Les autocollants et notes reçus (📥 Reçu) retourneront dans tes reçus. Mais tout le reste — ${itemCount} élément(s) — sera perdu définitivement.</p>
+          <p style="font-weight:600;color:var(--coral);">Es-tu sûr·e de vouloir supprimer ce carnet ? Cette action est irréversible.</p>
+          <div class="btn-row">
+            <button class="btn btn-danger" data-action="confirm-delete-notebook-yes" data-notebook="${notebookId}">Oui, supprimer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type==='confirm-flag-shared-item'){
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Signaler comme inapproprié ?</h3>
+          <p class="muted">Exception à l’anonymat : l’origine et la destination de ce message deviendront visibles (politique de tolérance zéro). À utiliser seulement pour un contenu réellement inacceptable.</p>
+          <div class="btn-row">
+            <button class="btn btn-danger" data-action="flag-shared-item" data-id="${m.payload.id}">Oui, signaler</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type==='add-notebook'){
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Nouveau carnet</h3>
+          <label>Nom du carnet</label>
+          <input id="new-nb-name" placeholder="Ex. Carnet compétition">
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="submit-new-notebook">Créer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type==='report-bug'){
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Signaler un bug</h3>
+          <label>Décris le problème</label>
+          <textarea id="bug-text" rows="4" placeholder="Qu’est-ce qui ne fonctionne pas ?"></textarea>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="submit-bug">Envoyer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    }
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.id = 'modal-backdrop';
+    backdrop.innerHTML = html;
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener('click', (e)=>{ if(e.target===backdrop){ state.modal=null; closeModalDom(); } });
+    attachHandlers(backdrop);
+    wireModalExtras(backdrop, m);
+  }
+
+  function wireModalExtras(backdrop, m){
+    if(m.type==='postit-form'){
+      const photoInput = backdrop.querySelector('#postit-photo-file');
+      if(photoInput){
+        photoInput.addEventListener('change', async (ev)=>{
+          const f = ev.target.files[0];
+          if(!f) return;
+          try{ pendingPostitPhoto = await resizeImageFile(f, 300); showToast('Photo prête à être enregistrée.'); }
+          catch(err){ showToast('Impossible de traiter cette image.'); }
+        });
+      }
+    }
+    if(m.type==='textnote-form'){
+      const hiddenInput = backdrop.querySelector('#textnote-color-value');
+      const swatchRow = backdrop.querySelector('#textnote-swatch-row');
+      function wireSwatches(){
+        swatchRow.querySelectorAll('.textnote-color-swatch').forEach(sw=>{
+          sw.addEventListener('click', ()=>{
+            hiddenInput.value = sw.dataset.color;
+            swatchRow.querySelectorAll('.textnote-color-swatch').forEach(s=>s.style.borderColor='transparent');
+            sw.style.borderColor = 'var(--amber)';
+          });
+        });
+      }
+      wireSwatches();
+      const paletteBtns = backdrop.querySelectorAll('.textnote-palette-btn');
+      const paletteHidden = backdrop.querySelector('#textnote-palette-value');
+      paletteBtns.forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const key = btn.dataset.palette;
+          paletteHidden.value = key;
+          paletteBtns.forEach(b=>b.classList.remove('active'));
+          btn.classList.add('active');
+          const colors = textnotePaletteColors(key);
+          hiddenInput.value = colors[0];
+          swatchRow.innerHTML = renderTextnoteSwatchesHtml(colors, colors[0]);
+          wireSwatches();
+        });
+      });
+      const alignBtns = backdrop.querySelectorAll('.textnote-align-btn');
+      const hAlignInput = backdrop.querySelector('#textnote-halign-value');
+      alignBtns.forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          hAlignInput.value = btn.dataset.value;
+          alignBtns.forEach(b=>b.classList.remove('active'));
+          btn.classList.add('active');
+        });
+      });
+    }
+    if(m.type==='sticker-form'){
+      const imgInput = backdrop.querySelector('#sticker-image-file');
+      if(imgInput){
+        imgInput.addEventListener('change', async (ev)=>{
+          const f = ev.target.files[0];
+          if(!f) return;
+          try{ pendingStickerImage = await resizeImageFile(f, 220); showToast('Image prête à être enregistrée.'); }
+          catch(err){ showToast('Impossible de traiter cette image.'); }
+        });
+      }
+    }
+    if(m.type==='notebook-settings'){
+      const pageSwatches = backdrop.querySelectorAll('.nb-page-swatch');
+      const pageHidden = backdrop.querySelector('#nb-page-color-value');
+      pageSwatches.forEach(sw=>sw.addEventListener('click', ()=>{
+        pageHidden.value = sw.dataset.color;
+        pageSwatches.forEach(s=>s.style.borderColor='var(--border)');
+        sw.style.borderColor = 'var(--amber)';
+      }));
+      const postitSwatches = backdrop.querySelectorAll('.nb-postit-swatch');
+      const postitHidden = backdrop.querySelector('#nb-postit-color-value');
+      postitSwatches.forEach(sw=>sw.addEventListener('click', ()=>{
+        postitHidden.value = sw.dataset.color;
+        postitSwatches.forEach(s=>s.style.borderColor=postitSwatchBorder(s.dataset.color,false));
+        sw.style.borderColor = 'var(--amber)';
+      }));
+      const textureSwatches = backdrop.querySelectorAll('.nb-texture-swatch');
+      const textureHidden = backdrop.querySelector('#nb-texture-value');
+      textureSwatches.forEach(sw=>sw.addEventListener('click', ()=>{
+        textureHidden.value = sw.dataset.texture;
+        textureSwatches.forEach(s=>s.style.borderColor='var(--border)');
+        sw.style.borderColor = 'var(--amber)';
+      }));
+      const coverSwatches = backdrop.querySelectorAll('.nb-cover-swatch');
+      const coverHidden = backdrop.querySelector('#nb-cover-color-value');
+      coverSwatches.forEach(sw=>sw.addEventListener('click', ()=>{
+        coverHidden.value = sw.dataset.color;
+        coverSwatches.forEach(s=>s.style.borderColor='transparent');
+        sw.style.borderColor = 'var(--amber)';
+        textureSwatches.forEach(ts=>ts.style.background = sw.dataset.color);
+      }));
+    }
+  }
+
+  // ---------- Glisser-déposer (post-its, notes-texte, autocollants) ----------
+  function attachNotebookDrag(){
+    const canvas = document.getElementById('nb-canvas');
+    if(!canvas) return;
+    if(!state.notebookEditMode) return;
+    let dragEl=null, dragId=null, startX=0, startY=0, startLeft=0, startTop=0, moved=false;
+    function onMove(ev){
+      if(!dragEl) return;
+      const point = ev.touches ? ev.touches[0] : ev;
+      const dxPx = point.clientX - startX, dyPx = point.clientY - startY;
+      if(Math.abs(dxPx)>3 || Math.abs(dyPx)>3) moved = true;
+      const rect = canvas.getBoundingClientRect();
+      let newLeft = startLeft + (dxPx/rect.width)*100;
+      let newTop = startTop + (dyPx/rect.height)*100;
+      newLeft = Math.max(0, Math.min(85, newLeft));
+      newTop = Math.max(0, Math.min(88, newTop));
+      dragEl.style.left = newLeft+'%';
+      dragEl.style.top = newTop+'%';
+    }
+    async function onUp(){
+      if(!dragEl) return;
+      const el = dragEl, wasMoved = moved;
+      dragEl.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onUp);
+      dragEl = null;
+      if(wasMoved){
+        const entry = state.data.entries.find(n=>n.id===dragId);
+        if(entry){ entry.x = parseFloat(el.style.left); entry.y = parseFloat(el.style.top); await persist(); }
+      } else if(el.classList.contains('textnote-free') || el.classList.contains('sticker-free') || el.classList.contains('postit-free')){
+        state.notebookSelectedEntry = state.notebookSelectedEntry === dragId ? null : dragId;
+        render();
+      }
+    }
+    canvas.addEventListener('mousedown', (ev)=>{
+      if(state.notebookQuickTextDraw) return;
+      if(state.notebookQuickEditId) return; // laisse le blur naturel sauvegarder le texte rapide sans re-rendu concurrent
+      if(state.notebookTextSelectId) return; // laisse le blur naturel sauvegarder l'édition en cours sans re-rendu concurrent
+      if(ev.target===canvas && (state.notebookSelectedEntry || state.notebookTextSelectId)){
+        state.notebookSelectedEntry=null; state.notebookTextSelectId=null; render();
+      }
+    });
+    canvas.querySelectorAll('.postit-free, .textnote-free, .sticker-free').forEach(node=>{
+      const startDrag = (ev)=>{
+        if(ev.target.closest('button')) return;
+        const isTextContent = ev.target.closest('.textnote-content, .postit-text');
+        if(isTextContent){
+          if(state.notebookTextSelectId === node.dataset.id) return; // déjà en mode sélection : laisse le texte se sélectionner nativement
+          const now = Date.now();
+          const isDoubleClick = lastContentClick.id === node.dataset.id && (now - lastContentClick.time) < 400;
+          lastContentClick = {id: node.dataset.id, time: now};
+          if(isDoubleClick){
+            state.notebookSelectedEntry = node.dataset.id;
+            state.notebookTextSelectId = node.dataset.id;
+            render();
+            return;
+          }
+        } else {
+          lastContentClick = {id:null, time:0};
+        }
+        if(state.notebookTextSelectId && state.notebookTextSelectId !== node.dataset.id) state.notebookTextSelectId = null;
+        const point = ev.touches ? ev.touches[0] : ev;
+        dragEl = node; dragId = node.dataset.id; moved = false;
+        startX = point.clientX; startY = point.clientY;
+        startLeft = parseFloat(node.style.left) || 0;
+        startTop = parseFloat(node.style.top) || 0;
+        node.classList.add('dragging');
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove, {passive:false});
+        document.addEventListener('touchend', onUp);
+        ev.preventDefault();
+      };
+      node.addEventListener('mousedown', startDrag);
+      node.addEventListener('touchstart', startDrag, {passive:false});
+    });
+  }
+
+  function attachFreeHandles(){
+    const canvas = document.getElementById('nb-canvas');
+    if(!canvas) return;
+    canvas.querySelectorAll('.rotate-handle').forEach(handle=>{
+      const wrap = handle.closest('.textnote-free, .sticker-free, .postit-free');
+      if(!wrap) return;
+      const id = handle.dataset.id;
+      const start = (ev)=>{
+        ev.preventDefault(); ev.stopPropagation();
+        const point = ev.touches ? ev.touches[0] : ev;
+        const rect = wrap.getBoundingClientRect();
+        const cx = rect.left+rect.width/2, cy = rect.top+rect.height/2;
+        const entry = state.data.entries.find(n=>n.id===id);
+        const startRotation = (entry && entry.rotation) || 0;
+        const startAngle = Math.atan2(point.clientY-cy, point.clientX-cx)*180/Math.PI;
+        let pendingRotation = startRotation;
+        function onMove(mv){
+          const p = mv.touches ? mv.touches[0] : mv;
+          const angle = Math.atan2(p.clientY-cy, p.clientX-cx)*180/Math.PI;
+          pendingRotation = Math.round(startRotation + (angle-startAngle));
+          wrap.style.transform = `rotate(${pendingRotation}deg)`;
+        }
+        async function onEnd(){
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onEnd);
+          document.removeEventListener('touchmove', onMove);
+          document.removeEventListener('touchend', onEnd);
+          if(entry){ entry.rotation = pendingRotation; await persist(); }
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchmove', onMove, {passive:false});
+        document.addEventListener('touchend', onEnd);
+      };
+      handle.addEventListener('mousedown', start);
+      handle.addEventListener('touchstart', start, {passive:false});
+    });
+    canvas.querySelectorAll('.resize-handle').forEach(handle=>{
+      const wrap = handle.closest('.textnote-free, .sticker-free, .postit-free');
+      if(!wrap) return;
+      const id = handle.dataset.id;
+      const isSticker = wrap.classList.contains('sticker-free');
+      const isPostit = wrap.classList.contains('postit-free');
+      const start = (ev)=>{
+        ev.preventDefault(); ev.stopPropagation();
+        const point = ev.touches ? ev.touches[0] : ev;
+        const rect = wrap.getBoundingClientRect();
+        const cx = rect.left+rect.width/2, cy = rect.top+rect.height/2;
+        const startDist = Math.max(20, Math.hypot(point.clientX-cx, point.clientY-cy));
+        const entry = state.data.entries.find(n=>n.id===id);
+        const startSize = isSticker ? (entry.size||60) : isPostit ? (entry.size||150) : (entry.fontSize||16);
+        const minSize = isSticker ? 24 : isPostit ? 100 : 10;
+        const maxSize = isSticker ? 240 : isPostit ? 400 : 60;
+        let pendingSize = startSize;
+        function onMove(mv){
+          const p = mv.touches ? mv.touches[0] : mv;
+          const dist = Math.max(20, Math.hypot(p.clientX-cx, p.clientY-cy));
+          pendingSize = Math.round(Math.max(minSize, Math.min(maxSize, startSize*(dist/startDist))));
+          if(isSticker){ wrap.style.width = pendingSize+'px'; const img=wrap.querySelector('img'); if(img) img.style.width=pendingSize+'px'; }
+          else if(isPostit){
+            const scale = pendingSize/150;
+            wrap.style.width = pendingSize+'px';
+            wrap.style.minHeight = Math.round(110*scale)+'px';
+            const cat = wrap.querySelector('.postit-cat'); if(cat) cat.style.fontSize = (10*scale).toFixed(1)+'px';
+            const txt = wrap.querySelector('.postit-text'); if(txt) txt.style.fontSize = (15*scale).toFixed(1)+'px';
+          }
+          else wrap.style.fontSize = pendingSize+'px';
+        }
+        async function onEnd(){
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onEnd);
+          document.removeEventListener('touchmove', onMove);
+          document.removeEventListener('touchend', onEnd);
+          if(entry){ if(isSticker||isPostit) entry.size = pendingSize; else entry.fontSize = pendingSize; await persist(); }
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchmove', onMove, {passive:false});
+        document.addEventListener('touchend', onEnd);
+      };
+      handle.addEventListener('mousedown', start);
+      handle.addEventListener('touchstart', start, {passive:false});
+    });
+  }
+
+  function attachQuickTextDraw(){
+    const canvas = document.getElementById('nb-canvas');
+    if(!canvas) return;
+    if(!state.notebookQuickTextDraw) return;
+    canvas.classList.add('quick-text-drawing');
+    let startX=0, startY=0, previewEl=null;
+    function onMove(ev){
+      if(!previewEl) return;
+      const point = ev.touches ? ev.touches[0] : ev;
+      const rect = canvas.getBoundingClientRect();
+      const curX = Math.max(0, Math.min(rect.width, point.clientX-rect.left));
+      const curY = Math.max(0, Math.min(rect.height, point.clientY-rect.top));
+      const left = Math.min(startX, curX), top = Math.min(startY, curY);
+      const w = Math.abs(curX-startX), h = Math.abs(curY-startY);
+      previewEl.style.left = left+'px'; previewEl.style.top = top+'px';
+      previewEl.style.width = w+'px'; previewEl.style.height = h+'px';
+    }
+    async function onUp(ev){
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onUp);
+      if(!previewEl) return;
+      const rect = canvas.getBoundingClientRect();
+      const boxWidthPx = Math.max(60, parseFloat(previewEl.style.width)||160);
+      const boxHeightPx = Math.max(28, parseFloat(previewEl.style.height)||28);
+      const leftPx = parseFloat(previewEl.style.left)||0;
+      const topPx = parseFloat(previewEl.style.top)||0;
+      previewEl.remove(); previewEl = null;
+      const nb = getOrCreateActiveNotebook();
+      const entry = {
+        id: uid(), notebookId: nb.id, kind:'text', page: state.notebookActivePage||1,
+        x: Math.max(0, Math.min(85, (leftPx/rect.width)*100)),
+        y: Math.max(0, Math.min(88, (topPx/rect.height)*100)),
+        boxWidth: Math.round(boxWidthPx),
+        boxHeight: Math.round(boxHeightPx),
+        text:'', fontFamily:'sans', fontSize:10, color:TEXTNOTE_INK_COLORS[0], rotation:0, hAlign:'left',
+        createdAt: Date.now(),
+      };
+      state.data.entries.push(entry);
+      state.notebookQuickTextDraw = false;
+      state.notebookQuickEditId = entry.id;
+      render();
+    }
+    const startDraw = (ev)=>{
+      if(ev.target.closest('button') || ev.target.closest('.btn-row')) return;
+      const point = ev.touches ? ev.touches[0] : ev;
+      const rect = canvas.getBoundingClientRect();
+      startX = Math.max(0, Math.min(rect.width, point.clientX-rect.left));
+      startY = Math.max(0, Math.min(rect.height, point.clientY-rect.top));
+      previewEl = document.createElement('div');
+      previewEl.className = 'quick-text-preview';
+      previewEl.style.left = startX+'px'; previewEl.style.top = startY+'px';
+      previewEl.style.width = '0px'; previewEl.style.height = '0px';
+      canvas.appendChild(previewEl);
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      document.addEventListener('touchmove', onMove, {passive:false});
+      document.addEventListener('touchend', onUp);
+      ev.preventDefault();
+    };
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('touchstart', startDraw, {passive:false});
+  }
+
+  function attachQuickTextEditor(){
+    if(!state.notebookQuickEditId) return;
+    const ta = document.getElementById('quick-text-input');
+    if(!ta) return;
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    let done = false;
+    async function finish(){
+      if(done) return; done = true;
+      const val = ta.value.trim();
+      const entry = state.data.entries.find(n=>n.id===state.notebookQuickEditId);
+      if(entry){
+        if(!val){
+          state.data.entries = state.data.entries.filter(n=>n.id!==entry.id);
+        } else {
+          entry.text = val;
+        }
+        await persist();
+      }
+      state.notebookQuickEditId = null;
+      render();
+    }
+    ta.addEventListener('blur', finish);
+    ta.addEventListener('keydown', (ev)=>{
+      if(ev.key==='Escape'){ ev.preventDefault(); ta.blur(); }
+    });
+  }
+
+  function attachTextSelectEditor(){
+    if(!state.notebookTextSelectId) return;
+    const canvas = document.getElementById('nb-canvas');
+    if(!canvas) return;
+    const el = canvas.querySelector(`[contenteditable="true"][data-id="${state.notebookTextSelectId}"]`);
+    if(!el) return;
+    setTimeout(()=>{ el.focus(); }, 0); // après le focus par défaut du mousedown, pour ne pas se faire écraser
+    let done = false;
+    async function finish(){
+      if(done) return; done = true;
+      const val = (el.innerText || el.textContent || '').replace(/\n+$/,'');
+      const entry = state.data.entries.find(n=>n.id===state.notebookTextSelectId);
+      if(entry){ entry.text = val; await persist(); }
+      state.notebookTextSelectId = null;
+      render();
+    }
+    el.addEventListener('blur', finish);
+    el.addEventListener('keydown', (ev)=>{
+      if(ev.key==='Enter'){ ev.preventDefault(); el.blur(); }
+      if(ev.key==='Escape'){ ev.preventDefault(); el.blur(); }
+    });
+  }
+
+  // ---------- Délégation d'événements ----------
+  function attachHandlers(root){
+    root.querySelectorAll('[data-action]').forEach(el=>{
+      el.addEventListener('click', onAction);
+    });
+  }
+
+  async function onAction(e){
+    const action = e.currentTarget.dataset.action;
+    const id = e.currentTarget.dataset.id;
+
+    // ---- Connexion ----
+    if(action==='do-login'){
+      const name = document.getElementById('lg-name').value.trim();
+      const code = document.getElementById('lg-code').value.trim();
+      if(!name || !code){ markInvalid([!name?'lg-name':null, !code?'lg-code':null].filter(Boolean)); showToast('Nom et code requis.'); return; }
+      showToast('Connexion...');
+      const res = await rpcLoad(name, code);
+      if(!res){ showToast('Nom ou code incorrect.'); return; }
+      state.session = {name, code};
+      storeSession(state.session);
+      applyLoadResult(res);
+      state.view = 'notebook';
+      render();
+      return;
+    }
+    if(action==='logout'){
+      state.session=null; state.data=null; storeSession(null); state.view='login'; render(); return;
+    }
+    if(action==='goto-manager-login'){ state.view='manager-login'; render(); return; }
+    if(action==='goto-login'){ state.view='login'; render(); return; }
+    if(action==='do-manager-login'){
+      const code = document.getElementById('mg-code').value.trim();
+      if(!code){ markInvalid('mg-code'); return; }
+      showToast('Connexion...');
+      const res = await rpcManagerLoad(code);
+      if(!res){ showToast('Code incorrect.'); return; }
+      state.managerCode = code; storeManagerCode(code);
+      state.managerData = res; state.managerTab = 'comptes';
+      state.view = 'manager'; render();
+      return;
+    }
+    if(action==='manager-logout'){ state.managerCode=null; state.managerData=null; storeManagerCode(null); state.view='login'; render(); return; }
+    if(action==='manager-tab'){ state.managerTab = e.currentTarget.dataset.tab; render(); return; }
+
+    // ---- Carnet : ouverture / carnets multiples ----
+    if(action==='open-notebook-cover'){ state.notebookOpened = true; state.notebookActivePage = 1; render(); return; }
+    if(action==='close-notebook-cover'){ state.notebookOpened = false; state.notebookFilterCategory = null; render(); return; }
+    if(action==='new-notebook'){ state.modal = {type:'add-notebook'}; render(); return; }
+    if(action==='submit-new-notebook'){
+      const name = document.getElementById('new-nb-name').value.trim() || 'Nouveau carnet';
+      const list = getNotebooks();
+      const color = COVER_COLORS[list.length % COVER_COLORS.length];
+      const nb = {
+        id: uid(), name, pageCount:1, coverColor: color, coverTexture:'', coverTextColor:'#F4EFE7',
+        pageColor: PAGE_COLORS[0], pageStyle:'ligne', postitColor: POSTIT_COLORS[0],
+        titleFont:'marker', titleSize:32, nameFont:'sans', nameSize:14, inkPalette:'pastel', createdAt: Date.now(),
+      };
+      state.data.notebooks.push(nb);
+      state.data.activeNotebookId = nb.id;
+      state.notebookOpened = false;
+      await persist();
+      state.modal = null; render();
+      showToast('Carnet créé.');
+      return;
+    }
+    if(action==='switch-notebook'){
+      const sel = document.getElementById('nb-select');
+      if(sel){ state.data.activeNotebookId = sel.value; state.notebookActivePage = 1; state.notebookFilterCategory = null; await persist(); render(); }
+      return;
+    }
+    if(action==='switch-notebook-thumb'){
+      const nid = e.currentTarget.dataset.notebook;
+      if(nid && nid!==state.data.activeNotebookId){
+        state.data.activeNotebookId = nid; state.notebookActivePage = 1; state.notebookFilterCategory = null;
+        await persist(); render();
+      }
+      return;
+    }
+    if(action==='scroll-cover-carousel'){
+      const dir = parseInt(e.currentTarget.dataset.dir,10)||1;
+      const track = document.getElementById('cover-carousel-track');
+      if(track) track.scrollBy({left: dir*180, behavior:'smooth'});
+      return;
+    }
+    if(action==='scroll-side-thumbs'){
+      const dir = parseInt(e.currentTarget.dataset.dir,10)||1;
+      const track = document.getElementById('side-thumb-track');
+      if(track) track.scrollBy({top: dir*100, behavior:'smooth'});
+      return;
+    }
+    if(action==='delete-notebook'){
+      state.modal = {type:'confirm-delete-notebook', payload:{notebookId: e.currentTarget.dataset.notebook}};
+      render(); return;
+    }
+    if(action==='confirm-delete-notebook-yes'){
+      const notebookId = e.currentTarget.dataset.notebook;
+      const remaining = getNotebooks().filter(x=>x.id!==notebookId);
+      // Les autocollants et notes reçus (shareId/grantId) retournent dans les reçus plutôt que d'être perdus.
+      const toReturn = state.data.entries.filter(n=>n.notebookId===notebookId && (n.shareId || n.grantId));
+      for(const n of toReturn){
+        if(n.shareId){
+          const res = await rpcPersonAction(state.session.name, state.session.code, 'return_shared_to_inbox', {id:n.shareId});
+          if(res && res.ok){
+            const content = sharedItemContentFromEntry(n);
+            state.data.receivedItems = state.data.receivedItems || [];
+            state.data.receivedItems.unshift(Object.assign({id:n.shareId, senderName:n.senderName||'', anonymous:n.anonymous||false}, content));
+          }
+        } else if(n.grantId){
+          const res = await rpcPersonAction(state.session.name, state.session.code, 'return_sticker_to_bank', {id:n.grantId});
+          if(res && res.ok){
+            state.data.stickerGrants = state.data.stickerGrants || [];
+            state.data.stickerGrants.unshift({id:n.grantId, stickerId:n.stickerId, message:'', used:false, grantedAt:Date.now()});
+          }
+        }
+      }
+      state.data.notebooks = state.data.notebooks.filter(x=>x.id!==notebookId);
+      state.data.entries = state.data.entries.filter(n=>n.notebookId!==notebookId);
+      state.data.activeNotebookId = remaining.length ? remaining[0].id : null;
+      state.notebookActivePage = 1; state.notebookFilterCategory = null;
+      await persist();
+      state.modal = null; render();
+      showToast('Carnet supprimé.');
+      return;
+    }
+    if(action==='open-notebook-settings'){ state.modal = {type:'notebook-settings', payload:{notebookId: getOrCreateActiveNotebook().id}}; render(); return; }
+    if(action==='save-notebook-settings'){
+      const nb = state.data.notebooks.find(x=>x.id===e.currentTarget.dataset.notebook);
+      if(!nb){ showToast('Carnet introuvable.'); return; }
+      nb.name = document.getElementById('nb-name-input').value.trim() || nb.name;
+      nb.titleFont = document.getElementById('nb-title-font-input').value;
+      nb.titleSize = parseInt(document.getElementById('nb-title-size-input').value,10) || 32;
+      nb.nameFont = document.getElementById('nb-name-font-input').value;
+      nb.nameSize = parseInt(document.getElementById('nb-name-size-input').value,10) || 14;
+      nb.coverColor = document.getElementById('nb-cover-color-value').value;
+      nb.coverTexture = document.getElementById('nb-texture-value').value;
+      nb.coverTextColor = document.getElementById('nb-cover-text-color-input').value;
+      nb.pageColor = document.getElementById('nb-page-color-value').value;
+      nb.pageStyle = document.getElementById('nb-page-style-input').value;
+      nb.postitColor = document.getElementById('nb-postit-color-value').value;
+      const ok = await persist();
+      showToast(ok===false ? "Erreur d'enregistrement, réessaie." : 'Carnet personnalisé.');
+      state.modal = null; render();
+      return;
+    }
+
+    // ---- Pages ----
+    if(action==='goto-notebook-page'){ state.notebookActivePage = parseInt(e.currentTarget.dataset.page,10)||1; state.notebookFilterCategory=null; render(); return; }
+    if(action==='add-notebook-page'){
+      const nb = getOrCreateActiveNotebook();
+      if((nb.pageCount||1) >= MAX_NOTEBOOK_PAGES){ showToast('Nombre maximum de pages atteint.'); return; }
+      nb.pageCount = (nb.pageCount||1)+1;
+      state.notebookActivePage = nb.pageCount;
+      await persist(); render();
+      return;
+    }
+    if(action==='delete-notebook-page'){
+      const nb = getOrCreateActiveNotebook();
+      const pageCount = nb.pageCount||1;
+      if(pageCount<=1){ showToast('Un carnet doit garder au moins une page.'); return; }
+      const targetPage = Math.min(state.notebookActivePage||1, pageCount);
+      state.data.entries.forEach(n=>{
+        if(n.notebookId!==nb.id) return;
+        const p = n.page||1;
+        if(p===targetPage){ n.trashed=true; n.trashedAt=Date.now(); }
+        else if(p>targetPage){ n.page = p-1; }
+      });
+      nb.pageCount = pageCount-1;
+      state.notebookActivePage = Math.min(targetPage, nb.pageCount);
+      await persist(); render();
+      showToast('Page supprimée — les notes qu’elle contenait sont dans la corbeille.');
+      return;
+    }
+    if(action==='toggle-notebook-edit-mode'){ state.notebookEditMode = !state.notebookEditMode; state.notebookSelectedEntry=null; render(); return; }
+    if(action==='toggle-notebook-search'){ state.notebookSearchOpen = !state.notebookSearchOpen; render(); return; }
+    if(action==='run-notebook-search'){ state.notebookSearchQuery = document.getElementById('nb-search-input').value.trim(); render(); return; }
+    if(action==='filter-notebook-category'){ state.notebookFilterCategory = e.currentTarget.dataset.category || null; render(); return; }
+
+    // ---- Post-its ----
+    if(action==='new-postit'){ pendingPostitPhoto=null; state.modal={type:'postit-form', payload:{entry:null}}; render(); return; }
+    if(action==='start-quick-text'){
+      state.notebookQuickTextDraw = !state.notebookQuickTextDraw;
+      if(state.notebookQuickTextDraw) showToast('Dessine un rectangle sur la page pour écrire.');
+      render(); return;
+    }
+    if(action==='edit-entry'){
+      const entry = state.data.entries.find(n=>n.id===id);
+      if(!entry) return;
+      if(entry.kind==='text'){ state.modal={type:'textnote-form', payload:{entry}}; render(); return; }
+      pendingPostitPhoto = entry.photo || null;
+      state.modal = {type:'postit-form', payload:{entry}}; render(); return;
+    }
+    if(action==='pick-postit-color'){
+      document.getElementById('postit-color-value').value = e.currentTarget.dataset.color;
+      const row = e.currentTarget.parentElement;
+      if(row) row.querySelectorAll('.sq-swatch').forEach(s=>s.style.borderColor=postitSwatchBorder(s.dataset.color,false));
+      e.currentTarget.style.borderColor = 'var(--amber)';
+      return;
+    }
+    if(action==='save-postit'){
+      const nb = getOrCreateActiveNotebook();
+      const text = document.getElementById('postit-text').value.trim();
+      const category = document.getElementById('postit-category-input').value.trim();
+      const color = document.getElementById('postit-color-value').value;
+      if(!text){ markInvalid('postit-text'); showToast('La note ne peut pas être vide.'); return; }
+      if(!category){ markInvalid('postit-category-input'); showToast('Choisis ou tape une catégorie.'); return; }
+      if(id){
+        const entry = state.data.entries.find(n=>n.id===id);
+        if(entry){
+          entry.text=text; entry.category=category; entry.color=color;
+          if(pendingPostitPhoto) entry.photo = pendingPostitPhoto;
+          const pageInput = document.getElementById('postit-page');
+          if(pageInput){ const maxPage = nb.pageCount||1; entry.page = Math.max(1, Math.min(maxPage, parseInt(pageInput.value,10)||1)); }
+        }
+      } else {
+        state.data.entries.push({id:uid(), notebookId:nb.id, kind:'postit', page:state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), text, category, color, photo:pendingPostitPhoto||null, createdAt:Date.now()});
+      }
+      pendingPostitPhoto = null;
+      await persist();
+      state.modal=null; render();
+      showToast('Note enregistrée.');
+      return;
+    }
+    if(action==='delete-entry'){
+      const entry = state.data.entries.find(n=>n.id===id);
+      if(entry){ entry.trashed=true; entry.trashedAt=Date.now(); }
+      if(state.notebookSelectedEntry===id) state.notebookSelectedEntry=null;
+      await persist(); render();
+      showToast('Retiré — envoyé à la corbeille.');
+      return;
+    }
+
+    // ---- Notes-texte ----
+    if(action==='new-textnote'){ state.modal={type:'textnote-form', payload:{entry:null}}; render(); return; }
+    if(action==='save-textnote'){
+      const nb = getOrCreateActiveNotebook();
+      const text = document.getElementById('textnote-text').value.trim();
+      const category = document.getElementById('textnote-category-input').value.trim();
+      const fontFamily = document.getElementById('textnote-font').value;
+      const color = document.getElementById('textnote-color-value').value;
+      const hAlign = document.getElementById('textnote-halign-value').value || 'left';
+      const inkPalette = document.getElementById('textnote-palette-value').value || 'pastel';
+      if(!text){ markInvalid('textnote-text'); showToast('La note ne peut pas être vide.'); return; }
+      if(!category){ markInvalid('textnote-category-input'); showToast('Choisis ou tape une catégorie.'); return; }
+      if(id){
+        const entry = state.data.entries.find(n=>n.id===id);
+        if(entry){
+          entry.text=text; entry.category=category; entry.fontFamily=fontFamily; entry.color=color; entry.hAlign=hAlign;
+          const pageInput = document.getElementById('textnote-page');
+          if(pageInput){ const maxPage = nb.pageCount||1; entry.page = Math.max(1, Math.min(maxPage, parseInt(pageInput.value,10)||1)); }
+        }
+      } else {
+        state.data.entries.push({id:uid(), notebookId:nb.id, kind:'text', page:state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), text, category, fontFamily, fontSize:16, rotation:0, color, hAlign, createdAt:Date.now()});
+      }
+      nb.inkPalette = inkPalette;
+      await persist();
+      state.modal=null; render();
+      showToast('Note enregistrée.');
+      return;
+    }
+
+    // ---- Autocollants (côté personne) ----
+    if(action==='open-sticker-picker'){ state.modal={type:'sticker-picker', payload:{}}; render(); return; }
+    if(action==='pick-sticker'){
+      const stickerId = e.currentTarget.dataset.sticker;
+      const grantId = e.currentTarget.dataset.grant;
+      const nb = getOrCreateActiveNotebook();
+      state.data.entries.push({id:uid(), notebookId:nb.id, kind:'sticker', stickerId, grantId:grantId||null, page:state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), size:60, rotation:0, createdAt:Date.now()});
+      if(grantId){
+        await rpcPersonAction(state.session.name, state.session.code, 'claim_gifted_sticker', {id:grantId});
+        state.data.stickerGrants = (state.data.stickerGrants||[]).filter(g=>g.id!==grantId);
+      }
+      await persist();
+      state.modal=null; render();
+      showToast('Autocollant ajouté.');
+      return;
+    }
+
+    // ---- Partage ----
+    if(action==='open-share'){
+      state.shareRecipientType='coach'; state.shareSearchQuery=''; state.shareSelectedRecipient=null; state.shareSearchResults=[];
+      state.modal={type:'share-form', payload:{entryId:id}}; render(); return;
+    }
+    if(action==='set-share-recipient-type'){ state.shareRecipientType = e.currentTarget.dataset.value; state.shareSearchQuery=''; state.shareSelectedRecipient=null; state.shareSearchResults=[]; render(); return; }
+    if(action==='run-share-search'){
+      const q = document.getElementById('share-search-input').value.trim();
+      state.shareSearchQuery = q;
+      state.shareSearchResults = q ? await rpcSearchAccounts(state.session.name, state.session.code, q) : [];
+      render(); return;
+    }
+    if(action==='pick-share-recipient'){ state.shareSelectedRecipient = e.currentTarget.dataset.name; render(); return; }
+    if(action==='clear-share-recipient'){ state.shareSelectedRecipient = null; render(); return; }
+    if(action==='send-share'){
+      const entryId = e.currentTarget.dataset.entry;
+      const entry = state.data.entries.find(n=>n.id===entryId);
+      if(!entry){ showToast('Note introuvable.'); return; }
+      const recipientType = state.shareRecipientType || 'coach';
+      let recipientName = null;
+      if(recipientType==='person'){
+        if(!state.shareSelectedRecipient){ showToast('Choisis d’abord une personne dans les résultats.'); return; }
+        recipientName = state.shareSelectedRecipient;
+      }
+      const content = sharedItemContentFromEntry(entry);
+      const item = Object.assign({}, content, {id:uid(), anonymous:false, recipientType, recipientName});
+      const ok = await rpcShareItem(state.session.name, state.session.code, item);
+      state.modal=null; render();
+      showToast(ok ? 'Note envoyée !' : 'Erreur d’envoi.');
+      return;
+    }
+
+    // ---- Reçu ----
+    if(action==='open-received-items'){ state.modal={type:'received-items', payload:{}}; render(); return; }
+    if(action==='claim-shared-item'){
+      const item = (state.data.receivedItems||[]).find(it=>it.id===id);
+      if(!item){ showToast('Introuvable.'); return; }
+      const nb = getOrCreateActiveNotebook();
+      const entry = Object.assign({}, item, {
+        id: uid(), notebookId: nb.id, page: state.notebookActivePage||1,
+        x: 10+Math.round(Math.random()*40), y: 10+Math.round(Math.random()*40),
+        size: item.kind==='sticker' ? 60 : undefined, rotation: 0,
+        fontSize: item.kind==='text' ? 16 : undefined, createdAt: Date.now(), shareId: item.id,
+      });
+      delete entry.anonymous; delete entry.recipientType; delete entry.recipientName; delete entry.senderName; delete entry.status; delete entry.decidedAt; delete entry.inappropriate;
+      state.data.entries.push(entry);
+      await rpcPersonAction(state.session.name, state.session.code, 'claim_shared_item', {id});
+      state.data.receivedItems = (state.data.receivedItems||[]).filter(it=>it.id!==id);
+      await persist();
+      state.notebookOpened = true; state.notebookActivePage = entry.page;
+      state.modal=null; render();
+      showToast('Ajouté à ton carnet.');
+      return;
+    }
+    if(action==='delete-shared-item'){
+      await rpcPersonAction(state.session.name, state.session.code, 'delete_shared_item', {id});
+      state.data.receivedItems = (state.data.receivedItems||[]).filter(it=>it.id!==id);
+      render();
+      showToast('Élément supprimé.');
+      return;
+    }
+    if(action==='claim-gifted-sticker'){
+      const grantId = e.currentTarget.dataset.grant;
+      const grant = (state.data.stickerGrants||[]).find(g=>g.id===grantId);
+      if(!grant){ showToast('Introuvable.'); return; }
+      const sticker = state.data.stickers.find(s=>s.id===grant.stickerId);
+      if(!sticker){ showToast('Autocollant introuvable.'); return; }
+      const nb = getOrCreateActiveNotebook();
+      const entryPage = state.notebookActivePage||1;
+      state.data.entries.push({id:uid(), notebookId:nb.id, kind:'sticker', stickerId:sticker.id, grantId:grant.id, page:entryPage, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), size:60, rotation:0, createdAt:Date.now()});
+      await rpcPersonAction(state.session.name, state.session.code, 'claim_gifted_sticker', {id:grantId});
+      state.data.stickerGrants = (state.data.stickerGrants||[]).filter(g=>g.id!==grantId);
+      await persist();
+      state.notebookOpened = true; state.notebookActivePage = entryPage;
+      state.modal=null; render();
+      showToast('Ajouté à ton carnet.');
+      return;
+    }
+    if(action==='delete-gifted-sticker'){
+      const grantId = e.currentTarget.dataset.grant;
+      await rpcPersonAction(state.session.name, state.session.code, 'delete_gifted_sticker', {id:grantId});
+      state.data.stickerGrants = (state.data.stickerGrants||[]).filter(g=>g.id!==grantId);
+      render();
+      showToast('Autocollant supprimé.');
+      return;
+    }
+
+    // ---- Corbeille ----
+    if(action==='open-notebook-trash'){ state.modal={type:'notebook-trash', payload:{}}; render(); return; }
+    if(action==='restore-entry'){
+      const entry = state.data.entries.find(n=>n.id===id);
+      if(entry){ entry.trashed=false; entry.page = state.notebookActivePage||1; }
+      await persist();
+      state.modal=null; render();
+      showToast('Remis sur la page actuelle.');
+      return;
+    }
+    if(action==='return-shared-to-origin'){
+      const entry = state.data.entries.find(n=>n.id===id);
+      if(entry && entry.shareId){
+        const res = await rpcPersonAction(state.session.name, state.session.code, 'return_shared_to_inbox', {id:entry.shareId});
+        if(res && res.ok){
+          const content = sharedItemContentFromEntry(entry);
+          state.data.receivedItems = state.data.receivedItems || [];
+          state.data.receivedItems.unshift(Object.assign({id:entry.shareId, senderName:entry.senderName||'', anonymous:entry.anonymous||false}, content));
+        }
+        state.data.entries = state.data.entries.filter(n=>n.id!==id);
+      }
+      await persist();
+      state.modal=null; render();
+      showToast('Remis dans tes reçus.');
+      return;
+    }
+    if(action==='return-sticker-to-bank'){
+      const entry = state.data.entries.find(n=>n.id===id);
+      if(entry && entry.grantId){
+        const res = await rpcPersonAction(state.session.name, state.session.code, 'return_sticker_to_bank', {id:entry.grantId});
+        if(res && res.ok){
+          const sticker = state.data.stickers.find(s=>s.id===entry.stickerId);
+          state.data.stickerGrants = state.data.stickerGrants || [];
+          state.data.stickerGrants.unshift({id:entry.grantId, stickerId:entry.stickerId, message:'', used:false, grantedAt:Date.now()});
+        }
+        state.data.entries = state.data.entries.filter(n=>n.id!==id);
+      }
+      await persist();
+      state.modal=null; render();
+      showToast('Remis dans tes reçus.');
+      return;
+    }
+    if(action==='permanently-delete-entry'){
+      state.data.entries = state.data.entries.filter(n=>n.id!==id);
+      await persist();
+      state.modal=null; render();
+      showToast('Supprimé définitivement.');
+      return;
+    }
+
+    // ---- Signalement de bug ----
+    if(action==='open-report-bug'){ state.modal={type:'report-bug'}; render(); return; }
+    if(action==='submit-bug'){
+      const text = document.getElementById('bug-text').value.trim();
+      if(!text){ markInvalid('bug-text'); return; }
+      const ok = await rpcReportBug(state.session.name, state.session.code, text);
+      state.modal=null; render();
+      showToast(ok ? 'Merci, c’est envoyé !' : 'Erreur d’envoi.');
+      return;
+    }
+    if(action==='close-modal'){ state.modal=null; closeModalDom(); return; }
+
+    // ==================== Espace gestionnaire ====================
+    if(action==='create-account'){
+      const name = document.getElementById('acc-name').value.trim();
+      const code = document.getElementById('acc-code').value.trim();
+      if(!name || !code){ markInvalid([!name?'acc-name':null, !code?'acc-code':null].filter(Boolean)); return; }
+      const res = await rpcManagerAction(state.managerCode, 'create_account', {name, code});
+      if(res && res.ok){
+        const fresh = await rpcManagerLoad(state.managerCode);
+        state.managerData = fresh; render();
+        showToast('Compte créé.');
+      } else showToast((res&&res.error)||'Erreur.');
+      return;
+    }
+    if(action==='delete-account'){
+      const name = e.currentTarget.dataset.name;
+      if(!confirm(`Supprimer le compte de ${name} et tout son carnet ?`)) return;
+      const res = await rpcManagerAction(state.managerCode, 'delete_account', {name});
+      if(res && res.ok){
+        state.managerData.accounts = state.managerData.accounts.filter(a=>a.name!==name);
+        render();
+        showToast('Compte supprimé.');
+      } else showToast('Erreur.');
+      return;
+    }
+
+    // ---- Banque d'autocollants (gestionnaire) ----
+    if(action==='run-sticker-search'){ state.stickerSearchQuery = document.getElementById('sticker-search-input').value.trim(); render(); return; }
+    if(action==='toggle-admin-sticker-group'){
+      const g = e.currentTarget.dataset.group;
+      state.expandedStickerGroups[g] = !state.expandedStickerGroups[g];
+      render(); return;
+    }
+    if(action==='new-sticker'){ pendingStickerImage=null; state.modal={type:'sticker-form', payload:{entry:null, pendingAll:true, pendingAssigned:[]}}; render(); return; }
+    if(action==='edit-sticker'){
+      const s = state.managerData.meta.stickers.find(x=>x.id===id);
+      if(!s) return;
+      pendingStickerImage = null;
+      state.modal = {type:'sticker-form', payload:{entry:s, pendingAll: !!s.availableToAll, pendingAssigned: (s.assignedNames||[]).slice()}};
+      render(); return;
+    }
+    if(action==='delete-sticker'){
+      const res = await rpcManagerAction(state.managerCode, 'delete_sticker', {id});
+      if(res && res.ok){ state.managerData.meta.stickers = state.managerData.meta.stickers.filter(s=>s.id!==id); render(); showToast('Autocollant supprimé.'); }
+      else showToast('Erreur.');
+      return;
+    }
+    if(action==='toggle-sticker-all'){ state.modal.payload.pendingAll = e.currentTarget.checked; render(); return; }
+    if(action==='sticker-assign-search'){
+      const q = document.getElementById('sticker-assign-search').value.trim();
+      state.modal.payload.searchQuery = q;
+      const already = new Set(state.modal.payload.pendingAssigned.map(n=>n.toLowerCase()));
+      state.modal.payload.searchResults = q ? state.managerData.accounts.filter(a=>normalizeStr(a.name).includes(normalizeStr(q)) && !already.has(a.name.toLowerCase())) : [];
+      render(); return;
+    }
+    if(action==='sticker-assign-add'){
+      const name = e.currentTarget.dataset.name;
+      if(!state.modal.payload.pendingAssigned.find(n=>n.toLowerCase()===name.toLowerCase())) state.modal.payload.pendingAssigned.push(name);
+      state.modal.payload.searchQuery=''; state.modal.payload.searchResults=[];
+      render(); return;
+    }
+    if(action==='sticker-assign-remove'){
+      const name = e.currentTarget.dataset.name;
+      state.modal.payload.pendingAssigned = state.modal.payload.pendingAssigned.filter(n=>n.toLowerCase()!==name.toLowerCase());
+      render(); return;
+    }
+    if(action==='save-sticker'){
+      const name = document.getElementById('sticker-name').value.trim();
+      if(!name){ markInvalid('sticker-name'); showToast('Donne un nom à l’autocollant.'); return; }
+      const existing = id ? state.managerData.meta.stickers.find(s=>s.id===id) : null;
+      const image = pendingStickerImage || (existing ? existing.image : null);
+      if(!image){ showToast('Ajoute une image pour cet autocollant.'); return; }
+      const pendingAll = state.modal.payload.pendingAll;
+      const assignedNames = pendingAll ? [] : state.modal.payload.pendingAssigned.slice();
+      const category = document.getElementById('sticker-category').value.trim();
+      const payload = {id: id||undefined, name, image, category, availableToAll:pendingAll, assignedNames};
+      const res = await rpcManagerAction(state.managerCode, 'save_sticker', payload);
+      pendingStickerImage = null;
+      if(res && res.ok){
+        const fresh = await rpcManagerLoad(state.managerCode);
+        state.managerData = fresh;
+        state.modal=null; render();
+        showToast('Autocollant enregistré.');
+      } else showToast('Erreur.');
+      return;
+    }
+
+    // ---- Cadeaux d'autocollants ----
+    if(action==='open-sticker-grant-picker'){ state.modal={type:'sticker-grant-picker', payload:{name:e.currentTarget.dataset.name}}; render(); return; }
+    if(action==='grant-sticker'){
+      const stickerId = e.currentTarget.dataset.sticker;
+      const name = e.currentTarget.dataset.name;
+      const already = (state.managerData.meta.stickerGrants||[]).find(g=>g.stickerId===stickerId && g.name.toLowerCase()===name.toLowerCase() && !g.used);
+      if(already){ showToast('Déjà offert.'); return; }
+      const messageInput = document.getElementById('grant-message-input');
+      const message = messageInput ? messageInput.value.trim() : '';
+      const res = await rpcManagerAction(state.managerCode, 'grant_sticker', {stickerId, name, message});
+      if(res && res.ok){
+        const fresh = await rpcManagerLoad(state.managerCode);
+        state.managerData = fresh; render();
+        showToast('Autocollant offert.');
+      } else showToast((res&&res.error)||'Erreur.');
+      return;
+    }
+    if(action==='revoke-sticker-grant'){
+      const res = await rpcManagerAction(state.managerCode, 'revoke_sticker_grant', {id});
+      if(res && res.ok){ state.managerData.meta.stickerGrants = (state.managerData.meta.stickerGrants||[]).filter(g=>g.id!==id); render(); showToast('Autocollant retiré.'); }
+      return;
+    }
+
+    // ---- Notes directes du coach ----
+    if(action==='open-send-note-form'){ state.modal={type:'send-note-form', payload:{name:e.currentTarget.dataset.name}}; render(); return; }
+    if(action==='send-coach-note'){
+      const name = e.currentTarget.dataset.name;
+      const text = document.getElementById('coach-note-text').value.trim();
+      if(!text){ showToast('Écrivez un message.'); return; }
+      const res = await rpcManagerAction(state.managerCode, 'send_note', {name, kind:'text', category:'Coach', text});
+      if(res && res.ok){
+        const fresh = await rpcManagerLoad(state.managerCode);
+        state.managerData = fresh;
+        state.modal=null; render();
+        showToast('Note envoyée.');
+      } else showToast('Erreur.');
+      return;
+    }
+
+    // ---- Modération des notes partagées ----
+    if(action==='approve-shared-item' || action==='refuse-shared-item' || action==='archive-shared-item' || action==='unflag-shared-item'){
+      const map = {'approve-shared-item':'approve_shared_item','refuse-shared-item':'refuse_shared_item','archive-shared-item':'archive_shared_item','unflag-shared-item':'unflag_shared_item'};
+      const res = await rpcManagerAction(state.managerCode, map[action], {id});
+      if(res && res.ok){ const fresh = await rpcManagerLoad(state.managerCode); state.managerData = fresh; render(); showToast('Fait.'); }
+      return;
+    }
+    if(action==='confirm-flag-shared-item'){ state.modal={type:'confirm-flag-shared-item', payload:{id}}; render(); return; }
+    if(action==='flag-shared-item'){
+      const res = await rpcManagerAction(state.managerCode, 'flag_shared_item', {id});
+      if(res && res.ok){ const fresh = await rpcManagerLoad(state.managerCode); state.managerData = fresh; }
+      state.modal=null; render();
+      showToast('Message signalé — origine et destination visibles ci-dessous.');
+      return;
+    }
+    if(action==='delete-shared-item-admin'){
+      const res = await rpcManagerAction(state.managerCode, 'delete_shared_item_admin', {id});
+      if(res && res.ok){ state.managerData.meta.sharedItems = (state.managerData.meta.sharedItems||[]).filter(s=>s.id!==id); render(); showToast('Supprimé définitivement.'); }
+      return;
+    }
+    if(action==='toggle-archived-note'){ state.expandedArchivedNotes[id] = !state.expandedArchivedNotes[id]; render(); return; }
+
+    // ---- Bugs ----
+    if(action==='delete-bug'){
+      const md = state.managerData;
+      md.meta.bugReports = (md.meta.bugReports||[]).filter(b=>b.id!==id);
+      await persistManagerMeta();
+      render(); return;
+    }
+    if(action==='change-manager-code'){
+      const newCode = document.getElementById('new-mgr-code').value.trim();
+      if(!newCode){ markInvalid('new-mgr-code'); return; }
+      const md = state.managerData;
+      md.meta.managerCode = newCode;
+      await persistManagerMeta();
+      state.managerCode = newCode; storeManagerCode(newCode);
+      showToast('Code gestionnaire changé.');
+      return;
+    }
+  }
+
+  function applyLoadResult(res){
+    const blob = res.notebook || {};
+    state.data = {
+      notebooks: blob.notebooks || [],
+      entries: blob.entries || [],
+      activeNotebookId: blob.activeNotebookId || null,
+      stickers: res.stickers || [],
+      receivedItems: res.receivedItems || [],
+      stickerGrants: res.stickerGrants || [],
+    };
+    state.notebookOpened = false;
+    state.notebookActivePage = 1;
+    state.notebookEditMode = false;
+    state.notebookSelectedEntry = null;
+    state.notebookFilterCategory = null;
+  }
+
+  // ---------- Démarrage ----------
+  async function init(){
+    if(!sb){ document.getElementById('app').innerHTML = '<p style="padding:40px;text-align:center;">Erreur de chargement (Supabase).</p>'; return; }
+    loadStoredSession();
+    if(state.session){
+      const res = await rpcLoad(state.session.name, state.session.code);
+      if(res){ applyLoadResult(res); state.view = 'notebook'; }
+      else { state.session = null; storeSession(null); }
+    }
+    render();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
