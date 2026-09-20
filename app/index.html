@@ -1614,21 +1614,49 @@
       // silencieux : on réessaiera au prochain intervalle
     }
   }
-  // Réduction de la bande passante egress Supabase (dépassement de quota signalé fin sept
-  // 2026) : refreshFromRemote() retélécharge TOUT le bloc JSON du studio à chaque appel
-  // (photos de profil, autocollants, post-its — tout en base64), donc un onglet ouvert en
-  // arrière-plan toute la journée le refaisait 300 fois/heure pour rien, multiplié par
-  // chaque personne qui laisse l'app ouverte. Deux changements, purement côté client
-  // (aucun changement SQL/Supabase, aucun risque sur les données) : (1) espacé de 12s à
-  // 45s, (2) plus AUCUN rafraîchissement automatique tant que l'onglet est en arrière-plan
-  // (`document.visibilityState==='hidden'`) — un rafraîchissement immédiat est déclenché
-  // dès qu'on revient sur l'onglet, donc rien n'est perdu en fraîcheur pour un usage normal.
+  // Réduction de la bande passante egress Supabase (dépassement de quota confirmé par les
+  // vrais chiffres du tableau de bord fin sept 2026 : ~8,3 Go/cycle, poussé par les jours de
+  // test intensif — PAS par des photos, il n'y en a pas encore). refreshFromRemote()
+  // retélécharge TOUT le bloc JSON du studio à chaque appel, donc un onglet simplement
+  // laissé ouvert (même au premier plan, même sans qu'on y touche) le refaisait pour rien
+  // toutes les 12s. Amélie a demandé (20 sept) que ça ne se mette à jour QUE si la personne
+  // est vraiment en train d'utiliser l'onglet (navigue, clique) — pas juste "ouvert à
+  // l'écran". Purement côté client, aucun changement SQL/Supabase, aucun risque sur les
+  // données :
+  // 1) On note la dernière fois qu'un vrai geste usager a eu lieu (clic, touche, défilement,
+  //    toucher) dans `lastUserActivityAt`.
+  // 2) La sonde toutes les 45s ne fait rien du tout si l'onglet est en arrière-plan OU si
+  //    plus de 90s se sont écoulées sans le moindre geste (onglet ouvert mais délaissé).
+  // 3) Dès qu'un geste survient après une telle pause, on rafraîchit tout de suite (sans
+  //    attendre le prochain tic de 45s) — mais jamais plus d'une fois toutes les 20s, pour
+  //    qu'une rafale de clics ne déclenche pas une rafale de requêtes.
+  let lastUserActivityAt = Date.now();
+  let lastAutoRefreshAt = 0;
+  const REFRESH_IDLE_THRESHOLD_MS = 90000;
+  const REFRESH_MIN_GAP_MS = 20000;
+  function noteUserActivityForRefresh(){
+    const wasIdle = (Date.now() - lastUserActivityAt) > REFRESH_IDLE_THRESHOLD_MS;
+    lastUserActivityAt = Date.now();
+    if(wasIdle && document.visibilityState === 'visible' && (Date.now() - lastAutoRefreshAt) > REFRESH_MIN_GAP_MS){
+      lastAutoRefreshAt = Date.now();
+      refreshFromRemote();
+    }
+  }
+  ['click','keydown','touchstart','pointerdown','scroll'].forEach(evt=>{
+    document.addEventListener(evt, noteUserActivityForRefresh, {passive:true});
+  });
   setInterval(()=>{
     if(document.visibilityState === 'hidden') return;
+    if(Date.now() - lastUserActivityAt > REFRESH_IDLE_THRESHOLD_MS) return; // onglet délaissé : on ne sonde plus
+    lastAutoRefreshAt = Date.now();
     refreshFromRemote();
   }, 45000);
   document.addEventListener('visibilitychange', ()=>{
-    if(document.visibilityState === 'visible') refreshFromRemote();
+    if(document.visibilityState === 'visible'){
+      lastUserActivityAt = Date.now(); // revenir sur l'onglet compte comme un geste
+      lastAutoRefreshAt = Date.now();
+      refreshFromRemote();
+    }
   });
 
   // Helper générique pour télécharger un tableau de données en CSV — utilisé par les
