@@ -1614,7 +1614,22 @@
       // silencieux : on réessaiera au prochain intervalle
     }
   }
-  setInterval(refreshFromRemote, 12000);
+  // Réduction de la bande passante egress Supabase (dépassement de quota signalé fin sept
+  // 2026) : refreshFromRemote() retélécharge TOUT le bloc JSON du studio à chaque appel
+  // (photos de profil, autocollants, post-its — tout en base64), donc un onglet ouvert en
+  // arrière-plan toute la journée le refaisait 300 fois/heure pour rien, multiplié par
+  // chaque personne qui laisse l'app ouverte. Deux changements, purement côté client
+  // (aucun changement SQL/Supabase, aucun risque sur les données) : (1) espacé de 12s à
+  // 45s, (2) plus AUCUN rafraîchissement automatique tant que l'onglet est en arrière-plan
+  // (`document.visibilityState==='hidden'`) — un rafraîchissement immédiat est déclenché
+  // dès qu'on revient sur l'onglet, donc rien n'est perdu en fraîcheur pour un usage normal.
+  setInterval(()=>{
+    if(document.visibilityState === 'hidden') return;
+    refreshFromRemote();
+  }, 45000);
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible') refreshFromRemote();
+  });
 
   // Helper générique pour télécharger un tableau de données en CSV — utilisé par les
   // différents rapports admin (ventes, conversions intro, présence, etc.).
@@ -4433,7 +4448,7 @@
             <span><img src="${s.image}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;vertical-align:middle;margin-right:8px;"><strong>${escapeHtml(s.name)}</strong> — ${s.availableToAll ? 'Tous les étudiants' : (s.assignedEmails && s.assignedEmails.length ? escapeHtml(s.assignedEmails.length+' étudiant(s)') : 'En banque (non assigné)')}</span>
             <span>
               <button class="small-btn" data-action="edit-sticker" data-id="${s.id}">Modifier</button>
-              <button class="small-btn" data-action="delete-sticker" data-id="${s.id}">Supprimer</button>
+              <button class="small-btn" data-action="confirm-delete-sticker" data-id="${s.id}">Supprimer</button>
             </span>
           </li>
         `;
@@ -6393,6 +6408,21 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'confirm-delete-sticker'){
+      const {id: stickerId} = m.payload;
+      const sticker = state.data.stickers.find(s=>s.id===stickerId);
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <div style="border:1px solid var(--coral);background:rgba(255,90,90,0.08);border-radius:8px;padding:14px;">
+            <p style="font-size:13px;line-height:1.6;color:var(--coral);font-weight:600;margin:0;">Supprimer « ${escapeHtml(sticker?sticker.name:'cet autocollant')} » pour TOUT LE MONDE ? Il disparaîtra de la banque de tous les étudiants, et deviendra invisible partout où il a déjà été placé dans un carnet.</p>
+          </div>
+          <div class="btn-row" style="margin-top:12px;">
+            <button class="btn btn-danger" data-action="delete-sticker" data-id="${stickerId}">Oui, supprimer pour tout le monde</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
     } else if(m.type === 'family-member-form'){
       const fm = m.payload || {firstName:'', lastName:'', name:'', birthday:'', email:'', phone:'', belt:''};
       const fmParts = String(fm.name||'').trim().split(/\s+/).filter(Boolean);
@@ -7890,9 +7920,14 @@
       }};
       render();
     }
+    else if(action==='confirm-delete-sticker'){
+      state.modal = {type:'confirm-delete-sticker', payload:{id}};
+      render();
+    }
     else if(action==='delete-sticker'){
       state.data.stickers = state.data.stickers.filter(s=>s.id!==id);
       await persist();
+      state.modal = null; closeModalDom();
       render();
       showToast('Autocollant supprimé.');
     }
