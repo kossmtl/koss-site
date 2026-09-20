@@ -1614,6 +1614,55 @@
       // silencieux : on réessaiera au prochain intervalle
     }
   }
+  // Partage entre onglets du MÊME navigateur (demande d'Amélie, 20 sept) : si la personne a
+  // l'app ouverte dans 2 onglets à la fois, chacun sondait Supabase indépendamment jusqu'ici
+  // — même consommation réseau × le nombre d'onglets. Purement local (localStorage, aucun
+  // réseau) : dès qu'UN onglet a fait un vrai appel réseau récent, les autres réutilisent son
+  // résultat au lieu de retélécharger la même chose. Verrou à courte durée de vie (5s) pour
+  // que 2 onglets qui sondent au même instant ne fassent pas 2 appels réseau simultanés.
+  const TAB_SHARE_KEY = 'koss_shared_fetch_v1';
+  const TAB_SHARE_TTL_MS = 5000;
+  function applySharedRemoteData(remoteData){
+    if(state.modal || !remoteData) return;
+    const base = state.lastSyncedData || remoteData;
+    const merged = mergeAppData(base, state.data, remoteData);
+    const changed = JSON.stringify(merged) !== JSON.stringify(state.data);
+    state.data = merged;
+    state.lastSyncedData = deepClone(merged);
+    if(changed) render();
+  }
+  async function coordinatedRefresh(){
+    let shared = null;
+    try{ shared = JSON.parse(localStorage.getItem(TAB_SHARE_KEY) || 'null'); }catch(e){}
+    const now = Date.now();
+    if(shared && shared.data && (now - shared.at) < TAB_SHARE_TTL_MS){
+      // Un autre onglet vient tout juste de rafraîchir : on prend son résultat, zéro appel réseau.
+      applySharedRemoteData(shared.data);
+      return;
+    }
+    if(shared && shared.lockAt && (now - shared.lockAt) < TAB_SHARE_TTL_MS){
+      // Un autre onglet est déjà en train de rafraîchir : on attend son résultat plutôt que
+      // de dupliquer l'appel réseau maintenant (il arrivera via l'événement 'storage').
+      return;
+    }
+    try{ localStorage.setItem(TAB_SHARE_KEY, JSON.stringify({lockAt: now})); }catch(e){}
+    await refreshFromRemote();
+    try{ localStorage.setItem(TAB_SHARE_KEY, JSON.stringify({at: Date.now(), data: state.data})); }catch(e){
+      // Le JSON est peut-être trop gros pour localStorage (quota ~5-10 Mo) : tant pis, ce
+      // n'est qu'une optimisation réseau, pas une fonctionnalité — les autres onglets
+      // sonderont simplement eux-mêmes comme avant.
+    }
+  }
+  // Un autre onglet vient d'écrire un résultat frais : on l'applique ici sans passer par le
+  // réseau. L'événement 'storage' ne se déclenche JAMAIS dans l'onglet qui a écrit lui-même,
+  // seulement dans les AUTRES — exactement ce qu'il faut ici.
+  window.addEventListener('storage', (e)=>{
+    if(e.key !== TAB_SHARE_KEY || !e.newValue) return;
+    try{
+      const shared = JSON.parse(e.newValue);
+      if(shared && shared.data) applySharedRemoteData(shared.data);
+    }catch(err){}
+  });
   // Réduction de la bande passante egress Supabase (dépassement de quota confirmé par les
   // vrais chiffres du tableau de bord fin sept 2026 : ~8,3 Go/cycle, poussé par les jours de
   // test intensif — PAS par des photos, il n'y en a pas encore). refreshFromRemote()
@@ -1639,7 +1688,7 @@
     lastUserActivityAt = Date.now();
     if(wasIdle && document.visibilityState === 'visible' && (Date.now() - lastAutoRefreshAt) > REFRESH_MIN_GAP_MS){
       lastAutoRefreshAt = Date.now();
-      refreshFromRemote();
+      coordinatedRefresh();
     }
   }
   ['click','keydown','touchstart','pointerdown','scroll'].forEach(evt=>{
@@ -1649,13 +1698,13 @@
     if(document.visibilityState === 'hidden') return;
     if(Date.now() - lastUserActivityAt > REFRESH_IDLE_THRESHOLD_MS) return; // onglet délaissé : on ne sonde plus
     lastAutoRefreshAt = Date.now();
-    refreshFromRemote();
+    coordinatedRefresh();
   }, 45000);
   document.addEventListener('visibilitychange', ()=>{
     if(document.visibilityState === 'visible'){
       lastUserActivityAt = Date.now(); // revenir sur l'onglet compte comme un geste
       lastAutoRefreshAt = Date.now();
-      refreshFromRemote();
+      coordinatedRefresh();
     }
   });
 
