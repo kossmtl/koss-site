@@ -1933,9 +1933,14 @@
     // ou ce compte n'est pas le bon destinataire) — pas d'erreur bruyante pour un clic sur un
     // vieux courriel.
     if(!m) return;
+    // 🔴 CORRIGÉ (S47) : n'ouvre plus Helcim automatiquement à l'arrivée — Amélie voulait une
+    // étape de confirmation ("Paiement demandé") avant de basculer vers la plateforme de
+    // paiement, pour ne jamais surprendre la personne avec une fenêtre de paiement qui s'ouvre
+    // toute seule. Même modal que le rond vert de notification (voir action='open-pending-
+    // payment-modal').
     state.view = 'account';
+    state.modal = {type:'confirm-pending-payment', payload:{membershipId: m.id}};
     render();
-    await startPendingMembershipPayment(m, null);
   }
 
   // ---------- date helpers ----------
@@ -2728,12 +2733,15 @@
   // Sert à afficher un petit badge de notification à côté du nom, à côté de celui des
   // messages/autocollants non lus, pour qu'un abonnement offert par une gestionnaire ne passe
   // pas inaperçu même si le courriel de demande de paiement n'a jamais été ouvert.
-  function pendingPaymentCountForAccount(acct){
-    if(!acct) return 0;
+  function pendingPaymentsForAccount(acct){
+    if(!acct) return [];
     const e = acct.email.toLowerCase();
     return state.data.memberships.filter(m =>
       m.studentEmail && m.studentEmail.toLowerCase()===e && m.status==='attente_paiement'
-    ).length;
+    );
+  }
+  function pendingPaymentCountForAccount(acct){
+    return pendingPaymentsForAccount(acct).length;
   }
   // Notes/post-its/autocollants partagés entre carnets (élève → coach ou élève → élève).
   // Une note "signée" est livrée immédiatement (statut 'delivered') ; une note "anonyme"
@@ -2942,6 +2950,10 @@
         // jamais l'avoir reçu (n'affecte que le courriel — le bouton "Payer maintenant" dans
         // le compte du client reste disponible de toute façon, courriel ou pas).
         extra += ` <button class="small-btn" data-action="resend-payment-request" data-id="${m.id}">✉️ Renvoyer la demande de paiement</button>`;
+        // NOUVEAU (S47) : annuler soi-même une demande de paiement envoyée par erreur ou plus
+        // voulue — réutilise 'refuse-membership' (déjà utilisée pour refuser un paiement
+        // "déclaré" par un élève) : même sémantique, status → 'annulee'.
+        extra += ` <button class="small-btn" data-action="refuse-membership" data-id="${m.id}">Annuler la demande</button>`;
       }
       if(ds==='active'){
         extra += ` <button class="small-btn" data-action="revoke-membership" data-id="${m.id}">Révoquer</button>`;
@@ -3416,9 +3428,16 @@
           ${(()=>{ const n = unreadInboxCountForAccount(acct); return n ? `<span data-action="open-received-items" data-owner="${escapeHtml(notebookOwnerKey(acct.email, activeProfileId))}" title="Nouveau message ou autocollant reçu" style="cursor:pointer;position:absolute;top:-6px;right:-6px;background:var(--coral);color:#fff;border-radius:50%;min-width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;z-index:2;">${n>9?'9+':n}</span>` : ''; })()}
           ${(()=>{
             // NOUVEAU (S47) : badge « paiement en attente » — même style que le badge de
-            // messages non lus ci-dessus, mais côté gauche pour ne jamais se superposer.
-            const p = pendingPaymentCountForAccount(acct);
-            return p ? `<span data-action="goto-account" title="Abonnement en attente de paiement" style="cursor:pointer;position:absolute;top:-6px;left:-6px;background:var(--sage);color:#fff;border-radius:50%;min-width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;z-index:2;">${p>9?'9+':p}</span>` : '';
+            // messages non lus ci-dessus, mais en bas à droite pour ne jamais s'y superposer.
+            // Un clic ouvre directement la fenêtre "Paiement demandé" (même que le lien du
+            // courriel) quand il n'y a qu'un seul abonnement en attente ; s'il y en a
+            // plusieurs (ex. soi-même + un enfant), on navigue plutôt vers "Mon compte" où
+            // chacun a son propre bouton "Payer maintenant", pour ne pas deviner lequel payer.
+            const pendings = pendingPaymentsForAccount(acct);
+            if(!pendings.length) return '';
+            const action = pendings.length===1 ? 'open-pending-payment-modal' : 'goto-account';
+            const dataId = pendings.length===1 ? `data-id="${escapeHtml(pendings[0].id)}"` : '';
+            return `<span data-action="${action}" ${dataId} title="Abonnement en attente de paiement" style="cursor:pointer;position:absolute;bottom:-6px;right:-6px;background:var(--sage);color:#fff;border-radius:50%;min-width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;z-index:2;">${pendings.length>9?'9+':pendings.length}</span>`;
           })()}
         </div>
         ${headerMembershipHtml}
@@ -3734,8 +3753,12 @@
           // NOUVEAU (S47) : abonnement offert par une gestionnaire à un montant personnalisé
           // (ou tout abonnement en attente de paiement) — paiement direct sans repasser par le
           // catalogue des formules.
-          const payBtn = ds==='attente_paiement' ? ` <button class="btn btn-primary small-btn" data-action="pay-pending-membership" data-id="${m.id}">🔒 Payer maintenant${m.planPrice!=null?' ('+m.planPrice+' $)':''}</button>` : '';
-          return `<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m.planName)}${m.profileId?' <span style="color:var(--chalk-dim);">(pour '+escapeHtml(getProfileName(acct,m.profileId))+')</span>':''} — ${membershipBadge(m)} ${ds==='active' ? '· '+membershipDetail(m) : ''}${hideBtn}${invoiceBtn}${payBtn}</div>`;
+          const payBtn = ds==='attente_paiement' ? ` <button class="btn btn-primary small-btn" data-action="pay-pending-membership" data-id="${m.id}">🔒 Payer maintenant${m.planPrice!=null?' ('+m.planPrice+')':''}</button>` : '';
+          // NOUVEAU (S47) : refuser une demande de paiement (ex. montant offert qu'on ne veut
+          // pas accepter) — nécessite un accord côté Supabase (koss_sync_all) pour qu'un élève
+          // puisse lui-même faire passer SON abonnement de "attente_paiement" à "annulee".
+          const refuseBtn = ds==='attente_paiement' ? ` <button class="small-btn" data-action="student-refuse-pending-membership" data-id="${m.id}">Refuser</button>` : '';
+          return `<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m.planName)}${m.profileId?' <span style="color:var(--chalk-dim);">(pour '+escapeHtml(getProfileName(acct,m.profileId))+')</span>':''} — ${membershipBadge(m)} ${ds==='active' ? '· '+membershipDetail(m) : ''}${hideBtn}${invoiceBtn}${payBtn}${refuseBtn}</div>`;
         }).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun abonnement.</p>'}
         ${hiddenOwnCount ? `<button class="small-btn" style="margin-top:4px;" data-action="toggle-show-hidden-memberships-self">${showHiddenMemberships ? 'Cacher les abonnements masqués' : `Afficher les abonnements masqués (${hiddenOwnCount})`}</button>` : ''}
         <div class="btn-row"><button class="btn btn-primary" data-action="browse-plans">Acheter / ajouter un abonnement</button></div>
@@ -4776,6 +4799,35 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'confirm-pending-payment'){
+      // NOUVEAU (S47) : étape de confirmation avant d'ouvrir le module Helcim — à la fois
+      // depuis le lien "PAYER MAINTENANT" du courriel ET depuis le rond vert de notification
+      // dans l'en-tête, pour ne jamais lancer le paiement sans que la personne s'y attende.
+      const pm = state.data.memberships.find(mm=>mm.id===m.payload.membershipId);
+      if(!pm || pm.status !== 'attente_paiement'){
+        html = `
+          <div class="modal" style="max-width:380px;text-align:center;">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Rien à payer</h3>
+            <p class="muted" style="color:var(--chalk-dim);">Cet abonnement n’est plus en attente de paiement (déjà payé, annulé, ou lien expiré).</p>
+            <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+          </div>
+        `;
+      } else {
+        html = `
+          <div class="modal" style="max-width:380px;text-align:center;">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Paiement demandé</h3>
+            <p style="font-size:14px;line-height:1.6;margin:10px 0 4px;">${escapeHtml(pm.planName)}</p>
+            <p style="font-family:var(--font-d);font-size:26px;color:var(--sage);margin:0 0 14px;">${escapeHtml(pm.planPrice)}</p>
+            <p class="muted" style="color:var(--chalk-dim);font-size:13px;">Continuer vers la plateforme de paiement sécurisée Helcim pour compléter ce paiement et activer l’abonnement. Aucune information de carte n’est conservée sur nos serveurs.</p>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="confirm-start-pending-payment" data-id="${pm.id}">🔒 Continuer vers le paiement sécurisé</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          </div>
+        `;
+      }
     } else if(m.type === 'report-bug'){
       html = `
         <div class="modal">
@@ -9171,12 +9223,31 @@
     else if(action==='pay-pending-membership'){
       // NOUVEAU (S47) : paiement direct d'un abonnement déjà en attente (offert par une
       // gestionnaire à un montant personnalisé, ou laissé en plan depuis le catalogue) —
-      // sans repasser par le choix d'une formule. Voir startPendingMembershipPayment().
+      // sans repasser par le choix d'une formule. Voir startPendingMembershipPayment(). Bouton
+      // déjà explicite (« 🔒 Payer maintenant ») dans « Mes abonnements » — pas besoin de la
+      // confirmation « Paiement demandé » (contrairement au courriel/badge, voir plus bas).
       const btn = e.currentTarget;
       const membershipId = btn.dataset.id;
       const m = state.data.memberships.find(mm=>mm.id===membershipId);
       if(!m || m.status !== 'attente_paiement'){ showToast('Cet abonnement n\u2019est plus en attente de paiement.'); render(); return; }
       await startPendingMembershipPayment(m, btn);
+    }
+    else if(action==='open-pending-payment-modal'){
+      // NOUVEAU (S47) : clic sur le rond vert de notification dans l'en-tête — ouvre la même
+      // fenêtre de confirmation « Paiement demandé » que le lien du courriel, plutôt que
+      // d'ouvrir Helcim directement ou de simplement naviguer vers « Mon compte ».
+      const membershipId = e.currentTarget.dataset.id;
+      state.modal = {type:'confirm-pending-payment', payload:{membershipId}};
+      render();
+    }
+    else if(action==='confirm-start-pending-payment'){
+      // NOUVEAU (S47) : bouton « Continuer vers le paiement sécurisé » de la fenêtre
+      // « Paiement demandé » — ferme la fenêtre puis ouvre réellement Helcim.
+      const membershipId = e.currentTarget.dataset.id;
+      const m = state.data.memberships.find(mm=>mm.id===membershipId);
+      state.modal = null; closeModalDom(); render();
+      if(!m || m.status !== 'attente_paiement'){ showToast('Cet abonnement n\u2019est plus en attente de paiement.'); return; }
+      await startPendingMembershipPayment(m, null);
     }
 
     else if(action==='confirm-contact-club'){
@@ -9517,6 +9588,23 @@
       await persist();
       render();
       showToast('Abonnement affiché.');
+    }
+    else if(action==='student-refuse-pending-membership'){
+      // NOUVEAU (S47) : l'élève refuse lui-même une demande de paiement (ex. montant offert
+      // qu'il ne veut pas accepter). Ne touche RIEN d'autre que le statut — la permission
+      // exacte (un élève ne peut faire ce changement que sur SON PROPRE abonnement, et
+      // seulement depuis "attente_paiement") est appliquée côté serveur dans koss_sync_all,
+      // pas seulement ici.
+      const m = state.data.memberships.find(mm=>mm.id===id);
+      if(!m || m.status !== 'attente_paiement' || m.studentEmail.toLowerCase() !== state.studentSession.email.toLowerCase()){
+        showToast('Cette demande n’est plus en attente.');
+        render();
+        return;
+      }
+      m.status = 'annulee';
+      await persist();
+      render();
+      showToast('Demande de paiement refusée.');
     }
     else if(action==='toggle-show-hidden-memberships-self'){
       state.accountShowHiddenMemberships = !state.accountShowHiddenMemberships;
@@ -10159,7 +10247,11 @@
         if(raw){
           const parsed = parseFloat(raw);
           if(isNaN(parsed) || parsed < 0){ showToast('Montant invalide.'); return; }
-          customPrice = parsed;
+          // 🔴 CORRIGÉ (S47) : planPrice est TOUJOURS une chaîne déjà formatée avec le "$" dans
+          // le reste de l'app (voir submit-confirm-membership-amount plus bas, même formule) —
+          // un nombre brut comme 1.5 s'affichait "1.5" au lieu de "1.50 $" partout où on montre
+          // ce montant (courriel de demande de paiement, bouton "Payer maintenant").
+          customPrice = parsed.toFixed(2).replace(/\.00$/,'') + ' $';
         }
       }
       const m = activatePlanForStudent(plan, name, email, !isPaid, profileId, customPrice);
