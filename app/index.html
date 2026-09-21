@@ -251,6 +251,14 @@
      défini ci-dessus et deviennent illisibles (texte blanc sur fond blanc) une fois le menu
      déroulant ouvert. */
   select option{ color:#141413; background:#FFFBF8; }
+  /* 🔴 CORRIGÉ (S47) : la règle ci-dessus ne couvre que l'état "au repos" des options — la
+     ligne survolée/sélectionnée dans le menu déroulant OUVERT utilise un surlignage propre au
+     navigateur (bleu système, etc.) qui ignore `background` mais PAS toujours `color`, ce qui
+     rendait le texte invisible une fois une option survolée (texte clair sur fond clair du
+     surlignage). `:checked` est respecté par la plupart des navigateurs pour styliser cette
+     ligne surlignée à l'intérieur d'un <select> natif — on lui donne un fond ambre bien
+     contrasté avec le même texte sombre que les autres options.  */
+  select option:checked, select option:hover{ color:#141413; background:var(--amber); }
   .pw-wrap{position:relative;}
   .pw-wrap input{padding-right:66px;}
   .pw-toggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);padding:3px 8px;font-size:10px;background:var(--bg-tile);}
@@ -1011,6 +1019,9 @@
     modal: null, // {type, payload}
     toastMsg: null,
     studentSession: null, // {email}
+    // NOUVEAU (S47) : id de l'abonnement à payer capturé depuis ?pay=<id> dans l'URL (lien
+    // "PAYER MAINTENANT" du courriel de demande de paiement) — voir maybeResumePendingPayment().
+    pendingPayMembershipId: null,
     showCreateAccount: false,
     accountExpanded: false,
     accountMenuOpen: false,
@@ -1593,6 +1604,10 @@
   // la dernière fois. Redémarre à null à chaque rechargement de page — pas grave, ça ne fait
   // au pire qu'un chargement complet de plus, jamais une donnée manquée.
   let lastKnownDataVersion = null;
+  // NOUVEAU (S47) : garde-fou pour maybeResumePendingPayment() — garantit qu'on ne tente la
+  // reprise automatique du paiement qu'une seule fois par chargement de page, jamais en boucle
+  // à chaque render() suivant.
+  let pendingPayAttempted = false;
   async function refreshFromRemote(){
     if(state.modal) return; // on ne dérange pas une saisie en cours
     // Vérifie d'abord si quelque chose a vraiment changé côté serveur avant de retélécharger
@@ -1833,6 +1848,94 @@
       onDone(event.data.eventStatus, transaction);
     };
     window.addEventListener('message', handler);
+  }
+
+  // NOUVEAU (S47) : ouvre le paiement Helcim pour un abonnement DÉJÀ en attente de paiement
+  // (offert par une gestionnaire à un montant personnalisé, ou tout autre abonnement
+  // `attente_paiement`) — sans passer par le choix d'une formule dans le catalogue. Utilisé par
+  // le bouton "🔒 Payer maintenant" dans le compte du client, ET par la reprise automatique
+  // depuis le lien "PAYER MAINTENANT" du courriel (voir maybeResumePendingPayment ci-dessous).
+  // `btn` est optionnel : présent pour un clic (on gère son état disabled/texte), absent pour
+  // une ouverture automatique (on utilise un simple toast à la place).
+  // ⚠️ Contrairement à pay-with-helcim (achat initial), on ne supprime JAMAIS l'abonnement en
+  // cas d'annulation : celui-ci représente une vraie créance déjà existante, pas un brouillon
+  // jetable créé à la volée pour obtenir un id à envoyer à Helcim.
+  async function startPendingMembershipPayment(m, btn){
+    const originalLabel = btn ? btn.textContent : null;
+    if(btn){ btn.disabled = true; btn.textContent = 'Ouverture du paiement sécurisé…'; }
+    else { showToast('Ouverture du paiement sécurisé…'); }
+    try{
+      const resp = await sb.functions.invoke('koss-init-payment', {body:{membershipId:m.id}});
+      if(resp.error || !resp.data || !resp.data.checkoutToken) throw new Error('init failed');
+      const checkoutToken = resp.data.checkoutToken;
+      startHelcimCheckout(checkoutToken, async (status, transaction)=>{
+        if(status==='SUCCESS'){
+          state.modal = null; closeModalDom(); render();
+          showToast('Paiement reçu, confirmation en cours…');
+          let confirmedByHelcim = false;
+          try{
+            const confirmResp = await sb.functions.invoke('koss-confirm-payment', {
+              body:{checkoutToken, transactionId: transaction && transaction.transactionId}
+            });
+            if(confirmResp.error || !confirmResp.data || !confirmResp.data.ok){
+              showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
+            } else {
+              confirmedByHelcim = true;
+              showToast('Abonnement activé !');
+            }
+          }catch(confirmErr){
+            console.error('Échec confirmation paiement:', confirmErr);
+            showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
+          }
+          await loadData();
+          if(confirmedByHelcim){
+            const confirmedM = state.data.memberships.find(mm=>mm.id===m.id);
+            if(confirmedM && !confirmedM.paidViaHelcim){
+              confirmedM.paidViaHelcim = true;
+              confirmedM.paidViaHelcimAt = Date.now();
+              await persist();
+            }
+            try{ sb.functions.invoke('koss-send-invoice', {body:{membershipId:m.id}}); }
+            catch(err){ console.error('Échec envoi facture automatique:', err); }
+          }
+          render();
+        } else if(status==='ABORTED'){
+          if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
+          showToast('Paiement annulé.');
+        } else {
+          if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
+        }
+      });
+    }catch(err){
+      console.error('Échec ouverture paiement Helcim:', err);
+      if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
+      showToast('Le paiement en ligne intégré est momentanément indisponible.');
+    }
+  }
+
+  // NOUVEAU (S47) : reprise automatique du paiement quand le client arrive dans l'app via le
+  // lien "PAYER MAINTENANT" de son courriel (?pay=<membershipId>, capturé au tout début de
+  // boot() dans state.pendingPayMembershipId). Appelée depuis render() dès qu'une session
+  // élève est présente — que ce soit une session déjà active, une connexion courriel/mot de
+  // passe fraîche, ou un retour de connexion Google. `pendingPayAttempted` garantit qu'on
+  // n'essaie qu'une seule fois par chargement de page, jamais en boucle.
+  async function maybeResumePendingPayment(){
+    const targetId = state.pendingPayMembershipId;
+    state.pendingPayMembershipId = null;
+    if(!targetId || !state.studentSession) return;
+    const email = state.studentSession.email.toLowerCase();
+    const m = state.data.memberships.find(mm =>
+      mm.id === targetId &&
+      mm.studentEmail && mm.studentEmail.toLowerCase() === email &&
+      mm.status === 'attente_paiement'
+    );
+    // Rien à faire silencieusement si introuvable (déjà payé entre-temps, lien expiré/invalide,
+    // ou ce compte n'est pas le bon destinataire) — pas d'erreur bruyante pour un clic sur un
+    // vieux courriel.
+    if(!m) return;
+    state.view = 'account';
+    render();
+    await startPendingMembershipPayment(m, null);
   }
 
   // ---------- date helpers ----------
@@ -2620,6 +2723,18 @@
       return sum + totalInboxCountForOwner(ownerKey);
     }, 0);
   }
+  // NOUVEAU (S47) : nombre d'abonnements en attente de paiement pour ce compte (soi-même ET
+  // ses enfants — tous rangés sous le courriel du compte parent, voir activatePlanForStudent).
+  // Sert à afficher un petit badge de notification à côté du nom, à côté de celui des
+  // messages/autocollants non lus, pour qu'un abonnement offert par une gestionnaire ne passe
+  // pas inaperçu même si le courriel de demande de paiement n'a jamais été ouvert.
+  function pendingPaymentCountForAccount(acct){
+    if(!acct) return 0;
+    const e = acct.email.toLowerCase();
+    return state.data.memberships.filter(m =>
+      m.studentEmail && m.studentEmail.toLowerCase()===e && m.status==='attente_paiement'
+    ).length;
+  }
   // Notes/post-its/autocollants partagés entre carnets (élève → coach ou élève → élève).
   // Une note "signée" est livrée immédiatement (statut 'delivered') ; une note "anonyme"
   // doit d'abord être approuvée par un·e gestionnaire (statut 'pending_review') — dans les
@@ -3201,6 +3316,16 @@
       t.textContent = state.toastMsg;
       document.body.appendChild(t);
     }
+
+    // NOUVEAU (S47) : dès qu'une session élève est disponible (déjà active, connexion fraîche
+    // par courriel/mot de passe, ou retour de connexion Google — tous ces chemins finissent
+    // par appeler render()), on tente une seule fois de reprendre le paiement demandé par
+    // courriel. setTimeout(0) pour sortir de cet appel synchrone de render() avant que
+    // maybeResumePendingPayment() puisse en redéclencher un autre.
+    if(!pendingPayAttempted && state.pendingPayMembershipId && state.studentSession){
+      pendingPayAttempted = true;
+      setTimeout(()=>{ maybeResumePendingPayment(); }, 0);
+    }
   }
 
   // Nom court pour le coin en haut à droite de l'en-tête (demande explicite d'Amélie, S28) :
@@ -3289,6 +3414,12 @@
             <span>${escapeHtml(headerShortName(activeName))}</span>
           </button>
           ${(()=>{ const n = unreadInboxCountForAccount(acct); return n ? `<span data-action="open-received-items" data-owner="${escapeHtml(notebookOwnerKey(acct.email, activeProfileId))}" title="Nouveau message ou autocollant reçu" style="cursor:pointer;position:absolute;top:-6px;right:-6px;background:var(--coral);color:#fff;border-radius:50%;min-width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;z-index:2;">${n>9?'9+':n}</span>` : ''; })()}
+          ${(()=>{
+            // NOUVEAU (S47) : badge « paiement en attente » — même style que le badge de
+            // messages non lus ci-dessus, mais côté gauche pour ne jamais se superposer.
+            const p = pendingPaymentCountForAccount(acct);
+            return p ? `<span data-action="goto-account" title="Abonnement en attente de paiement" style="cursor:pointer;position:absolute;top:-6px;left:-6px;background:var(--sage);color:#fff;border-radius:50%;min-width:16px;height:16px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1;z-index:2;">${p>9?'9+':p}</span>` : '';
+          })()}
         </div>
         ${headerMembershipHtml}
         ${state.accountMenuOpen ? `
@@ -9040,66 +9171,12 @@
     else if(action==='pay-pending-membership'){
       // NOUVEAU (S47) : paiement direct d'un abonnement déjà en attente (offert par une
       // gestionnaire à un montant personnalisé, ou laissé en plan depuis le catalogue) —
-      // sans repasser par le choix d'une formule. Même mécanique Helcim que pay-with-helcim,
-      // mais SANS jamais supprimer l'abonnement en cas d'annulation : contrairement à un
-      // brouillon fraîchement créé lors d'un premier achat, celui-ci représente un vrai
-      // montant dû tant qu'il n'est pas payé — annuler le module Helcim ne doit rien effacer.
+      // sans repasser par le choix d'une formule. Voir startPendingMembershipPayment().
       const btn = e.currentTarget;
       const membershipId = btn.dataset.id;
       const m = state.data.memberships.find(mm=>mm.id===membershipId);
       if(!m || m.status !== 'attente_paiement'){ showToast('Cet abonnement n\u2019est plus en attente de paiement.'); render(); return; }
-
-      btn.disabled = true;
-      const originalLabel = btn.textContent;
-      btn.textContent = 'Ouverture du paiement sécurisé…';
-
-      try{
-        const resp = await sb.functions.invoke('koss-init-payment', {body:{membershipId:m.id}});
-        if(resp.error || !resp.data || !resp.data.checkoutToken) throw new Error('init failed');
-        const checkoutToken = resp.data.checkoutToken;
-        startHelcimCheckout(checkoutToken, async (status, transaction)=>{
-          if(status==='SUCCESS'){
-            state.modal = null; closeModalDom(); render();
-            showToast('Paiement reçu, confirmation en cours…');
-            let confirmedByHelcim = false;
-            try{
-              const confirmResp = await sb.functions.invoke('koss-confirm-payment', {
-                body:{checkoutToken, transactionId: transaction && transaction.transactionId}
-              });
-              if(confirmResp.error || !confirmResp.data || !confirmResp.data.ok){
-                showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
-              } else {
-                confirmedByHelcim = true;
-                showToast('Abonnement activé !');
-              }
-            }catch(confirmErr){
-              console.error('Échec confirmation paiement:', confirmErr);
-              showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
-            }
-            await loadData();
-            if(confirmedByHelcim){
-              const confirmedM = state.data.memberships.find(mm=>mm.id===m.id);
-              if(confirmedM && !confirmedM.paidViaHelcim){
-                confirmedM.paidViaHelcim = true;
-                confirmedM.paidViaHelcimAt = Date.now();
-                await persist();
-              }
-              try{ sb.functions.invoke('koss-send-invoice', {body:{membershipId:m.id}}); }
-              catch(err){ console.error('Échec envoi facture automatique:', err); }
-            }
-            render();
-          } else if(status==='ABORTED'){
-            btn.disabled = false; btn.textContent = originalLabel;
-            showToast('Paiement annulé.');
-          } else {
-            btn.disabled = false; btn.textContent = originalLabel;
-          }
-        });
-      }catch(err){
-        console.error('Échec ouverture paiement Helcim:', err);
-        btn.disabled = false; btn.textContent = originalLabel;
-        showToast('Le paiement en ligne intégré est momentanément indisponible.');
-      }
+      await startPendingMembershipPayment(m, btn);
     }
 
     else if(action==='confirm-contact-club'){
@@ -10735,6 +10812,15 @@
   });
 
   async function boot(){
+    // NOUVEAU (S47) : capture ?pay=<membershipId> (lien "PAYER MAINTENANT" du courriel de
+    // demande de paiement) tout de suite, en mémoire — avant que quoi que ce soit (dont le
+    // nettoyage d'URL post-retour Google plus bas) ait la moindre chance d'y toucher. Reste en
+    // mémoire jusqu'à ce qu'une session élève soit disponible (voir maybeResumePendingPayment,
+    // déclenché depuis render()), donc fonctionne même si la personne doit d'abord se connecter.
+    try{
+      const payParam = new URLSearchParams(window.location.search).get('pay');
+      if(payParam) state.pendingPayMembershipId = payParam;
+    }catch(err){}
     // Restaure une session gestionnaire déjà active (compte courriel/mot de passe) AVANT
     // loadData(), pour qu'elle choisisse tout de suite la bonne vue au chargement/actualisation
     // — c'est le serveur seul (koss_is_manager) qui décide, jamais un NIP local.
