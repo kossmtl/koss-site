@@ -1061,6 +1061,16 @@
       const res = await storageBackend.get(STORAGE_KEY, true);
       state.data = JSON.parse(res.value);
       state.lastSyncedData = deepClone(state.data);
+      // NOUVEAU (S47 partie 2) : on note la version actuelle tout de suite après ce
+      // premier chargement complet, pour que le tout premier sondage (coordinatedRefresh,
+      // 45s plus tard) puisse déjà sauter le téléchargement s'il ne s'est rien passé
+      // entre-temps. Best-effort : une erreur ici ne bloque rien, elle laisse juste
+      // lastKnownDataVersion à null (le prochain sondage fera un chargement complet,
+      // comme avant cette optimisation).
+      try{
+        const { data: v, error: vErr } = await sb.rpc('koss_data_version');
+        if(!vErr) lastKnownDataVersion = v;
+      }catch(verr){}
     }catch(e){
       if(e && e.notFound){
         // Vraiment aucune ligne sur le serveur : premier lancement, sécuritaire de créer une base vide.
@@ -1577,8 +1587,26 @@
   // Récupère périodiquement les changements faits ailleurs (autre appareil/fenêtre)
   // et les fusionne dans l'état local, pour que l'admin (ou l'élève) voie les nouveautés
   // sans devoir recharger la page manuellement.
+  // NOUVEAU (S47 partie 2) : mémoire (en RAM seulement, par onglet) de la dernière version
+  // de données connue, lue via koss_data_version() (voir supabase, quelques octets). Sert à
+  // sauter le téléchargement complet du gros JSON quand rien n'a changé côté serveur depuis
+  // la dernière fois. Redémarre à null à chaque rechargement de page — pas grave, ça ne fait
+  // au pire qu'un chargement complet de plus, jamais une donnée manquée.
+  let lastKnownDataVersion = null;
   async function refreshFromRemote(){
     if(state.modal) return; // on ne dérange pas une saisie en cours
+    // Vérifie d'abord si quelque chose a vraiment changé côté serveur avant de retélécharger
+    // tout le bloc JSON du studio. Échec ouvert : toute erreur ici (réseau, etc.) fait
+    // simplement retomber sur l'ancien comportement (chargement complet), jamais de blocage
+    // ni de donnée manquée — ce n'est qu'une optimisation réseau, pas un chemin critique.
+    let freshVersion = null;
+    try{
+      const { data: v, error: vErr } = await sb.rpc('koss_data_version');
+      if(!vErr) freshVersion = v;
+    }catch(e){}
+    if(freshVersion && lastKnownDataVersion && freshVersion === lastKnownDataVersion){
+      return; // rien de neuf depuis la dernière fois : zéro appel réseau de plus
+    }
     try{
       const res = await storageBackend.get(STORAGE_KEY, true);
       const remote = JSON.parse(res.value);
@@ -1587,6 +1615,11 @@
       const changed = JSON.stringify(merged) !== JSON.stringify(state.data);
       state.data = merged;
       state.lastSyncedData = deepClone(merged);
+      // On ne retient la nouvelle version qu'APRÈS que le téléchargement complet ait
+      // réellement réussi (voir ci-dessus) — jamais avant, sinon un échec réseau juste
+      // après la lecture de la version ferait croire au prochain sondage que les données
+      // sont déjà à jour alors qu'elles ne l'ont jamais été téléchargées.
+      if(freshVersion) lastKnownDataVersion = freshVersion;
       // Déconnexion forcée : si l'élève est connecté sur CET appareil mais que son compte
       // vient de disparaître de studentAccounts (suppression par lui-même sur un autre
       // appareil, OU par un·e admin), on le déconnecte ici tout de suite plutôt que de le
@@ -2250,7 +2283,11 @@
     return state.data.memberships.find(m => m.studentEmail.toLowerCase()===e && (m.status==='attente_paiement' || m.status==='paiement_declare')) || null;
   }
 
-  function activatePlanForStudent(plan, name, email, free, profileId){
+  // NOUVEAU (S47) : customPrice permet à une gestionnaire d'offrir un abonnement à un
+  // montant négocié différent du prix affiché de la formule (ex. rabais ponctuel), via la
+  // fenêtre "Offrir un abonnement". undefined/null = comportement inchangé (prix normal de
+  // la formule, ou prix membre s'il y a lieu).
+  function activatePlanForStudent(plan, name, email, free, profileId, customPrice){
     const m = {
       id: uid(),
       planId: plan.id,
@@ -2264,7 +2301,7 @@
       grantedFree: !!free,
       // Fige le prix réel au moment de l'achat (prix membre appliqué automatiquement s'il y a
       // lieu) — koss-init-payment charge exactement ce montant, jamais plan.price directement.
-      planPrice: free ? null : priceForPurchase(plan, email, profileId),
+      planPrice: free ? null : (customPrice != null ? customPrice : priceForPurchase(plan, email, profileId)),
       createdAt: Date.now()
     };
     if(plan.type === 'illimite'){
@@ -2784,6 +2821,12 @@
         extra += ` <button class="small-btn" data-action="refund-membership" data-id="${m.id}">Rembourser</button>`;
         if(findStudentAccount(m.studentEmail)) extra += ` <button class="small-btn" data-action="open-transfer-membership" data-id="${m.id}">Transférer</button>`;
         extra += ` <button class="small-btn" data-action="toggle-paid-helcim" data-id="${m.id}">${m.paidViaHelcim ? 'Retirer du revenu Helcim' : 'Marquer payé Helcim'}</button>`;
+      }
+      if(ds==='attente_paiement'){
+        // NOUVEAU (S47) : renvoyer le courriel de demande de paiement, si le client dit ne
+        // jamais l'avoir reçu (n'affecte que le courriel — le bouton "Payer maintenant" dans
+        // le compte du client reste disponible de toute façon, courriel ou pas).
+        extra += ` <button class="small-btn" data-action="resend-payment-request" data-id="${m.id}">✉️ Renvoyer la demande de paiement</button>`;
       }
       if(ds==='active'){
         extra += ` <button class="small-btn" data-action="revoke-membership" data-id="${m.id}">Révoquer</button>`;
@@ -3557,7 +3600,11 @@
           const hideBtn = ds==='expiree' ? ` <button class="small-btn" data-action="${m.hiddenByStudent?'unhide-membership-self':'hide-membership-self'}" data-id="${m.id}">${m.hiddenByStudent?'Afficher':'Masquer'}</button>` : '';
           const canInvoice = !m.grantedFree && m.planPrice != null && (ds==='active' || ds==='expiree');
           const invoiceBtn = canInvoice ? ` <button class="small-btn" data-action="send-invoice-email" data-id="${m.id}">🧾 Recevoir une facture</button>` : '';
-          return `<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m.planName)}${m.profileId?' <span style="color:var(--chalk-dim);">(pour '+escapeHtml(getProfileName(acct,m.profileId))+')</span>':''} — ${membershipBadge(m)} ${ds==='active' ? '· '+membershipDetail(m) : ''}${hideBtn}${invoiceBtn}</div>`;
+          // NOUVEAU (S47) : abonnement offert par une gestionnaire à un montant personnalisé
+          // (ou tout abonnement en attente de paiement) — paiement direct sans repasser par le
+          // catalogue des formules.
+          const payBtn = ds==='attente_paiement' ? ` <button class="btn btn-primary small-btn" data-action="pay-pending-membership" data-id="${m.id}">🔒 Payer maintenant${m.planPrice!=null?' ('+m.planPrice+' $)':''}</button>` : '';
+          return `<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m.planName)}${m.profileId?' <span style="color:var(--chalk-dim);">(pour '+escapeHtml(getProfileName(acct,m.profileId))+')</span>':''} — ${membershipBadge(m)} ${ds==='active' ? '· '+membershipDetail(m) : ''}${hideBtn}${invoiceBtn}${payBtn}</div>`;
         }).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun abonnement.</p>'}
         ${hiddenOwnCount ? `<button class="small-btn" style="margin-top:4px;" data-action="toggle-show-hidden-memberships-self">${showHiddenMemberships ? 'Cacher les abonnements masqués' : `Afficher les abonnements masqués (${hiddenOwnCount})`}</button>` : ''}
         <div class="btn-row"><button class="btn btn-primary" data-action="browse-plans">Acheter / ajouter un abonnement</button></div>
@@ -5420,7 +5467,7 @@
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
-          <h3>Offrir un abonnement gratuit</h3>
+          <h3>Offrir un abonnement</h3>
           ${prefill.prefillEmail ? `
             <label>Étudiant</label>
             <p style="margin:4px 0 10px;">Sélectionné : <strong style="color:var(--chalk);">${escapeHtml(prefill.prefillName||prefill.prefillEmail)}</strong>${prefill.prefillProfileId?' <span style="color:var(--chalk-dim);font-size:11px;">(enfant)</span>':''} <button type="button" class="small-btn" data-action="clear-grant-recipient">Changer</button></p>
@@ -5449,8 +5496,17 @@
           <input type="hidden" id="g-profile" value="${escapeHtml(prefill.prefillProfileId||'')}">
           <label>Formule</label>
           <select id="g-plan">${plans.map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${p.type==='illimite'?p.durationDays+' jours':p.creditsCount+' cours'})</option>`).join('') || '<option value="">Aucune formule créée</option>'}</select>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
+            <input type="checkbox" id="g-paid" style="width:auto;margin:0;" onchange="document.getElementById('g-amount-wrap').style.display=this.checked?'block':'none';">
+            <span>Payant (montant personnalis\u00e9) \u2014 envoie une demande de paiement au client</span>
+          </label>
+          <div id="g-amount-wrap" style="display:none;margin-top:8px;">
+            <label>Montant \u00e0 charger ($)</label>
+            <input type="number" id="g-amount" step="0.01" min="0" placeholder="Ex. : 75.00">
+            <p style="font-size:11px;color:var(--chalk-dim);margin:6px 0 0;">Le client recevra un courriel l\u2019informant qu\u2019il doit payer ce montant sur Helcim pour activer son abonnement (bouton \u00ab Payer maintenant \u00bb aussi visible dans son compte). Laissez vide pour utiliser le prix normal de la formule.</p>
+          </div>
           <div class="btn-row">
-            <button class="btn btn-primary" data-action="submit-grant">Offrir l\u2019abonnement</button>
+            <button class="btn btn-primary" data-action="submit-grant">Confirmer</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
         </div>
@@ -8981,6 +9037,71 @@
       }
     }
 
+    else if(action==='pay-pending-membership'){
+      // NOUVEAU (S47) : paiement direct d'un abonnement déjà en attente (offert par une
+      // gestionnaire à un montant personnalisé, ou laissé en plan depuis le catalogue) —
+      // sans repasser par le choix d'une formule. Même mécanique Helcim que pay-with-helcim,
+      // mais SANS jamais supprimer l'abonnement en cas d'annulation : contrairement à un
+      // brouillon fraîchement créé lors d'un premier achat, celui-ci représente un vrai
+      // montant dû tant qu'il n'est pas payé — annuler le module Helcim ne doit rien effacer.
+      const btn = e.currentTarget;
+      const membershipId = btn.dataset.id;
+      const m = state.data.memberships.find(mm=>mm.id===membershipId);
+      if(!m || m.status !== 'attente_paiement'){ showToast('Cet abonnement n\u2019est plus en attente de paiement.'); render(); return; }
+
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Ouverture du paiement sécurisé…';
+
+      try{
+        const resp = await sb.functions.invoke('koss-init-payment', {body:{membershipId:m.id}});
+        if(resp.error || !resp.data || !resp.data.checkoutToken) throw new Error('init failed');
+        const checkoutToken = resp.data.checkoutToken;
+        startHelcimCheckout(checkoutToken, async (status, transaction)=>{
+          if(status==='SUCCESS'){
+            state.modal = null; closeModalDom(); render();
+            showToast('Paiement reçu, confirmation en cours…');
+            let confirmedByHelcim = false;
+            try{
+              const confirmResp = await sb.functions.invoke('koss-confirm-payment', {
+                body:{checkoutToken, transactionId: transaction && transaction.transactionId}
+              });
+              if(confirmResp.error || !confirmResp.data || !confirmResp.data.ok){
+                showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
+              } else {
+                confirmedByHelcim = true;
+                showToast('Abonnement activé !');
+              }
+            }catch(confirmErr){
+              console.error('Échec confirmation paiement:', confirmErr);
+              showToast('Paiement reçu ! Le studio confirmera votre abonnement sous peu.');
+            }
+            await loadData();
+            if(confirmedByHelcim){
+              const confirmedM = state.data.memberships.find(mm=>mm.id===m.id);
+              if(confirmedM && !confirmedM.paidViaHelcim){
+                confirmedM.paidViaHelcim = true;
+                confirmedM.paidViaHelcimAt = Date.now();
+                await persist();
+              }
+              try{ sb.functions.invoke('koss-send-invoice', {body:{membershipId:m.id}}); }
+              catch(err){ console.error('Échec envoi facture automatique:', err); }
+            }
+            render();
+          } else if(status==='ABORTED'){
+            btn.disabled = false; btn.textContent = originalLabel;
+            showToast('Paiement annulé.');
+          } else {
+            btn.disabled = false; btn.textContent = originalLabel;
+          }
+        });
+      }catch(err){
+        console.error('Échec ouverture paiement Helcim:', err);
+        btn.disabled = false; btn.textContent = originalLabel;
+        showToast('Le paiement en ligne intégré est momentanément indisponible.');
+      }
+    }
+
     else if(action==='confirm-contact-club'){
       if(state.modal && state.modal.payload) state.modal.payload.contactConfirmed = true;
       render();
@@ -9286,6 +9407,22 @@
       }catch(err){
         console.error('Échec envoi facture:', err);
         showToast("Impossible d'envoyer la facture pour l'instant. Réessayez plus tard.");
+      }
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+    else if(action==='resend-payment-request'){
+      const btn = e.currentTarget;
+      const originalLabel = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Envoi en cours…';
+      try{
+        const resp = await sb.functions.invoke('koss-send-payment-request', {body:{membershipId:id}});
+        if(resp.error || !resp.data || !resp.data.ok) throw new Error('send failed');
+        showToast('Demande de paiement renvoyée par courriel !');
+      }catch(err){
+        console.error('Échec renvoi demande de paiement:', err);
+        showToast("Impossible d'envoyer le courriel pour l'instant. Le client garde quand même le bouton « Payer maintenant » dans son compte.");
       }
       btn.disabled = false;
       btn.textContent = originalLabel;
@@ -9932,11 +10069,36 @@
       const plan = state.data.membershipPlans.find(p=>p.id===planId);
       if(!name || !email){ showToast('Choisissez d\u2019abord un étudiant via la recherche.'); return; }
       if(!plan){ showToast('Créez d\u2019abord une formule.'); return; }
-      activatePlanForStudent(plan, name, email, true, profileId);
+      // NOUVEAU (S47) : option « Payant (montant personnalisé) » — au lieu d'activer
+      // gratuitement, on crée l'abonnement en « Paiement à faire » avec le montant saisi, et
+      // on avertit le client par courriel qu'il doit payer sur Helcim pour l'activer (le client
+      // peut aussi payer directement via le bouton « Payer maintenant » dans son compte).
+      const paidEl = document.getElementById('g-paid');
+      const isPaid = !!(paidEl && paidEl.checked);
+      let customPrice = null;
+      if(isPaid){
+        const amountEl = document.getElementById('g-amount');
+        const raw = amountEl ? amountEl.value.trim() : '';
+        if(raw){
+          const parsed = parseFloat(raw);
+          if(isNaN(parsed) || parsed < 0){ showToast('Montant invalide.'); return; }
+          customPrice = parsed;
+        }
+      }
+      const m = activatePlanForStudent(plan, name, email, !isPaid, profileId, customPrice);
       await persist();
       state.modal = null; closeModalDom();
       render();
-      showToast('Abonnement offert avec succès.');
+      if(isPaid){
+        showToast('Demande de paiement envoyée au client.');
+        // Best-effort : n'échoue jamais l'opération si le courriel ne part pas — le client
+        // garde de toute façon le bouton « Payer maintenant » dans son compte (badge « Paiement
+        // à faire » visible immédiatement, même sans courriel).
+        try{ sb.functions.invoke('koss-send-payment-request', {body:{membershipId: m.id}}); }
+        catch(err){ console.error('Échec envoi courriel de demande de paiement:', err); }
+      } else {
+        showToast('Abonnement offert avec succès.');
+      }
     }
     else if(action==='cancel-booking'){
       const b = state.data.bookings.find(bk=>bk.id===id);
