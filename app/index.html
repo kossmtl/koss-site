@@ -2939,21 +2939,25 @@
           ? `<button class="small-btn" data-action="add-credit" data-id="${m.id}">+1 cours</button>`
           : `<button class="small-btn" data-action="add-days" data-id="${m.id}">+7 jours</button>`;
       }
-      if(ds!=='annulee'){
+      // 🔴 CORRIGÉ (S47) : "Rembourser"/"Transférer"/"Marquer payé Helcim" n'ont pas de sens
+      // pour une demande PAS ENCORE payée (attente_paiement) — exclue de ce bloc générique
+      // pour ne pas empiler 6 boutons sur cette ligne (trop de place à l'écran, signalé par
+      // Amélie). Elle garde son propre petit jeu de boutons ciblés juste en dessous.
+      if(ds!=='annulee' && ds!=='attente_paiement'){
         extra += ` <button class="small-btn" data-action="edit-membership" data-id="${m.id}">Modifier</button>`;
         extra += ` <button class="small-btn" data-action="refund-membership" data-id="${m.id}">Rembourser</button>`;
         if(findStudentAccount(m.studentEmail)) extra += ` <button class="small-btn" data-action="open-transfer-membership" data-id="${m.id}">Transférer</button>`;
         extra += ` <button class="small-btn" data-action="toggle-paid-helcim" data-id="${m.id}">${m.paidViaHelcim ? 'Retirer du revenu Helcim' : 'Marquer payé Helcim'}</button>`;
       }
       if(ds==='attente_paiement'){
-        // NOUVEAU (S47) : renvoyer le courriel de demande de paiement, si le client dit ne
-        // jamais l'avoir reçu (n'affecte que le courriel — le bouton "Payer maintenant" dans
-        // le compte du client reste disponible de toute façon, courriel ou pas).
-        extra += ` <button class="small-btn" data-action="resend-payment-request" data-id="${m.id}">✉️ Renvoyer la demande de paiement</button>`;
-        // NOUVEAU (S47) : annuler soi-même une demande de paiement envoyée par erreur ou plus
-        // voulue — réutilise 'refuse-membership' (déjà utilisée pour refuser un paiement
-        // "déclaré" par un élève) : même sémantique, status → 'annulee'.
-        extra += ` <button class="small-btn" data-action="refuse-membership" data-id="${m.id}">Annuler la demande</button>`;
+        // NOUVEAU (S47) : seulement 3 actions ciblées pour une demande en attente — "Modifier"
+        // (ex. corriger le montant avant que le client paie), relancer le courriel, ou annuler
+        // la demande. Labels courts pour rester compacts (voir commentaire ci-dessus).
+        extra += ` <button class="small-btn" data-action="edit-membership" data-id="${m.id}">Modifier</button>`;
+        extra += ` <button class="small-btn" data-action="resend-payment-request" data-id="${m.id}">✉️ Relancer</button>`;
+        // Réutilise 'refuse-membership' (déjà utilisée pour refuser un paiement "déclaré" par
+        // un élève) : même sémantique, status → 'annulee'.
+        extra += ` <button class="small-btn" data-action="refuse-membership" data-id="${m.id}">Annuler</button>`;
       }
       if(ds==='active'){
         extra += ` <button class="small-btn" data-action="revoke-membership" data-id="${m.id}">Révoquer</button>`;
@@ -2978,7 +2982,7 @@
           <td>${escapeHtml(m.planName)}${m.grantedFree?' <span style="color:var(--chalk-dim);font-size:11px;">(offert)</span>':''}${hiddenNote}${refundNote}</td>
           <td>${ds==='active' ? membershipDetail(m) : '—'}</td>
           <td>${membershipBadge(m)}</td>
-          <td>${extra}</td>
+          <td><div style="display:flex;flex-wrap:wrap;gap:4px;">${extra}</div></td>
         </tr>
       `;
     }).join('');
