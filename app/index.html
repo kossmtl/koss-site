@@ -342,6 +342,15 @@
     font-size:12px;padding:5px 10px;border-radius:6px;
     border:1px solid var(--border);background:transparent;color:var(--chalk);cursor:pointer;
   }
+  /* S48 : flèche qui déroule les actions d'une ligne d'abonnement, sans passer par un
+     re-render complet — juste un toggle de style inline (voir renderMembershipRows). */
+  .arrow-btn{
+    background:none;border:none;color:var(--chalk-dim);cursor:pointer;
+    font-size:13px;padding:4px;line-height:1;transition:transform .15s ease;
+  }
+  .arrow-btn.open{transform:rotate(180deg);color:var(--chalk);}
+  .plan-name-link{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px;}
+  .plan-name-link:hover{color:var(--sage);}
   .toast{
     position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
     background:var(--sage);color:var(--ink);padding:10px 18px;border-radius:8px;
@@ -2395,6 +2404,66 @@
   // montant négocié différent du prix affiché de la formule (ex. rabais ponctuel), via la
   // fenêtre "Offrir un abonnement". undefined/null = comportement inchangé (prix normal de
   // la formule, ou prix membre s'il y a lieu).
+  // S48 : calendrier de versements dans "Offrir un abonnement" — pur JS de formulaire, rien
+  // n'est encore enregistré ici, donc pas besoin de passer par render()/onAction. Exposées sur
+  // window car appelées depuis des attributs oninput/onchange inline (même convention que
+  // g-paid plus haut). Regénère les lignes à chaque changement de nombre/mode/montant, mais
+  // garde les valeurs déjà tapées quand on ne fait que changer le nombre (ex. on passe de 4 à
+  // 5 versements en mode personnalisé sans perdre les 4 premières dates).
+  function kossGenerateInstallmentRows(){
+    const countEl = document.getElementById('g-inst-count');
+    const modeEl = document.getElementById('g-inst-mode');
+    const container = document.getElementById('g-inst-rows');
+    if(!countEl || !container) return;
+    let count = parseInt(countEl.value, 10);
+    if(isNaN(count) || count < 2) count = 2;
+    if(count > 24) count = 24;
+    countEl.value = count;
+    const mode = modeEl ? modeEl.value : 'egal';
+    const amountEl = document.getElementById('g-amount');
+    const totalRaw = amountEl ? parseFloat(amountEl.value) : NaN;
+    const total = isNaN(totalRaw) ? 0 : totalRaw;
+    const equalAmt = count ? Math.floor((total/count)*100)/100 : 0;
+    const existing = Array.from(container.querySelectorAll('.g-inst-row')).map(r=>({
+      date: r.querySelector('.g-inst-date').value,
+      amt: r.querySelector('.g-inst-amt').value,
+    }));
+    let rows = '';
+    for(let i=0;i<count;i++){
+      const prev = existing[i] || {};
+      let defaultAmt;
+      if(mode==='egal'){
+        defaultAmt = (i===count-1) ? (total - equalAmt*(count-1)).toFixed(2) : equalAmt.toFixed(2);
+      } else {
+        defaultAmt = prev.amt || '';
+      }
+      rows += `
+        <div class="g-inst-row" style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+          <span style="width:16px;color:var(--chalk-dim);font-size:11px;">${i+1}</span>
+          <input type="date" class="g-inst-date" style="flex:1.3;" value="${escapeHtml(prev.date||'')}">
+          <input type="number" step="0.01" min="0" class="g-inst-amt" style="flex:1;" value="${escapeHtml(String(defaultAmt))}" oninput="kossUpdateInstallmentTotal()">
+        </div>
+      `;
+    }
+    container.innerHTML = rows;
+    kossUpdateInstallmentTotal();
+  }
+  function kossUpdateInstallmentTotal(){
+    const container = document.getElementById('g-inst-rows');
+    const totalEl = document.getElementById('g-inst-total-check');
+    const amountEl = document.getElementById('g-amount');
+    if(!container || !totalEl) return;
+    const amts = Array.from(container.querySelectorAll('.g-inst-amt')).map(i=>parseFloat(i.value)||0);
+    const sum = Math.round(amts.reduce((a,b)=>a+b,0)*100)/100;
+    const target = Math.round((amountEl ? (parseFloat(amountEl.value)||0) : 0)*100)/100;
+    const diff = Math.round((sum-target)*100)/100;
+    const ok = Math.abs(diff) <= 0.02;
+    totalEl.innerHTML = `Total des versements : <strong>${sum.toFixed(2)} $</strong> — montant à charger : <strong>${target.toFixed(2)} $</strong>` +
+      (ok ? ` <span style="color:var(--sage);">✓ correspond</span>` : ` <span style="color:var(--coral);">(écart de ${diff>0?'+':''}${diff.toFixed(2)} $)</span>`);
+  }
+  window.kossGenerateInstallmentRows = kossGenerateInstallmentRows;
+  window.kossUpdateInstallmentTotal = kossUpdateInstallmentTotal;
+
   function activatePlanForStudent(plan, name, email, free, profileId, customPrice){
     const m = {
       id: uid(),
@@ -2877,6 +2946,28 @@
     return state.data.studentAccounts.find(a=>a.email.toLowerCase()===e) || null;
   }
 
+  // S48 (demande d'Amélie) : code couleur du nom selon l'historique d'abonnement — un coup
+  // d'œil suffit pour voir qui est actif, qui l'a déjà été, qui n'a que des passes/drop-in,
+  // et qui n'a jamais rien acheté (celui-ci reste blanc/couleur par défaut : return null).
+  //   🟢 vert   : a un abonnement actif en ce moment
+  //   🟡 jaune  : a déjà eu un abonnement (type illimité), mais aucun actif maintenant
+  //   🟣 mauve  : n'a jamais eu qu'illimité — seulement des passes/drop-in (type crédits)
+  //   ⚪ blanc  : n'a jamais rien acheté
+  function studentStatusColor(email, profileId){
+    if(!email) return null;
+    const key = email.toLowerCase();
+    const pid = profileId || null;
+    const ms = state.data.memberships.filter(x=>x.studentEmail && x.studentEmail.toLowerCase()===key && (x.profileId||null)===pid);
+    if(!ms.length) return null;
+    if(ms.some(x=>membershipDisplayStatus(x)==='active')) return 'var(--sage)';
+    if(ms.some(x=>x.type==='illimite')) return '#E8B94A';
+    return '#B08FCE';
+  }
+  function studentNameStyleAttr(email, profileId){
+    const c = studentStatusColor(email, profileId);
+    return c ? ` style="color:${c};"` : '';
+  }
+
   // Archive un compte élève supprimé (self-delete OU suppression admin) dans
   // state.data.deletedAccounts au lieu de le perdre pour toujours tout de suite — Amélie peut
   // ensuite le réactiver ou le supprimer pour de bon depuis l'onglet "Comptes supprimés".
@@ -2924,6 +3015,85 @@
     });
   }
 
+  // S48 : boutons d'action extraits dans une fonction à part, réutilisée à la fois par le
+  // tiroir "flèche" (renderMembershipRows) et par le popup "clic sur la formule"
+  // (renderModal, type membership-actions) — un seul endroit à maintenir.
+  function membershipActionButtons(m){
+    const ds = membershipDisplayStatus(m);
+    let extra = '';
+    if(ds==='active'){
+      extra = m.type==='credits'
+        ? `<button class="small-btn" data-action="add-credit" data-id="${m.id}">+1 cours</button>`
+        : `<button class="small-btn" data-action="add-days" data-id="${m.id}">+7 jours</button>`;
+    }
+    // 🔴 CORRIGÉ (S47) : "Rembourser"/"Transférer"/"Marquer payé Helcim" n'ont pas de sens
+    // pour une demande PAS ENCORE payée (attente_paiement) — exclue de ce bloc générique
+    // pour ne pas empiler 6 boutons sur cette ligne (trop de place à l'écran, signalé par
+    // Amélie). Elle garde son propre petit jeu de boutons ciblés juste en dessous.
+    if(ds!=='annulee' && ds!=='attente_paiement'){
+      extra += ` <button class="small-btn" data-action="edit-membership" data-id="${m.id}">Modifier</button>`;
+      extra += ` <button class="small-btn" data-action="refund-membership" data-id="${m.id}">Rembourser</button>`;
+      if(findStudentAccount(m.studentEmail)) extra += ` <button class="small-btn" data-action="open-transfer-membership" data-id="${m.id}">Transférer</button>`;
+      extra += ` <button class="small-btn" data-action="toggle-paid-helcim" data-id="${m.id}">${m.paidViaHelcim ? 'Retirer du revenu Helcim' : 'Marquer payé Helcim'}</button>`;
+    }
+    if(ds==='attente_paiement'){
+      // NOUVEAU (S47) : seulement 3 actions ciblées pour une demande en attente — "Modifier"
+      // (ex. corriger le montant avant que le client paie), relancer le courriel, ou annuler
+      // la demande. Labels courts pour rester compacts (voir commentaire ci-dessus).
+      extra += ` <button class="small-btn" data-action="edit-membership" data-id="${m.id}">Modifier</button>`;
+      extra += ` <button class="small-btn" data-action="resend-payment-request" data-id="${m.id}">✉️ Relancer</button>`;
+      // Réutilise 'refuse-membership' (déjà utilisée pour refuser un paiement "déclaré" par
+      // un élève) : même sémantique, status → 'annulee'.
+      extra += ` <button class="small-btn" data-action="refuse-membership" data-id="${m.id}">Annuler</button>`;
+    }
+    if(ds==='active'){
+      extra += ` <button class="small-btn" data-action="revoke-membership" data-id="${m.id}">Révoquer</button>`;
+    }
+    if(ds==='expiree'){
+      extra += m.hiddenByAdmin
+        ? ` <button class="small-btn" data-action="unhide-membership" data-id="${m.id}">Afficher</button>`
+        : ` <button class="small-btn" data-action="hide-membership" data-id="${m.id}">Masquer</button>`;
+      extra += ` <button class="small-btn" data-action="delete-membership" data-id="${m.id}">Supprimer</button>`;
+    }
+    if(ds==='annulee'){
+      extra += ` <button class="small-btn" data-action="delete-membership" data-id="${m.id}">Supprimer</button>`;
+    }
+    return extra;
+  }
+
+  // S48 : petit tableau du calendrier de versements, affiché dans le tiroir "flèche" et dans le
+  // popup "clic sur la formule" quand l'abonnement a un plan de versements. "Marquer payé" est
+  // volontairement manuel (reçu comptant/Interac/e-transfert la plupart du temps pour ce genre
+  // d'entente) — le bouton "Payer maintenant" du client ne gère que le 1er versement pour
+  // l'instant (voir startPendingMembershipPayment).
+  function membershipInstallmentScheduleHtml(m){
+    if(!m.paymentPlan || !m.paymentPlan.installments || !m.paymentPlan.installments.length) return '';
+    const today = todayIso();
+    const rows = m.paymentPlan.installments.map((inst, idx)=>{
+      const overdue = inst.status !== 'paye' && inst.dueDate < today;
+      const statusLabel = inst.status==='paye' ? '✅ Payé' : (overdue ? '⚠️ En retard' : (inst.dueDate===today ? '📅 Dû aujourd’hui' : '⏳ À venir'));
+      const statusColor = inst.status==='paye' ? 'var(--sage)' : (overdue ? 'var(--coral)' : 'var(--chalk-dim)');
+      const actions = inst.status==='paye' ? '' : `
+        <button class="small-btn" data-action="mark-installment-paid" data-id="${m.id}" data-inst="${inst.id}">Marquer payé</button>
+        <button class="small-btn" data-action="resend-payment-request" data-id="${m.id}">✉️ Relancer</button>
+      `;
+      return `
+        <tr>
+          <td style="font-size:12px;">#${idx+1} · ${escapeHtml(inst.dueDate)}</td>
+          <td style="font-size:12px;">${escapeHtml(inst.amount)}</td>
+          <td style="font-size:12px;color:${statusColor};">${statusLabel}</td>
+          <td>${actions}</td>
+        </tr>
+      `;
+    }).join('');
+    return `
+      <div style="margin:8px 0;">
+        <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">Calendrier de versements ${m.paymentPlan.activateBeforePayment ? '(abonnement activé avant paiement)' : ''} — total ${escapeHtml(m.paymentPlan.totalAmount||'')}</p>
+        <table style="width:100%;"><tr><th style="font-size:11px;">Versement</th><th style="font-size:11px;">Montant</th><th style="font-size:11px;">Statut</th><th></th></tr>${rows}</table>
+      </div>
+    `;
+  }
+
   function renderMembershipRows(filterEmail, filterProfileId){
     let allMemberships = state.data.memberships.slice().sort((a,b)=>b.createdAt-a.createdAt);
     if(filterEmail) allMemberships = allMemberships.filter(m=>m.studentEmail.toLowerCase()===filterEmail.toLowerCase());
@@ -2933,61 +3103,32 @@
     if(!showHidden) allMemberships = allMemberships.filter(m=>!m.hiddenByAdmin);
     const rows = allMemberships.map(m=>{
       const ds = membershipDisplayStatus(m);
-      let extra = '';
-      if(ds==='active'){
-        extra = m.type==='credits'
-          ? `<button class="small-btn" data-action="add-credit" data-id="${m.id}">+1 cours</button>`
-          : `<button class="small-btn" data-action="add-days" data-id="${m.id}">+7 jours</button>`;
-      }
-      // 🔴 CORRIGÉ (S47) : "Rembourser"/"Transférer"/"Marquer payé Helcim" n'ont pas de sens
-      // pour une demande PAS ENCORE payée (attente_paiement) — exclue de ce bloc générique
-      // pour ne pas empiler 6 boutons sur cette ligne (trop de place à l'écran, signalé par
-      // Amélie). Elle garde son propre petit jeu de boutons ciblés juste en dessous.
-      if(ds!=='annulee' && ds!=='attente_paiement'){
-        extra += ` <button class="small-btn" data-action="edit-membership" data-id="${m.id}">Modifier</button>`;
-        extra += ` <button class="small-btn" data-action="refund-membership" data-id="${m.id}">Rembourser</button>`;
-        if(findStudentAccount(m.studentEmail)) extra += ` <button class="small-btn" data-action="open-transfer-membership" data-id="${m.id}">Transférer</button>`;
-        extra += ` <button class="small-btn" data-action="toggle-paid-helcim" data-id="${m.id}">${m.paidViaHelcim ? 'Retirer du revenu Helcim' : 'Marquer payé Helcim'}</button>`;
-      }
-      if(ds==='attente_paiement'){
-        // NOUVEAU (S47) : seulement 3 actions ciblées pour une demande en attente — "Modifier"
-        // (ex. corriger le montant avant que le client paie), relancer le courriel, ou annuler
-        // la demande. Labels courts pour rester compacts (voir commentaire ci-dessus).
-        extra += ` <button class="small-btn" data-action="edit-membership" data-id="${m.id}">Modifier</button>`;
-        extra += ` <button class="small-btn" data-action="resend-payment-request" data-id="${m.id}">✉️ Relancer</button>`;
-        // Réutilise 'refuse-membership' (déjà utilisée pour refuser un paiement "déclaré" par
-        // un élève) : même sémantique, status → 'annulee'.
-        extra += ` <button class="small-btn" data-action="refuse-membership" data-id="${m.id}">Annuler</button>`;
-      }
-      if(ds==='active'){
-        extra += ` <button class="small-btn" data-action="revoke-membership" data-id="${m.id}">Révoquer</button>`;
-      }
-      if(ds==='expiree'){
-        extra += m.hiddenByAdmin
-          ? ` <button class="small-btn" data-action="unhide-membership" data-id="${m.id}">Afficher</button>`
-          : ` <button class="small-btn" data-action="hide-membership" data-id="${m.id}">Masquer</button>`;
-        extra += ` <button class="small-btn" data-action="delete-membership" data-id="${m.id}">Supprimer</button>`;
-      }
-      if(ds==='annulee'){
-        extra += ` <button class="small-btn" data-action="delete-membership" data-id="${m.id}">Supprimer</button>`;
-      }
+      const extra = membershipActionButtons(m);
       const refundNote = m.refund ? `<br><span style="color:var(--coral);font-size:11px;">Remboursé ${m.refund.type==='complet'?'complet':'partiel'}${m.refund.amount?' · '+escapeHtml(m.refund.amount):''}</span>` : '';
       const hiddenNote = m.hiddenByAdmin ? ` <span style="color:var(--chalk-dim);font-size:11px;">(masqué)</span>` : '';
+      const nameColor = studentStatusColor(m.studentEmail, m.profileId) || 'var(--chalk)';
       const nameLink = m.profileId
-        ? `<button class="small-btn" data-action="open-child-detail" data-parent-email="${escapeHtml(m.studentEmail)}" data-member-id="${escapeHtml(m.profileId)}" style="padding:0;border:none;background:none;text-decoration:underline;color:var(--chalk);font-weight:bold;">${escapeHtml(m.studentName)}</button>`
-        : `<button class="small-btn" data-action="open-student-detail" data-email="${escapeHtml(m.studentEmail)}" style="padding:0;border:none;background:none;text-decoration:underline;color:var(--chalk);font-weight:bold;">${escapeHtml(m.studentName)}</button>`;
+        ? `<button class="small-btn" data-action="open-child-detail" data-parent-email="${escapeHtml(m.studentEmail)}" data-member-id="${escapeHtml(m.profileId)}" style="padding:0;border:none;background:none;text-decoration:underline;color:${nameColor};font-weight:bold;">${escapeHtml(m.studentName)}</button>`
+        : `<button class="small-btn" data-action="open-student-detail" data-email="${escapeHtml(m.studentEmail)}" style="padding:0;border:none;background:none;text-decoration:underline;color:${nameColor};font-weight:bold;">${escapeHtml(m.studentName)}</button>`;
+      // S48 : deux façons d'atteindre les mêmes actions — cliquer le nom de la formule ouvre
+      // le popup (Option B), et la flèche à droite déroule les boutons sur place (Option A).
+      // Choix d'Amélie : les deux en même temps, plutôt qu'un ou l'autre.
+      const rowId = 'mrow-' + m.id;
       return `
         <tr>
           <td>${nameLink}${childOfNoteHtml(m.studentEmail, m.profileId)}<br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(m.studentEmail)}</span></td>
-          <td>${escapeHtml(m.planName)}${m.grantedFree?' <span style="color:var(--chalk-dim);font-size:11px;">(offert)</span>':''}${hiddenNote}${refundNote}</td>
+          <td><span class="plan-name-link" data-action="open-membership-actions" data-id="${m.id}">${escapeHtml(m.planName)}</span>${m.grantedFree?' <span style="color:var(--chalk-dim);font-size:11px;">(offert)</span>':''}${hiddenNote}${refundNote}</td>
           <td>${ds==='active' ? membershipDetail(m) : '—'}</td>
           <td>${membershipBadge(m)}</td>
-          <td><div style="display:flex;flex-wrap:wrap;gap:4px;">${extra}</div></td>
+          <td class="arrow-cell" style="text-align:center;width:30px;"><button type="button" class="arrow-btn" title="Voir les actions" onclick="var r=document.getElementById('${rowId}');var open=r.style.display!=='table-row';r.style.display=open?'table-row':'none';this.classList.toggle('open',open);">▼</button></td>
+        </tr>
+        <tr id="${rowId}" style="display:none;">
+          <td colspan="5" style="background:var(--bg-tile);">${membershipInstallmentScheduleHtml(m)}<div style="display:flex;flex-wrap:wrap;gap:4px;">${extra}</div></td>
         </tr>
       `;
     }).join('');
     const toggleRow = hiddenCount ? `
-      <tr><td colspan="5" style="text-align:center;">
+      <tr><td colspan="6" style="text-align:center;">
         <button class="small-btn" data-action="toggle-show-hidden-memberships">${showHidden ? 'Cacher les abonnements masqués' : `Afficher les abonnements masqués (${hiddenCount})`}</button>
       </td></tr>
     ` : '';
@@ -4272,6 +4413,20 @@
 
     const toConfirmMemberships = state.data.memberships.filter(m=>m.status==='paiement_declare');
 
+    // S48 : versements en retard — demandé par Amélie pour le cas "abonnement activé avant
+    // paiement" (aucune suspension automatique, donc elle doit pouvoir voir elle-même qui doit
+    // encore de l'argent). Un abonnement peut apparaître ici même sans être en retard sur SON
+    // statut d'abonnement (souvent déjà "active") : c'est le versement précis qui est en retard.
+    const overdueInstallments = [];
+    state.data.memberships.forEach(mm=>{
+      if(!mm.paymentPlan || !mm.paymentPlan.installments) return;
+      mm.paymentPlan.installments.forEach((inst, idx)=>{
+        if(inst.status !== 'paye' && inst.dueDate < today){
+          overdueInstallments.push({membership:mm, inst, idx});
+        }
+      });
+    });
+
     // Revenu du mois en cours (⚠️ CHANGÉ S28, demande explicite d'Amélie) : TOUTES les ventes
     // réelles du mois — carte Helcim ET comptant/confirmées manuellement — pas seulement les
     // paiements automatiques par carte comme avant. Seuls les abonnements offerts gratuitement
@@ -4447,7 +4602,7 @@
         if(s.type==='child'){
           return `
             <li>
-              <span><strong>${escapeHtml(s.name)}</strong><br><span style="color:var(--chalk-dim);font-size:11px;">Enfant de ${escapeHtml(s.parentName)} · 🎂 ${escapeHtml(s.birthday||'—')} · ✉️ ${escapeHtml(s.email||'—')} · 📞 ${escapeHtml(s.phone||'—')}</span></span>
+              <span><strong${studentNameStyleAttr(s.parentEmail, s.memberId)}>${escapeHtml(s.name)}</strong><br><span style="color:var(--chalk-dim);font-size:11px;">Enfant de ${escapeHtml(s.parentName)} · 🎂 ${escapeHtml(s.birthday||'—')} · ✉️ ${escapeHtml(s.email||'—')} · 📞 ${escapeHtml(s.phone||'—')}</span></span>
               <span>
                 <button class="small-btn" data-action="open-child-detail" data-parent-email="${escapeHtml(s.parentEmail)}" data-member-id="${s.memberId}">Voir la fiche</button>
               </span>
@@ -4456,7 +4611,7 @@
         }
         return `
         <li>
-          <span><strong>${escapeHtml(s.name)}</strong><br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(s.email)}${s.phone?' · '+escapeHtml(s.phone):''}</span></span>
+          <span><strong${studentNameStyleAttr(s.email, null)}>${escapeHtml(s.name)}</strong><br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(s.email)}${s.phone?' · '+escapeHtml(s.phone):''}</span></span>
           <span>
             <button class="small-btn" data-action="open-student-detail" data-email="${escapeHtml(s.email)}">Voir la fiche</button>
             <button class="small-btn" data-action="delete-student" data-email="${escapeHtml(s.email)}">Supprimer</button>
@@ -4564,6 +4719,23 @@
         ${toConfirmMemberships.length ? `<table><tr><th>Étudiant</th><th>Formule</th><th></th></tr>${confirmRows}</table>`
           : '<p class="muted" style="color:var(--chalk-dim);">Rien en attente pour le moment.</p>'}
       `)}
+
+      ${overdueInstallments.length ? adminCard('overdue-installments', `⚠️ Versements en retard (${overdueInstallments.length})`, `
+        <table><tr><th>Étudiant</th><th>Formule</th><th>Versement</th><th>Montant</th><th></th></tr>
+          ${overdueInstallments.map(({membership:mm, inst, idx})=>`
+            <tr>
+              <td${studentNameStyleAttr(mm.studentEmail, mm.profileId)}>${escapeHtml(mm.studentName)}</td>
+              <td>${escapeHtml(mm.planName)}</td>
+              <td>#${idx+1} \u2014 d\u00fb le ${escapeHtml(inst.dueDate)}</td>
+              <td>${escapeHtml(inst.amount)}</td>
+              <td>
+                <button class="small-btn" data-action="mark-installment-paid" data-id="${mm.id}" data-inst="${inst.id}">Marquer pay\u00e9</button>
+                <button class="small-btn" data-action="resend-payment-request" data-id="${mm.id}">\u2709\ufe0f Relancer</button>
+              </td>
+            </tr>
+          `).join('')}
+        </table>
+      `, 'var(--coral)', 'var(--coral)') : ''}
 
       ${(()=>{
         const pendingShared = pendingModerationSharedItems();
@@ -5672,9 +5844,9 @@
               if(!results.length) return '<p class="muted" style="color:var(--chalk-dim);margin-top:8px;">Aucun résultat.</p>';
               return `<ul class="link-list" style="margin-top:8px;">${results.map(r=>{
                 if(r.type==='child'){
-                  return `<li><span>${escapeHtml(r.name)} <span style="color:var(--chalk-dim);font-size:11px;">(enfant de ${escapeHtml(r.parentName)})</span></span><span><button class="small-btn" data-action="pick-grant-recipient" data-email="${escapeHtml(r.parentEmail)}" data-name="${escapeHtml(r.name)}" data-profile="${r.memberId}">Choisir</button></span></li>`;
+                  return `<li><span${studentNameStyleAttr(r.parentEmail, r.memberId)}>${escapeHtml(r.name)} <span style="color:var(--chalk-dim);font-size:11px;">(enfant de ${escapeHtml(r.parentName)})</span></span><span><button class="small-btn" data-action="pick-grant-recipient" data-email="${escapeHtml(r.parentEmail)}" data-name="${escapeHtml(r.name)}" data-profile="${r.memberId}">Choisir</button></span></li>`;
                 }
-                return `<li><span>${escapeHtml(r.name)}</span><span><button class="small-btn" data-action="pick-grant-recipient" data-email="${escapeHtml(r.email)}" data-name="${escapeHtml(r.name)}" data-profile="">Choisir</button></span></li>`;
+                return `<li><span${studentNameStyleAttr(r.email, null)}>${escapeHtml(r.name)}</span><span><button class="small-btn" data-action="pick-grant-recipient" data-email="${escapeHtml(r.email)}" data-name="${escapeHtml(r.name)}" data-profile="">Choisir</button></span></li>`;
               }).join('')}</ul>`;
             })()}
             <input type="hidden" id="g-name" value="">
@@ -5689,8 +5861,33 @@
           </label>
           <div id="g-amount-wrap" style="display:none;margin-top:8px;">
             <label>Montant \u00e0 charger ($)</label>
-            <input type="number" id="g-amount" step="0.01" min="0" placeholder="Ex. : 75.00">
+            <input type="number" id="g-amount" step="0.01" min="0" placeholder="Ex. : 75.00" oninput="if(document.getElementById('g-installments-toggle') && document.getElementById('g-installments-toggle').checked) kossGenerateInstallmentRows();">
             <p style="font-size:11px;color:var(--chalk-dim);margin:6px 0 0;">Le client recevra un courriel l\u2019informant qu\u2019il doit payer ce montant sur Helcim pour activer son abonnement (bouton \u00ab Payer maintenant \u00bb aussi visible dans son compte). Laissez vide pour utiliser le prix normal de la formule.</p>
+
+            <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
+              <input type="checkbox" id="g-installments-toggle" style="width:auto;margin:0;" onchange="document.getElementById('g-installments-wrap').style.display=this.checked?'block':'none'; if(this.checked) kossGenerateInstallmentRows();">
+              <span>Payer en versements</span>
+            </label>
+            <div id="g-installments-wrap" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:10px;">
+              <label style="display:flex;align-items:center;gap:8px;margin-top:0;">
+                <input type="checkbox" id="g-activate-before" style="width:auto;margin:0;">
+                <span>Activer l\u2019abonnement avant le paiement</span>
+              </label>
+              <p style="font-size:11px;color:var(--chalk-dim);margin:6px 0 12px;">Sinon, l\u2019abonnement reste \u00ab paiement \u00e0 faire \u00bb jusqu\u2019\u00e0 la r\u00e9ception du 1er versement.</p>
+
+              <label>Nombre de versements</label>
+              <input type="number" id="g-inst-count" min="2" max="24" value="4" oninput="kossGenerateInstallmentRows()">
+
+              <label style="margin-top:10px;">Type</label>
+              <select id="g-inst-mode" onchange="kossGenerateInstallmentRows()">
+                <option value="egal">Versements \u00e9gaux</option>
+                <option value="personnalise">Montants personnalis\u00e9s</option>
+              </select>
+
+              <label style="margin-top:10px;">Calendrier (date + montant de chaque versement)</label>
+              <div id="g-inst-rows"></div>
+              <p id="g-inst-total-check" style="font-size:12px;margin-top:10px;color:var(--chalk-dim);"></p>
+            </div>
           </div>
           <div class="btn-row">
             <button class="btn btn-primary" data-action="submit-grant">Confirmer</button>
@@ -5698,6 +5895,24 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'membership-actions'){
+      // S48 : popup d'actions ouvert au clic sur le nom de la formule (Option B du visuel).
+      const membership = state.data.memberships.find(x=>x.id===m.payload.id);
+      if(!membership){
+        html = `<div class="modal"><p>Abonnement introuvable.</p><div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div></div>`;
+      } else {
+        const extra = membershipActionButtons(membership);
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>${escapeHtml(membership.studentName)}</h3>
+            <p class="muted" style="margin:2px 0 16px;">${escapeHtml(membership.planName)} — ${membershipBadge(membership)}</p>
+            ${membershipInstallmentScheduleHtml(membership)}
+            <div style="display:flex;flex-direction:column;gap:8px;">${extra || '<p class="muted" style="color:var(--chalk-dim);">Aucune action disponible.</p>'}</div>
+            <div class="btn-row" style="margin-top:16px;"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+          </div>
+        `;
+      }
     } else if(m.type === 'manage-memberships'){
       const q = state.membershipSearchQuery || '';
       const tried = !!state.membershipSearchTried;
@@ -5724,7 +5939,7 @@
           </div>
           ${!tried ? '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Rien ne s’affiche tant qu’aucune recherche n’a été lancée. Laissez le champ vide et cliquez « Rechercher » pour voir tout le monde.</p>' : (
             matches.length ? (
-              rowsHtml ? `<table style="margin-top:12px;"><tr><th>Étudiant</th><th>Formule</th><th>Détail</th><th>Statut</th><th></th></tr>${rowsHtml}</table>`
+              rowsHtml ? `<table style="margin-top:12px;"><tr><th>Étudiant</th><th>Formule</th><th>Détail</th><th>Statut</th><th></th><th></th></tr>${rowsHtml}</table>`
                 : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucun abonnement pour cet étudiant.</p>'
             ) : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucun étudiant trouvé.</p>'
           )}
@@ -6046,7 +6261,7 @@
         html = `
           <div class="modal" style="max-width:520px;">
             <button class="close-x" data-action="close-modal">✕</button>
-            <h3>${escapeHtml(fm.name)}</h3>
+            <h3${studentNameStyleAttr(parentAcct.email, fm.id)}>${escapeHtml(fm.name)}</h3>
             <p class="muted">Enfant de <span style="color:var(--chalk);cursor:pointer;text-decoration:underline;" data-action="open-student-detail" data-email="${escapeHtml(parentAcct.email)}">${escapeHtml(parentAcct.name)}</span>${parentAcct.phone?' · '+escapeHtml(parentAcct.phone):''}</p>
 
             <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
@@ -6124,7 +6339,7 @@
         html = `
           <div class="modal" style="max-width:520px;">
             <button class="close-x" data-action="close-modal">✕</button>
-            <h3>${escapeHtml(acct.name)}</h3>
+            <h3${studentNameStyleAttr(acct.email, null)}>${escapeHtml(acct.name)}</h3>
             <p class="muted">${escapeHtml(acct.email)}${acct.phone?' · '+escapeHtml(acct.phone):''}</p>
             <div class="btn-row"><button class="btn btn-primary" data-action="grant-membership-for" data-email="${escapeHtml(email)}" data-name="${escapeHtml(acct.name)}">Offrir un abonnement</button></div>
             ${unpaidAttendanceHtml(email, null)}
@@ -6171,7 +6386,7 @@
             <div class="btn-row"><button class="btn btn-secondary" data-action="save-student-notes" data-email="${escapeHtml(email)}">Enregistrer les notes</button></div>
 
             <label style="margin-top:14px;">Abonnements actifs (${activeMemberships.length}) / passés (${pastMemberships.length})</label>
-            ${rows ? `<table><tr><th>Étudiant</th><th>Formule</th><th>Détail</th><th>Statut</th><th></th></tr>${rows}</table>` : '<p class="muted" style="color:var(--chalk-dim);">Aucun abonnement.</p>'}
+            ${rows ? `<table><tr><th>Étudiant</th><th>Formule</th><th>Détail</th><th>Statut</th><th></th><th></th></tr>${rows}</table>` : '<p class="muted" style="color:var(--chalk-dim);">Aucun abonnement.</p>'}
 
             <label style="margin-top:14px;">Autocollants offerts par vous</label>
             ${(()=>{
@@ -9236,6 +9451,12 @@
       if(!m || m.status !== 'attente_paiement'){ showToast('Cet abonnement n\u2019est plus en attente de paiement.'); render(); return; }
       await startPendingMembershipPayment(m, btn);
     }
+    else if(action==='open-membership-actions'){
+      // S48 : popup ouvert au clic sur le nom de la formule dans une ligne d'abonnement
+      // (Option B du visuel envoyé à Amélie) — mêmes actions que le tiroir de la flèche.
+      state.modal = {type:'membership-actions', payload:{id}};
+      render();
+    }
     else if(action==='open-pending-payment-modal'){
       // NOUVEAU (S47) : clic sur le rond vert de notification dans l'en-tête — ouvre la même
       // fenêtre de confirmation « Paiement demandé » que le lien du courriel, plutôt que
@@ -9578,6 +9799,39 @@
       }
       btn.disabled = false;
       btn.textContent = originalLabel;
+    }
+    else if(action==='mark-installment-paid'){
+      // S48 : marquer un versement reçu manuellement (comptant, Interac, virement) — le mode le
+      // plus probable pour ce genre d'entente avec des parents. Si c'était le tout premier
+      // versement et que l'abonnement n'avait pas été activé d'avance, on l'active maintenant
+      // (même logique que l'activation "gratuite" de activatePlanForStudent). Le prochain
+      // versement non payé devient le nouveau planPrice — c'est ce montant que koss-init-payment
+      // et koss-send-payment-request chargeront/afficheront ensuite.
+      const membershipId = id;
+      const instId = e.currentTarget.dataset.inst;
+      const mObj = state.data.memberships.find(mm=>mm.id===membershipId);
+      if(!mObj || !mObj.paymentPlan){ showToast('Abonnement introuvable.'); return; }
+      const inst = mObj.paymentPlan.installments.find(i=>i.id===instId);
+      if(!inst){ showToast('Versement introuvable.'); return; }
+      inst.status = 'paye';
+      inst.paidAt = Date.now();
+      if(mObj.status === 'attente_paiement'){
+        const plan = state.data.membershipPlans.find(p=>p.id===mObj.planId);
+        mObj.status = 'active';
+        if(plan && plan.type === 'illimite'){
+          const start = new Date();
+          const end = new Date(start); end.setDate(end.getDate() + plan.durationDays);
+          mObj.startDate = isoDate(start);
+          mObj.endDate = isoDate(end);
+        } else if(plan){
+          mObj.creditsRemaining = plan.creditsCount;
+        }
+      }
+      const nextDue = mObj.paymentPlan.installments.find(i=>i.status!=='paye');
+      if(nextDue) mObj.planPrice = nextDue.amount;
+      await persist();
+      render();
+      showToast(nextDue ? 'Versement marqué payé — prochain versement à venir.' : 'Tous les versements sont payés !');
     }
     else if(action==='hide-membership-self'){
       const m = state.data.memberships.find(mm=>mm.id===id);
@@ -10245,12 +10499,14 @@
       const paidEl = document.getElementById('g-paid');
       const isPaid = !!(paidEl && paidEl.checked);
       let customPrice = null;
+      let totalAmountNum = null;
       if(isPaid){
         const amountEl = document.getElementById('g-amount');
         const raw = amountEl ? amountEl.value.trim() : '';
         if(raw){
           const parsed = parseFloat(raw);
           if(isNaN(parsed) || parsed < 0){ showToast('Montant invalide.'); return; }
+          totalAmountNum = parsed;
           // 🔴 CORRIGÉ (S47) : planPrice est TOUJOURS une chaîne déjà formatée avec le "$" dans
           // le reste de l'app (voir submit-confirm-membership-amount plus bas, même formule) —
           // un nombre brut comme 1.5 s'affichait "1.5" au lieu de "1.50 $" partout où on montre
@@ -10258,12 +10514,72 @@
           customPrice = parsed.toFixed(2).replace(/\.00$/,'') + ' $';
         }
       }
+      // NOUVEAU (S48) : « Payer en versements » — au lieu d'une seule demande de paiement pour
+      // le montant total, on découpe en plusieurs versements datés (montants égaux ou entrés à
+      // la main), chacun envoyant sa propre demande de paiement à sa date. Voir
+      // koss-send-payment-request (adapté pour lire le versement dû plutôt que planPrice fixe).
+      const instToggleEl = document.getElementById('g-installments-toggle');
+      const useInstallments = isPaid && !!(instToggleEl && instToggleEl.checked);
+      let paymentPlan = null;
+      if(useInstallments){
+        if(totalAmountNum == null){ showToast('Entrez d’abord le montant total à charger.'); return; }
+        const rows = Array.from(document.querySelectorAll('#g-inst-rows .g-inst-row'));
+        if(rows.length < 2){ showToast('Il faut au moins 2 versements.'); return; }
+        const installments = [];
+        let sum = 0;
+        for(const row of rows){
+          const dateVal = row.querySelector('.g-inst-date').value;
+          const amtRaw = row.querySelector('.g-inst-amt').value;
+          const amtNum = parseFloat(amtRaw);
+          if(!dateVal){ showToast('Chaque versement doit avoir une date.'); return; }
+          if(isNaN(amtNum) || amtNum <= 0){ showToast('Chaque versement doit avoir un montant valide.'); return; }
+          sum = Math.round((sum + amtNum) * 100) / 100;
+          installments.push({
+            id: uid(),
+            dueDate: dateVal,
+            amount: amtNum.toFixed(2).replace(/\.00$/,'') + ' $',
+            status: 'a_venir', // a_venir | du | paye
+          });
+        }
+        const target = Math.round(totalAmountNum * 100) / 100;
+        if(Math.abs(sum - target) > 0.02){
+          showToast(`Le total des versements (${sum.toFixed(2)} $) ne correspond pas au montant à charger (${target.toFixed(2)} $).`);
+          return;
+        }
+        installments.sort((a,b)=> a.dueDate < b.dueDate ? -1 : 1);
+        const activateBeforeEl = document.getElementById('g-activate-before');
+        paymentPlan = {
+          activateBeforePayment: !!(activateBeforeEl && activateBeforeEl.checked),
+          totalAmount: target.toFixed(2).replace(/\.00$/,'') + ' $',
+          installments,
+        };
+        // Le 1er versement dû sert de planPrice initial (montant chargé par le bouton "Payer
+        // maintenant" / le courriel tant que ce versement n'est pas réglé).
+        customPrice = installments[0].amount;
+      }
       const m = activatePlanForStudent(plan, name, email, !isPaid, profileId, customPrice);
+      if(paymentPlan){
+        m.paymentPlan = paymentPlan;
+        if(paymentPlan.activateBeforePayment){
+          // Reprend exactement la logique d'activation "gratuite" de activatePlanForStudent —
+          // l'abonnement démarre tout de suite même si rien n'est encore payé, à la demande
+          // explicite d'Amélie ("activer l'abonnement avant le paiement").
+          m.status = 'active';
+          if(plan.type === 'illimite'){
+            const start = new Date();
+            const end = new Date(start); end.setDate(end.getDate() + plan.durationDays);
+            m.startDate = isoDate(start);
+            m.endDate = isoDate(end);
+          } else {
+            m.creditsRemaining = plan.creditsCount;
+          }
+        }
+      }
       await persist();
       state.modal = null; closeModalDom();
       render();
       if(isPaid){
-        showToast('Demande de paiement envoyée au client.');
+        showToast(paymentPlan ? 'Calendrier de versements créé, 1er avis envoyé au client.' : 'Demande de paiement envoyée au client.');
         // Best-effort : n'échoue jamais l'opération si le courriel ne part pas — le client
         // garde de toute façon le bouton « Payer maintenant » dans son compte (badge « Paiement
         // à faire » visible immédiatement, même sans courriel).
