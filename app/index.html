@@ -1904,8 +1904,15 @@
               confirmedM.paidViaHelcimAt = Date.now();
               await persist();
             }
-            try{ sb.functions.invoke('koss-send-invoice', {body:{membershipId:m.id}}); }
-            catch(err){ console.error('Échec envoi facture automatique:', err); }
+            // S48-v2 : koss-confirm-payment gère lui-même le calendrier de versements
+            // (marque le bon versement payé, avance planPrice au suivant) — la facture
+            // "abonnement complet" habituelle ne convient pas à un versement partiel, donc on
+            // ne l'envoie pas dans ce cas. Un reçu par versement pourra être ajouté séparément
+            // si Amélie le demande.
+            if(confirmedM && !confirmedM.paymentPlan){
+              try{ sb.functions.invoke('koss-send-invoice', {body:{membershipId:m.id}}); }
+              catch(err){ console.error('Échec envoi facture automatique:', err); }
+            }
           }
           render();
         } else if(status==='ABORTED'){
@@ -2802,11 +2809,24 @@
   // Sert à afficher un petit badge de notification à côté du nom, à côté de celui des
   // messages/autocollants non lus, pour qu'un abonnement offert par une gestionnaire ne passe
   // pas inaperçu même si le courriel de demande de paiement n'a jamais été ouvert.
+  // S48-v2 : vrai maintenant pour un abonnement à versements (paymentPlan) tant qu'il reste au
+  // moins un versement non payé — même si l'abonnement est déjà "active" (cas "Activer avant le
+  // paiement"). Payer en ligne redevient alors possible pour CE versement, pas seulement pour
+  // le tout premier — voir koss-init-payment/koss-confirm-payment (S48-v2) qui savent
+  // maintenant facturer/confirmer le bon versement précis.
+  function nextDueInstallment(m){
+    if(!m || !m.paymentPlan || !Array.isArray(m.paymentPlan.installments)) return null;
+    return m.paymentPlan.installments.find(i=>i && i.status!=='paye') || null;
+  }
+  function hasDueInstallment(m){
+    return !!nextDueInstallment(m);
+  }
   function pendingPaymentsForAccount(acct){
     if(!acct) return [];
     const e = acct.email.toLowerCase();
     return state.data.memberships.filter(m =>
-      m.studentEmail && m.studentEmail.toLowerCase()===e && m.status==='attente_paiement'
+      m.studentEmail && m.studentEmail.toLowerCase()===e &&
+      (m.status==='attente_paiement' || hasDueInstallment(m))
     );
   }
   function pendingPaymentCountForAccount(acct){
@@ -3898,7 +3918,9 @@
           // NOUVEAU (S47) : abonnement offert par une gestionnaire à un montant personnalisé
           // (ou tout abonnement en attente de paiement) — paiement direct sans repasser par le
           // catalogue des formules.
-          const payBtn = ds==='attente_paiement' ? ` <button class="btn btn-primary small-btn" data-action="pay-pending-membership" data-id="${m.id}">🔒 Payer maintenant${m.planPrice!=null?' ('+m.planPrice+')':''}</button>` : '';
+          const dueInst = nextDueInstallment(m);
+          const payAmount = dueInst ? dueInst.amount : m.planPrice;
+          const payBtn = (ds==='attente_paiement' || dueInst) ? ` <button class="btn btn-primary small-btn" data-action="pay-pending-membership" data-id="${m.id}">🔒 Payer maintenant${payAmount!=null?' ('+payAmount+')':''}</button>` : '';
           // NOUVEAU (S47) : refuser une demande de paiement (ex. montant offert qu'on ne veut
           // pas accepter) — nécessite un accord côté Supabase (koss_sync_all) pour qu'un élève
           // puisse lui-même faire passer SON abonnement de "attente_paiement" à "annulee".
@@ -4980,7 +5002,8 @@
       // depuis le lien "PAYER MAINTENANT" du courriel ET depuis le rond vert de notification
       // dans l'en-tête, pour ne jamais lancer le paiement sans que la personne s'y attende.
       const pm = state.data.memberships.find(mm=>mm.id===m.payload.membershipId);
-      if(!pm || pm.status !== 'attente_paiement'){
+      const pmDueInst = pm ? nextDueInstallment(pm) : null;
+      if(!pm || (pm.status !== 'attente_paiement' && !pmDueInst)){
         html = `
           <div class="modal" style="max-width:380px;text-align:center;">
             <button class="close-x" data-action="close-modal">✕</button>
@@ -4994,8 +5017,8 @@
           <div class="modal" style="max-width:380px;text-align:center;">
             <button class="close-x" data-action="close-modal">✕</button>
             <h3>Paiement demandé</h3>
-            <p style="font-size:14px;line-height:1.6;margin:10px 0 4px;">${escapeHtml(pm.planName)}</p>
-            <p style="font-family:var(--font-d);font-size:26px;color:var(--sage);margin:0 0 14px;">${escapeHtml(pm.planPrice)}</p>
+            <p style="font-size:14px;line-height:1.6;margin:10px 0 4px;">${escapeHtml(pm.planName)}${pmDueInst?` <span style="color:var(--chalk-dim);font-size:12px;">(versement ${pm.paymentPlan.installments.indexOf(pmDueInst)+1}/${pm.paymentPlan.installments.length})</span>`:''}</p>
+            <p style="font-family:var(--font-d);font-size:26px;color:var(--sage);margin:0 0 14px;">${escapeHtml(pmDueInst ? pmDueInst.amount : pm.planPrice)}</p>
             <p class="muted" style="color:var(--chalk-dim);font-size:13px;">Continuer vers la plateforme de paiement sécurisée Helcim pour compléter ce paiement et activer l’abonnement. Aucune information de carte n’est conservée sur nos serveurs.</p>
             <div class="btn-row">
               <button class="btn btn-primary" data-action="confirm-start-pending-payment" data-id="${pm.id}">🔒 Continuer vers le paiement sécurisé</button>
@@ -9448,7 +9471,7 @@
       const btn = e.currentTarget;
       const membershipId = btn.dataset.id;
       const m = state.data.memberships.find(mm=>mm.id===membershipId);
-      if(!m || m.status !== 'attente_paiement'){ showToast('Cet abonnement n\u2019est plus en attente de paiement.'); render(); return; }
+      if(!m || (m.status !== 'attente_paiement' && !hasDueInstallment(m))){ showToast('Cet abonnement n\u2019est plus en attente de paiement.'); render(); return; }
       await startPendingMembershipPayment(m, btn);
     }
     else if(action==='open-membership-actions'){
@@ -9471,7 +9494,7 @@
       const membershipId = e.currentTarget.dataset.id;
       const m = state.data.memberships.find(mm=>mm.id===membershipId);
       state.modal = null; closeModalDom(); render();
-      if(!m || m.status !== 'attente_paiement'){ showToast('Cet abonnement n\u2019est plus en attente de paiement.'); return; }
+      if(!m || (m.status !== 'attente_paiement' && !hasDueInstallment(m))){ showToast('Cet abonnement n\u2019est plus en attente de paiement.'); return; }
       await startPendingMembershipPayment(m, null);
     }
 
