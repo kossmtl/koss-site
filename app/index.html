@@ -1095,7 +1095,10 @@
       if(e && e.notFound){
         // Vraiment aucune ligne sur le serveur : premier lancement, sécuritaire de créer une base vide.
         state.data = defaultData();
-        await persist();
+        // CORRECTIF (22 sept) : `persist()` peut maintenant lancer une exception (voir plus
+        // bas) — on l'entoure ici aussi pour ne jamais laisser une page blanche même dans ce
+        // cas très rare (tout premier lancement).
+        try{ await persist(); }catch(firstPersistErr){ console.error('Échec de la première sauvegarde initiale (non bloquant) :', firstPersistErr); }
       } else {
         // Échec de connexion/lecture (réseau, permissions, Supabase temporairement indisponible...) :
         // NE JAMAIS écraser les données existantes sur le serveur avec une base vide dans ce cas —
@@ -1107,19 +1110,48 @@
         return;
       }
     }
+    // CORRECTIF (22 sept) : ces garde-fous ne couvraient que 3 champs, mais koss_load_public
+    // (utilisé pour un visiteur PAS ENCORE authentifié — ex. ?admin ouvert en navigation
+    // privée, avant d'entrer le NIP) renvoie probablement un sous-ensemble réduit des données
+    // (sans managers/bugReports/etc., par sécurité). Le code plus bas (ex. `state.data.classes
+    // .length`) suppose ces champs toujours présents et plantait avec une erreur JS non
+    // rattrapée — ce qui interrompait loadData() AVANT qu'elle n'arrive à choisir le bon écran
+    // (ligne ~1135 plus bas), laissant l'app retomber par défaut sur l'écran d'accueil élève
+    // au lieu de l'écran de NIP admin. Amélie l'a repéré en testant ?admin en navigation
+    // privée : elle tombait sur "Bienvenue chez K-OSS" au lieu du NIP.
     if(!state.data.membershipPlans) state.data.membershipPlans = [];
     if(!state.data.memberships) state.data.memberships = [];
     if(!state.data.studentAccounts) state.data.studentAccounts = [];
-    migrateData();
-    if(!state.data.seededKoss && state.data.classes.length===0){
-      seedKossSchedule();
-      state.data.seededKoss = true;
-      await persist();
-    }
-    if(!state.data.seededPricing){
-      seedPricingPlans();
-      state.data.seededPricing = true;
-      await persist();
+    if(!state.data.classes) state.data.classes = [];
+    if(!state.data.classOverrides) state.data.classOverrides = [];
+    if(!state.data.classCancelRules) state.data.classCancelRules = [];
+    if(!state.data.bookings) state.data.bookings = [];
+    if(!state.data.managers) state.data.managers = [];
+    if(!state.data.bugReports) state.data.bugReports = [];
+    if(!state.data.bugReportsArchive) state.data.bugReportsArchive = [];
+    if(!state.data.config) state.data.config = { name: 'Mon Studio', pin: '1234' };
+    // CORRECTIF URGENT (22 sept) : cette section (migration + seed initial) pouvait planter
+    // — notamment `persist()` qui, depuis le correctif du même jour plus haut, LANCE une
+    // exception au lieu de simplement échouer en silence (ex. une écriture refusée pour une
+    // session pas encore authentifiée). Sans filet ici, une telle erreur interrompait tout
+    // loadData() AVANT la ligne plus bas qui choisit l'écran à afficher ET avant le render()
+    // final — résultat : page complètement blanche, pire que le bug qu'on cherchait à
+    // corriger. On isole donc cette section : une erreur ici est journalisée mais n'empêche
+    // JAMAIS l'app d'atteindre le choix d'écran et le premier rendu.
+    try{
+      migrateData();
+      if(!state.data.seededKoss && state.data.classes.length===0){
+        seedKossSchedule();
+        state.data.seededKoss = true;
+        await persist();
+      }
+      if(!state.data.seededPricing){
+        seedPricingPlans();
+        state.data.seededPricing = true;
+        await persist();
+      }
+    }catch(seedErr){
+      console.error('Erreur pendant la migration/le seed initial (non bloquant) :', seedErr);
     }
     try{
       const sres = await storageBackend.get('student_session', false);
