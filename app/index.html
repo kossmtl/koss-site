@@ -1633,6 +1633,23 @@
     // tout le bloc JSON du studio. Échec ouvert : toute erreur ici (réseau, etc.) fait
     // simplement retomber sur l'ancien comportement (chargement complet), jamais de blocage
     // ni de donnée manquée — ce n'est qu'une optimisation réseau, pas un chemin critique.
+    // CORRECTIF (22 sept) — bug trouvé grâce à Amélie : un signalement envoyé depuis un
+    // appareil "élève/visiteur" apparaissait bien un instant, puis DISPARAISSAIT tout seul
+    // ~2 secondes plus tard (mais un envoi fait depuis l'admin, lui, restait). Cause : cette
+    // fonction lisait `state.lastSyncedData` comme "base" APRÈS avoir attendu le téléchargement
+    // du JSON distant (deux `await` plus bas). Si un `persist()` concurrent (ex: la personne
+    // qui vient de soumettre son signalement) se terminait ENTRE le début de ce
+    // refreshFromRemote() et cette lecture, `lastSyncedData` avait déjà avancé pour inclure le
+    // nouvel élément — alors que le JSON distant qu'on vient de télécharger ici a été récupéré
+    // AVANT cet ajout (donc encore sans lui). mergeArrayById() voit alors : présent dans
+    // "local" ET dans "base" (avancée), mais absent du "remote" (périmé) → il conclut à tort
+    // que l'élément "a été supprimé ailleurs entre-temps" et le retire ! En capturant `base`
+    // ICI, tout au début, AVANT le moindre `await` (donc avant que quoi que ce soit de
+    // concurrent ait pu avancer `lastSyncedData`), la fusion utilise plus loin le `state.data`
+    // le plus à jour comme "local" (donc avec l'ajout, si le persist() concurrent a fini
+    // avant) mais une "base" figée à AVANT ce refresh — l'élément est alors vu comme "nouveau,
+    // pas encore vu par le serveur" plutôt que "supprimé", et reste.
+    const baseSnapshot = state.lastSyncedData;
     let freshVersion = null;
     try{
       const { data: v, error: vErr } = await sb.rpc('koss_data_version');
@@ -1644,7 +1661,7 @@
     try{
       const res = await storageBackend.get(STORAGE_KEY, true);
       const remote = JSON.parse(res.value);
-      const base = state.lastSyncedData || remote;
+      const base = baseSnapshot || remote;
       const merged = mergeAppData(base, state.data, remote);
       const changed = JSON.stringify(merged) !== JSON.stringify(state.data);
       state.data = merged;
