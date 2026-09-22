@@ -1576,8 +1576,19 @@
     const payload = JSON.stringify(toWrite);
     if(payload.length > APP_STORAGE_CAP){
       console.error('Erreur de sauvegarde: payload trop volumineux', payload.length);
-      showToast("Espace de stockage maximal atteint. Envoie ce message à Amélie pour qu'elle règle le problème.");
-      return false;
+      // CORRECTIF (22 sept) : cette fonction retournait `false` en cas d'échec, mais la
+      // quasi-totalité des ~120 appelants de persist() dans l'app n'ont jamais vérifié cette
+      // valeur de retour — ils enchaînaient quand même sur "render() + showToast('succès')",
+      // qui EFFAÇAIT ce toast d'erreur (showToast retire tous les toasts existants avant
+      // d'afficher le sien) et affichait un message de succès trompeur. C'est très
+      // probablement pour ça qu'Amélie ne recevait plus les signalements de bug : le·la
+      // signaleur·euse voyait "Bug signalé — merci !" même quand l'enregistrement échouait
+      // réellement côté serveur. En LANÇANT une erreur au lieu de retourner false, on
+      // interrompt l'exécution du code appelant AVANT qu'il n'affiche son faux message de
+      // succès — le filet de sécurité déjà présent dans attachHandlers() (qui entoure chaque
+      // clic d'un .catch()) prend alors le relais et affiche la vraie erreur. Corrige les ~120
+      // appels d'un coup, sans avoir à toucher chacun individuellement.
+      throw new Error("Espace de stockage maximal atteint. Envoie ce message à Amélie pour qu'elle règle le problème.");
     }
     try{
       await storageBackend.set(STORAGE_KEY, payload, true);
@@ -1586,8 +1597,7 @@
       return true;
     }catch(e){
       console.error('Erreur de sauvegarde', e);
-      showToast("Erreur d'enregistrement, réessayez.");
-      return false;
+      throw new Error("Erreur d'enregistrement, réessayez.");
     }
   }
 
@@ -1751,9 +1761,16 @@
   ['click','keydown','touchstart','pointerdown','scroll'].forEach(evt=>{
     document.addEventListener(evt, noteUserActivityForRefresh, {passive:true});
   });
+  // CORRECTIF (22 sept) : le "on ne sonde plus du tout si onglet délaissé" empêchait un
+  // onglet admin resté ouvert (mais inactif) de jamais voir arriver les nouveaux signalements
+  // de bug/suggestion (ou tout autre changement fait ailleurs) tant que personne n'y cliquait.
+  // On sonde donc TOUJOURS toutes les 45s tant que l'onglet est visible — mais coordinatedRefresh()
+  // → refreshFromRemote() commence par koss_data_version() (quelques octets) et ne retélécharge
+  // le gros JSON QUE si quelque chose a vraiment changé côté serveur : l'essentiel de l'économie
+  // d'egress de la S47 (éviter le gros téléchargement inutile) reste donc intact, seul le petit
+  // sondage de version redevient permanent.
   setInterval(()=>{
     if(document.visibilityState === 'hidden') return;
-    if(Date.now() - lastUserActivityAt > REFRESH_IDLE_THRESHOLD_MS) return; // onglet délaissé : on ne sonde plus
     lastAutoRefreshAt = Date.now();
     coordinatedRefresh();
   }, 45000);
@@ -2959,6 +2976,31 @@
 
   function currentManager(){
     return state.data.managers.find(m=>m.id===state.currentManagerId) || null;
+  }
+
+  // S48 (22 sept, demande d'Amélie) : identifiant stable de "qui envoie ce signalement de
+  // bug/suggestion", utilisé pour lui permettre de retrouver ses propres signalements plus
+  // tard (statut + réponse). Un·e visiteur·euse non connecté·e n'a pas d'identifiant stable
+  // (retourne null) — ses signalements restent visibles pour l'admin mais ne peuvent pas être
+  // retrouvés par l'auteur, faute de compte.
+  function currentReporterKey(){
+    if(state.adminUnlocked){
+      const mgr = currentManager();
+      return mgr ? ('mgr:' + mgr.id) : null;
+    }
+    if(state.studentSession && state.studentSession.email){
+      return 'student:' + state.studentSession.email.toLowerCase();
+    }
+    return null;
+  }
+
+  const BUG_STATUS_META = {
+    en_attente: {label:'En attente', color:'var(--chalk-dim)'},
+    fait: {label:'Fait', color:'var(--sage)'},
+    rejete: {label:'Rejeté', color:'var(--coral)'},
+  };
+  function bugStatusMeta(status){
+    return BUG_STATUS_META[status] || BUG_STATUS_META.en_attente;
   }
 
   function findStudentAccount(email){
@@ -4732,14 +4774,23 @@
             <button class="btn btn-secondary" data-action="run-bug-search">Chercher</button>
             ${q ? `<button class="small-btn" data-action="clear-bug-search">✕</button>` : ''}
           </div>
-          ${bugs.length ? bugs.map(b=>`
+          ${bugs.length ? bugs.map(b=>{
+            const st = bugStatusMeta(b.status);
+            return `
             <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
-              <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(b.reporter||'')}</p>
+              <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(b.reporter||'')} — <strong style="color:${st.color};">${st.label}</strong></p>
               <p style="font-size:13px;white-space:pre-wrap;margin:0 0 8px;">${escapeHtml(b.text)}</p>
               ${b.screenshot ? `<img src="${b.screenshot}" data-action="view-bug-image" data-src="${b.screenshot}" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:8px;cursor:zoom-in;" title="Cliquer pour agrandir">` : ''}
-              <button class="small-btn" data-action="delete-bug-report" data-id="${b.id}">Marquer comme réglé</button>
+              ${b.adminReply ? `<div style="background:var(--paper-alt,rgba(0,0,0,.03));border-radius:6px;padding:8px;margin-bottom:8px;"><p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">Ta réponse${b.repliedAt ? ' — '+new Date(b.repliedAt).toLocaleString('fr-CA') : ''}</p><p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.adminReply)}</p></div>` : ''}
+              <div class="btn-row" style="flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+                ${Object.keys(BUG_STATUS_META).map(s=>`<button class="small-btn ${b.status===s?'active':''}" style="${b.status===s?'background:'+BUG_STATUS_META[s].color+';color:#fff;border-color:'+BUG_STATUS_META[s].color+';':''}" data-action="set-bug-status" data-id="${b.id}" data-status="${s}">${BUG_STATUS_META[s].label}</button>`).join('')}
+              </div>
+              <div class="btn-row" style="flex-wrap:wrap;gap:6px;">
+                <button class="small-btn" data-action="open-reply-bug-report" data-id="${b.id}">${b.adminReply ? '✏️ Modifier la réponse' : '💬 Répondre'}</button>
+                <button class="small-btn" data-action="delete-bug-report" data-id="${b.id}">Marquer comme réglé (archiver)</button>
+              </div>
             </div>
-          `).join('') : `<p class="muted" style="color:var(--chalk-dim);">${q ? 'Aucun résultat.' : 'Aucun bug signalé.'}</p>`}
+          `;}).join('') : `<p class="muted" style="color:var(--chalk-dim);">${q ? 'Aucun résultat.' : 'Aucun bug signalé.'}</p>`}
           <button class="small-btn" data-action="open-bug-archive" style="margin-top:4px;">📁 Archives ${archived.length ? '('+archived.length+')' : ''}</button>
         `);
       })()}
@@ -5035,10 +5086,31 @@
         `;
       }
     } else if(m.type === 'report-bug'){
+      // S48 (22 sept, demande d'Amélie) : la personne connectée (élève ou gestionnaire) voit
+      // ici ses propres signalements passés — actifs ET archivés —, leur statut, et la réponse
+      // laissée par l'admin, si elle existe. Un·e visiteur·euse non connecté·e n'a pas
+      // d'identifiant stable (currentReporterKey() → null) donc ne voit que le formulaire.
+      const myKey = currentReporterKey();
+      const mine = myKey ? [...(state.data.bugReports||[]), ...(state.data.bugReportsArchive||[])]
+        .filter(b=>b.reporterKey===myKey).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)) : [];
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>🐛 Bug et suggestions</h3>
+          ${mine.length ? `
+            <label>Mes signalements précédents</label>
+            <div style="max-height:220px;overflow-y:auto;margin-bottom:14px;">
+              ${mine.map(b=>{
+                const st = bugStatusMeta(b.status);
+                return `
+                <div style="border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;">
+                  <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — <strong style="color:${st.color};">${st.label}</strong></p>
+                  <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.text)}</p>
+                  ${b.adminReply ? `<div style="background:var(--paper-alt,rgba(0,0,0,.03));border-radius:6px;padding:6px;margin-top:6px;"><p style="font-size:11px;color:var(--chalk-dim);margin:0 0 2px;">Réponse${b.repliedAt ? ' — '+new Date(b.repliedAt).toLocaleString('fr-CA') : ''}</p><p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.adminReply)}</p></div>` : ''}
+                </div>
+              `;}).join('')}
+            </div>
+          ` : ''}
           <p class="muted" style="color:var(--chalk-dim);">Décris ce qui ne fonctionne pas (ce que tu faisais, ce qui s’est passé, ce que tu attendais), ou propose une idée.</p>
           <label>Description du bug ou de la suggestion</label>
           <textarea id="bugreport-text" rows="6" placeholder="Ex. : Quand je clique sur « Payer maintenant » sur mon iPhone, rien ne se passe..."></textarea>
@@ -5053,6 +5125,26 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'reply-bug-report'){
+      const bug = (state.data.bugReports||[]).find(b=>b.id===m.payload.id) || (state.data.bugReportsArchive||[]).find(b=>b.id===m.payload.id);
+      if(!bug){
+        html = `<div class="modal" style="max-width:380px;text-align:center;"><button class="close-x" data-action="close-modal">✕</button><h3>Introuvable</h3><p class="muted" style="color:var(--chalk-dim);">Ce signalement n’existe plus.</p></div>`;
+      } else {
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>💬 Répondre au signalement</h3>
+            <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(bug.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(bug.reporter||'')}</p>
+            <p style="font-size:13px;white-space:pre-wrap;background:var(--paper-alt,rgba(0,0,0,.03));border-radius:6px;padding:8px;margin:0 0 12px;">${escapeHtml(bug.text)}</p>
+            <label>Ta réponse ${bug.reporterKey ? '(visible par la personne qui a signalé)' : '(personne non connecté·e — ne pourra pas la voir)'}</label>
+            <textarea id="bugreply-text" rows="5" placeholder="Ex. : Corrigé, merci du signalement !">${escapeHtml(bug.adminReply||'')}</textarea>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="submit-bug-reply" data-id="${bug.id}">Envoyer la réponse</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          </div>
+        `;
+      }
     } else if(m.type === 'bug-archive'){
       const allArchived = state.data.bugReportsArchive || [];
       const aq = state.bugArchiveSearchQuery || '';
@@ -7548,7 +7640,11 @@
       node.addEventListener('click', (e)=>{
         Promise.resolve(onAction(e)).catch(err=>{
           console.error('Erreur dans onAction:', err);
-          showToast('Une erreur est survenue. Rafraîchissez la page si l’app ne répond plus.');
+          // CORRECTIF (22 sept) : affiche le message précis de persist() (ex. "Erreur
+          // d'enregistrement, réessayez.") quand il y en a un, plutôt qu'un message générique —
+          // pour que la personne comprenne que SA donnée n'a pas été enregistrée, pas juste
+          // qu'"une erreur est survenue" quelque part.
+          showToast((err && err.message) || 'Une erreur est survenue. Rafraîchissez la page si l’app ne répond plus.');
         });
       });
     });
@@ -9729,6 +9825,10 @@
         text,
         screenshot: pendingBugScreenshot || null,
         reporter: reporterLabel,
+        reporterKey: currentReporterKey(),
+        status: 'en_attente',
+        adminReply: null,
+        repliedAt: null,
         createdAt: Date.now(),
       });
       pendingBugScreenshot = null;
