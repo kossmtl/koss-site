@@ -162,11 +162,33 @@
     .week-nav .short-text{display:block;text-align:center;line-height:1.3;}
     .week-nav button{white-space:normal;}
   }
-  .week-nav button.btn-intro-highlight{
+  .btn-intro-highlight{
+    /* Style de base autonome (23 sept) : ce bouton est utilisé à la fois DANS `.week-nav`
+       (vue semaine) et EN DEHORS (vue jour, voir `.intro-btn-daybar` plus bas) — avant, ces
+       propriétés dépendaient de l'ancêtre `.week-nav button` et le bouton retombait au style
+       par défaut du navigateur (boîte blanche) dès qu'il était utilisé ailleurs. */
     background:var(--amber);
-    border-color:var(--amber);
+    border:1px solid var(--amber);
     color:var(--ink);
+    font-family:var(--font-b);
+    font-size:14px;
     font-weight:600;
+    padding:6px 12px;
+    border-radius:7px;
+    cursor:pointer;
+  }
+  .intro-btn-daybar{
+    /* Version pleine largeur, une seule ligne, utilisée au-dessus de l'agenda du jour dans
+       l'onglet Réserver (demande d'Amélie, 23 sept : coins arrondis comme le bouton de la vue
+       semaine, texte sur une seule ligne, largeur = celle de la carte du jour). */
+    display:block;
+    width:100%;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    padding:10px 14px;
+    font-size:13px;
+    text-align:center;
   }
   .week-label{font-family:var(--font-d);font-size:15px;color:var(--chalk-dim);}
   /* S48 (23 sept) : vue "Option A" du jour dans l'onglet Réserver, avec ruban de jours
@@ -3293,6 +3315,49 @@
     return BUG_STATUS_META[status] || BUG_STATUS_META.en_attente;
   }
 
+  // S48 (23 sept, demande d'Amélie : "est-ce que l'usager et l'admin pourrait continuer à se
+  // répondre dans la suite de message d'un même bug") : un signalement porte maintenant une
+  // conversation à plusieurs messages (bug.messages, chacun {from:'admin'|'reporter', text, at})
+  // plutôt qu'une seule réponse admin figée. bug.adminReply/repliedAt (l'ancien champ, toujours
+  // présent sur les signalements créés avant ce changement) reste affiché comme premier message
+  // de la conversation, sans migration de données nécessaire — bugThreadMessages() fusionne les
+  // deux et les trie chronologiquement.
+  function bugThreadMessages(bug){
+    const msgs = [];
+    if(bug.adminReply){ msgs.push({from:'admin', text:bug.adminReply, at:bug.repliedAt||bug.createdAt}); }
+    (bug.messages||[]).forEach(m=>msgs.push(m));
+    return msgs.sort((a,b)=>(a.at||0)-(b.at||0));
+  }
+  // Bloc de conversation affiché côté élève/gestionnaire-signaleur, dans le modal
+  // 'report-bug' (liste "Mes signalements précédents") : historique complet des messages +
+  // bouton "Répondre" qui déplie un champ texte pour ajouter le prochain message du fil
+  // (state.bugFollowupOpenId — un seul fil ouvert à la fois, réutilise l'id
+  // '#bugfollowup-text' pour la même raison qu'un seul est présent dans le DOM à la fois).
+  function bugThreadHtmlForReporter(b, allowReply){
+    const msgsHtml = bugThreadMessages(b).map(msg=>`
+      <div style="background:${msg.from==='admin'?'var(--paper-alt,rgba(0,0,0,.03))':'rgba(147,180,143,0.14)'};border-radius:6px;padding:6px;margin-top:6px;">
+        <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 2px;">${msg.from==='admin'?'Réponse':'Toi'}${msg.at ? ' — '+new Date(msg.at).toLocaleString('fr-CA') : ''}</p>
+        <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(msg.text)}</p>
+      </div>
+    `).join('');
+    if(!allowReply) return msgsHtml;
+    const replyOpen = state.bugFollowupOpenId === b.id;
+    return `
+      ${msgsHtml}
+      <div style="margin-top:8px;">
+        <button type="button" class="small-btn" data-action="toggle-bug-followup" data-id="${b.id}">${replyOpen ? '✕ Annuler' : '💬 Répondre'}</button>
+        ${replyOpen ? `
+          <div style="margin-top:6px;">
+            <textarea id="bugfollowup-text" rows="3" placeholder="Ta réponse..."></textarea>
+            <div class="btn-row" style="margin-top:6px;">
+              <button class="btn btn-primary" data-action="submit-bug-report-followup" data-id="${b.id}">Envoyer</button>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
   // S48 (22 sept, demande d'Amélie) : petit rond rouge sur "Bug et suggestions" quand un de
   // MES signalements a reçu une réponse ou un changement de statut que je n'ai pas encore vu,
   // + possibilité de "masquer" (visuellement seulement, jamais supprimé côté serveur) mes
@@ -3353,7 +3418,11 @@
     return [...(state.data.bugReports||[]), ...(state.data.bugReportsArchive||[])]
       .some(b=>{
         if(b.reporterKey !== myKey || hidden.includes(b.id)) return false;
-        const lastChange = Math.max(b.statusChangedAt||0, b.repliedAt||0);
+        // S48 (23 sept) : une nouvelle réponse admin dans la conversation (bug.messages) doit
+        // aussi allumer le rond rouge, pas seulement l'ancien champ bug.repliedAt.
+        const adminMsgAts = (b.messages||[]).filter(m=>m.from==='admin').map(m=>m.at||0);
+        const lastAdminMsg = adminMsgAts.length ? Math.max(...adminMsgAts) : 0;
+        const lastChange = Math.max(b.statusChangedAt||0, b.repliedAt||0, lastAdminMsg);
         if(!lastChange) return false;
         return lastChange > (seen[b.id]||0);
       });
@@ -4260,7 +4329,7 @@
     return `
       ${myWeekBookingsHtml}
       ${bookingDayOnly ? `
-      ${getNextIntroProgram() ? `<div class="btn-row" style="margin-bottom:14px;justify-content:center;"><button class="btn-intro-highlight" data-action="goto-next-intro" style="line-height:1.3;text-align:center;">Aller au prochain<br>programme d'intro<br>${formatShortDate(getNextIntroProgram().startDate)} au ${formatShortDate(getNextIntroProgram().endDate)}</button></div>` : ''}
+      ${getNextIntroProgram() ? `<div style="max-width:480px;margin:0 auto 14px;"><button class="btn-intro-highlight intro-btn-daybar" data-action="goto-next-intro">Aller au prochain programme d'intro — ${formatShortDate(getNextIntroProgram().startDate)} au ${formatShortDate(getNextIntroProgram().endDate)}</button></div>` : ''}
       ${dayAgendaHtml}
       ` : `
       <div class="week-nav">
@@ -5308,12 +5377,17 @@
               <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(b.reporter||'')} — <strong style="color:${st.color};">${st.label}</strong></p>
               <p style="font-size:13px;white-space:pre-wrap;margin:0 0 8px;">${escapeHtml(b.text)}</p>
               ${b.screenshot ? `<img src="${b.screenshot}" data-action="view-bug-image" data-src="${b.screenshot}" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:8px;cursor:zoom-in;" title="Cliquer pour agrandir">` : ''}
-              ${b.adminReply ? `<div style="background:var(--paper-alt,rgba(0,0,0,.03));border-radius:6px;padding:8px;margin-bottom:8px;"><p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">Ta réponse${b.repliedAt ? ' — '+new Date(b.repliedAt).toLocaleString('fr-CA') : ''}</p><p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.adminReply)}</p></div>` : ''}
+              ${bugThreadMessages(b).map(msg=>`
+                <div style="background:${msg.from==='admin'?'var(--paper-alt,rgba(0,0,0,.03))':'rgba(147,180,143,0.14)'};border-radius:6px;padding:8px;margin-bottom:8px;">
+                  <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">${msg.from==='admin' ? 'Ta réponse' : escapeHtml(b.reporter||'Élève')}${msg.at ? ' — '+new Date(msg.at).toLocaleString('fr-CA') : ''}</p>
+                  <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(msg.text)}</p>
+                </div>
+              `).join('')}
               <div class="btn-row" style="flex-wrap:wrap;gap:6px;margin-bottom:8px;">
                 ${Object.keys(BUG_STATUS_META).map(s=>`<button class="small-btn ${b.status===s?'active':''}" style="${b.status===s?'background:'+BUG_STATUS_META[s].color+';color:#fff;border-color:'+BUG_STATUS_META[s].color+';':''}" data-action="set-bug-status" data-id="${b.id}" data-status="${s}">${BUG_STATUS_META[s].label}</button>`).join('')}
               </div>
               <div class="btn-row" style="flex-wrap:wrap;gap:6px;">
-                <button class="small-btn" data-action="open-reply-bug-report" data-id="${b.id}">${b.adminReply ? '✏️ Modifier la réponse' : '💬 Répondre'}</button>
+                <button class="small-btn" data-action="open-reply-bug-report" data-id="${b.id}">💬 Répondre</button>
                 <button class="small-btn" data-action="delete-bug-report" data-id="${b.id}">Marquer comme réglé (archiver)</button>
               </div>
             </div>
@@ -5654,7 +5728,7 @@
                     <button type="button" class="small-btn" data-action="hide-bug-report-local" data-id="${b.id}" title="Masquer de ma liste (ne supprime rien pour l'admin)" style="flex-shrink:0;">🗑 Masquer</button>
                   </div>
                   <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.text)}</p>
-                  ${b.adminReply ? `<div style="background:var(--paper-alt,rgba(0,0,0,.03));border-radius:6px;padding:6px;margin-top:6px;"><p style="font-size:11px;color:var(--chalk-dim);margin:0 0 2px;">Réponse${b.repliedAt ? ' — '+new Date(b.repliedAt).toLocaleString('fr-CA') : ''}</p><p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.adminReply)}</p></div>` : ''}
+                  ${bugThreadHtmlForReporter(b, true)}
                 </div>
               `;}).join('')}
             </div>
@@ -5672,7 +5746,7 @@
                       <button type="button" class="small-btn" data-action="unhide-bug-report-local" data-id="${b.id}" title="Réafficher dans ma liste" style="flex-shrink:0;">↩️ Réafficher</button>
                     </div>
                     <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.text)}</p>
-                    ${b.adminReply ? `<div style="background:var(--paper-alt,rgba(0,0,0,.03));border-radius:6px;padding:6px;margin-top:6px;"><p style="font-size:11px;color:var(--chalk-dim);margin:0 0 2px;">Réponse${b.repliedAt ? ' — '+new Date(b.repliedAt).toLocaleString('fr-CA') : ''}</p><p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.adminReply)}</p></div>` : ''}
+                    ${bugThreadHtmlForReporter(b, false)}
                   </div>
                 `;}).join('')}
               </div>
@@ -5704,8 +5778,18 @@
             <h3>💬 Répondre au signalement</h3>
             <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(bug.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(bug.reporter||'')}</p>
             <p style="font-size:13px;white-space:pre-wrap;background:var(--paper-alt,rgba(0,0,0,.03));border-radius:6px;padding:8px;margin:0 0 12px;">${escapeHtml(bug.text)}</p>
-            <label>Ta réponse ${bug.reporterKey ? '(visible par la personne qui a signalé)' : '(personne non connecté·e — ne pourra pas la voir)'}</label>
-            <textarea id="bugreply-text" rows="5" placeholder="Ex. : Corrigé, merci du signalement !">${escapeHtml(bug.adminReply||'')}</textarea>
+            ${bugThreadMessages(bug).length ? `
+              <div style="max-height:180px;overflow-y:auto;margin-bottom:12px;">
+                ${bugThreadMessages(bug).map(msg=>`
+                  <div style="background:${msg.from==='admin'?'var(--paper-alt,rgba(0,0,0,.03))':'rgba(147,180,143,0.14)'};border-radius:6px;padding:8px;margin-bottom:6px;">
+                    <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">${msg.from==='admin' ? 'Ta réponse' : escapeHtml(bug.reporter||'Élève')}${msg.at ? ' — '+new Date(msg.at).toLocaleString('fr-CA') : ''}</p>
+                    <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(msg.text)}</p>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+            <label>Ton prochain message ${bug.reporterKey ? '(visible par la personne qui a signalé)' : '(personne non connecté·e — ne pourra pas la voir)'}</label>
+            <textarea id="bugreply-text" rows="5" placeholder="Ex. : Corrigé, merci du signalement !"></textarea>
             <div class="btn-row">
               <button class="btn btn-primary" data-action="submit-bug-reply" data-id="${bug.id}">Envoyer la réponse</button>
               <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
@@ -9730,8 +9814,14 @@
       render();
     }
     else if(action==='goto-next-intro'){
+      // CORRECTIF (23 sept, demande d'Amélie) : ce bouton changeait bien state.weekOffset, mais
+      // ne faisait rien voir — en vue jour (state.bookingDayOnly=true, le mode par défaut de
+      // l'onglet Réserver depuis le pt. 20), renderStudent() réinitialise weekOffset à 0 à
+      // CHAQUE rendu tant qu'on est en vue jour, donc le changement était aussitôt annulé, et le
+      // clic ne basculait jamais vers la vue semaine. Il faut explicitement sortir du mode jour.
       const program = getNextIntroProgram();
       if(!program){ showToast('Aucun programme Intro au BJJ programmé pour l\u2019instant.'); return; }
+      state.bookingDayOnly = false;
       state.weekOffset = weekOffsetForDate(program.startDate);
       render();
     }
@@ -10883,6 +10973,7 @@
           status: 'en_attente',
           adminReply: null,
           repliedAt: null,
+          messages: [],
           createdAt: Date.now(),
         });
         pendingBugScreenshot = null;
@@ -10927,16 +11018,59 @@
       render();
     }
     else if(action==='submit-bug-reply'){
+      // S48 (23 sept, demande d'Amélie : "continuer à se répondre dans la suite de message
+      // d'un même bug") : chaque envoi AJOUTE désormais un message au fil de conversation
+      // (bug.messages) au lieu d'écraser l'unique bug.adminReply d'avant — voir
+      // bugThreadMessages() pour la fusion avec l'ancien champ sur les signalements plus
+      // anciens. Même garde-fou anti-double-clic que submit-bug-report/submit-message-coach.
+      const submitBtn = e.currentTarget;
+      if(submitBtn && submitBtn.disabled) return;
       const bugId = e.currentTarget.dataset.id;
       const bug = (state.data.bugReports||[]).find(b=>b.id===bugId) || (state.data.bugReportsArchive||[]).find(b=>b.id===bugId);
       if(!bug){ showToast('Signalement introuvable.'); return; }
       const text = (document.getElementById('bugreply-text').value || '').trim();
-      bug.adminReply = text || null;
-      bug.repliedAt = text ? Date.now() : null;
-      await persist();
-      state.modal = null; closeModalDom();
+      if(!text){ showToast('Écris ta réponse avant d’envoyer.'); return; }
+      if(submitBtn) submitBtn.disabled = true;
+      try{
+        if(!bug.messages) bug.messages = [];
+        bug.messages.push({id: uid(), from:'admin', text, at: Date.now()});
+        await persist();
+        state.modal = null; closeModalDom();
+        render();
+        showToast('Réponse envoyée.');
+      } catch(err){
+        if(submitBtn) submitBtn.disabled = false;
+        throw err;
+      }
+    }
+    else if(action==='toggle-bug-followup'){
+      // S48 (23 sept) : déplie/replie le petit champ texte permettant à la personne qui a
+      // signalé un bug d'ajouter le prochain message de la conversation, directement dans la
+      // liste "Mes signalements précédents" du modal 'report-bug' (voir bugThreadHtmlForReporter).
+      state.bugFollowupOpenId = (state.bugFollowupOpenId === id) ? null : id;
       render();
-      showToast('Réponse enregistrée.');
+    }
+    else if(action==='submit-bug-report-followup'){
+      const submitBtn = e.currentTarget;
+      if(submitBtn && submitBtn.disabled) return;
+      const bugId = e.currentTarget.dataset.id;
+      const bug = (state.data.bugReports||[]).find(b=>b.id===bugId) || (state.data.bugReportsArchive||[]).find(b=>b.id===bugId);
+      if(!bug){ showToast('Signalement introuvable.'); return; }
+      const textEl = document.getElementById('bugfollowup-text');
+      const text = (textEl ? textEl.value : '').trim();
+      if(!text){ showToast('Écris ton message avant d’envoyer.'); return; }
+      if(submitBtn) submitBtn.disabled = true;
+      try{
+        if(!bug.messages) bug.messages = [];
+        bug.messages.push({id: uid(), from:'reporter', text, at: Date.now()});
+        await persist();
+        state.bugFollowupOpenId = null;
+        render();
+        showToast('Message envoyé.');
+      } catch(err){
+        if(submitBtn) submitBtn.disabled = false;
+        throw err;
+      }
     }
     else if(action==='hide-bug-report-local'){
       // Masquage purement visuel/local (localStorage) — ne touche à rien côté serveur, le
