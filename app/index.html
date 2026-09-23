@@ -169,6 +169,27 @@
     font-weight:600;
   }
   .week-label{font-family:var(--font-d);font-size:15px;color:var(--chalk-dim);}
+  /* S48 (23 sept) : vue "Option A" du jour dans l'onglet Réserver, avec ruban de jours
+     cliquables au-dessus (voir renderStudent, state.bookingDayOnly / bookingSelectedDate). */
+  .day-agenda-wrap{ max-width:480px; margin:0 auto; }
+  .day-ribbon{ display:flex; gap:6px; margin-bottom:16px; }
+  .day-pill{
+    flex:1; font-family:var(--font-d); font-size:11px; padding:8px 4px; border-radius:8px;
+    text-align:center; border:1px solid var(--border); background:var(--bg-panel);
+    color:var(--chalk-dim); cursor:pointer; text-transform:uppercase; letter-spacing:0.02em;
+  }
+  .day-pill .num{ display:block; font-size:16px; font-weight:700; margin-top:3px; font-family:var(--font-d); color:var(--chalk); }
+  .day-pill.active{ background:var(--amber); color:#25262A; border-color:var(--amber); }
+  .day-pill.active .num{ color:#25262A; }
+  .day-pill.has-classes:not(.active)::after{ content:''; display:block; width:4px; height:4px; border-radius:50%; background:var(--sage); margin:4px auto 0; }
+  .day-agenda-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:10px; }
+  .day-agenda-title{ font-family:var(--font-d); font-size:20px; }
+  .day-agenda-tiles{ display:flex; flex-direction:column; gap:10px; }
+  @media (max-width:520px){
+    .day-pill{ font-size:9.5px; padding:6px 2px; }
+    .day-pill .num{ font-size:14px; }
+    .day-agenda-title{ font-size:16px; }
+  }
   .board{
     display:grid;
     grid-template-columns:repeat(7,minmax(150px,1fr));
@@ -4129,6 +4150,7 @@
       if(afternoon.length) weekHasAfternoon = true;
       return {d, i, dateIso, dayClasses, morning, afternoon};
     });
+    const fullWeekDayData = dayData;
     if(bookingDayOnly){
       dayData = dayData.filter(dd=>dd.dateIso===todayForBooking);
       anyClass = dayData.some(dd=>dd.dayClasses.length);
@@ -4195,14 +4217,51 @@
       }
     }
 
+    // S48 (23 sept, demande d'Amélie : "le visuel est horrible sur ordinateur avec juste la
+    // journée") : la vue jour ne réutilise PAS la grille `.board` (pensée pour 7 colonnes —
+    // avec un seul jour, elle se retrouve collée à gauche avec tout l'espace vide à droite sur
+    // un écran large). "Option A" retenue par Amélie parmi 3 mockups proposés : un agenda
+    // centré, largeur fixe raisonnable, titre = jour complet + date, tuiles empilées.
+    // Ajout du même jour (23 sept, demande "ruban de jours cliquables") : un ruban de 7 jours
+    // au-dessus de l'agenda, permettant de changer de jour sans repasser par la vue semaine
+    // (state.bookingSelectedDate, remis à null — donc aujourd'hui — à chaque ouverture
+    // explicite de l'onglet ou retour à la vue jour).
+    let dayAgendaHtml = '';
+    if(bookingDayOnly){
+      const selectedDate = state.bookingSelectedDate || todayForBooking;
+      const selectedEntry = fullWeekDayData.find(dd=>dd.dateIso===selectedDate) || fullWeekDayData.find(dd=>dd.dateIso===todayForBooking);
+      const selectedDateObj = new Date((selectedEntry?selectedEntry.dateIso:todayForBooking)+'T00:00:00');
+      const selectedTitle = `${DAYS[(selectedDateObj.getDay()+6)%7]} ${selectedDateObj.getDate()} ${MONTHS_FULL[selectedDateObj.getMonth()]}`;
+      const selectedClasses = selectedEntry ? selectedEntry.dayClasses : [];
+      const tiles = selectedClasses.map(c=>buildStudentTileHtml(c, selectedEntry.dateIso)).join('');
+      const ribbon = fullWeekDayData.map(dd=>{
+        const isActive = dd.dateIso===selectedDate;
+        const hasClasses = dd.dayClasses.length>0;
+        return `
+          <div class="day-pill${isActive?' active':''}${hasClasses?' has-classes':''}" data-action="booking-select-day" data-date="${dd.dateIso}">
+            ${DAYS_SHORT[dd.i].replace('.','').toUpperCase()}<span class="num">${formatDayNum(dd.d)}</span>
+          </div>
+        `;
+      }).join('');
+      dayAgendaHtml = `
+        <div class="day-agenda-wrap">
+          <div class="day-ribbon">${ribbon}</div>
+          <div class="day-agenda-header">
+            <span class="day-agenda-title">${escapeHtml(selectedTitle)}</span>
+            <button class="small-btn" data-action="booking-show-week">📅 Voir la semaine</button>
+          </div>
+          <div class="day-agenda-tiles">
+            ${tiles || '<div class="empty-note">Aucun cours ce jour-là.</div>'}
+          </div>
+        </div>
+      `;
+    }
+
     return `
       ${myWeekBookingsHtml}
       ${bookingDayOnly ? `
-      <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
-        <p class="muted" style="color:var(--chalk-dim);margin:0;flex:1;">Cours d\u2019aujourd\u2019hui seulement.</p>
-        <button class="small-btn" data-action="booking-show-week">📅 Voir la semaine</button>
-        ${getNextIntroProgram() ? `<button class="btn-intro-highlight" data-action="goto-next-intro" style="line-height:1.3;text-align:center;">Aller au prochain<br>programme d\u2019intro<br>${formatShortDate(getNextIntroProgram().startDate)} au ${formatShortDate(getNextIntroProgram().endDate)}</button>` : ''}
-      </div>
+      ${getNextIntroProgram() ? `<div class="btn-row" style="margin-bottom:14px;justify-content:center;"><button class="btn-intro-highlight" data-action="goto-next-intro" style="line-height:1.3;text-align:center;">Aller au prochain<br>programme d'intro<br>${formatShortDate(getNextIntroProgram().startDate)} au ${formatShortDate(getNextIntroProgram().endDate)}</button></div>` : ''}
+      ${dayAgendaHtml}
       ` : `
       <div class="week-nav">
         ${state.weekOffset>0 ? '<button data-action="week-prev"><span class="full-text">← Semaine préc.</span><span class="short-text">Semaine<br>← Préc.</span></button>' : ''}
@@ -4210,10 +4269,10 @@
         <button data-action="week-next"><span class="full-text">Semaine suiv. →</span><span class="short-text">Semaine<br>Suiv. →</span></button>
         ${state.weekOffset!==0 ? '<button data-action="week-today">Aujourd\'hui</button>' : ''}
         <button data-action="booking-show-day">← Retour à la journée</button>
-        ${getNextIntroProgram() ? `<button class="btn-intro-highlight" data-action="goto-next-intro" style="line-height:1.3;text-align:center;">Aller au prochain<br>programme d\u2019intro<br>${formatShortDate(getNextIntroProgram().startDate)} au ${formatShortDate(getNextIntroProgram().endDate)}</button>` : ''}
+        ${getNextIntroProgram() ? `<button class="btn-intro-highlight" data-action="goto-next-intro" style="line-height:1.3;text-align:center;">Aller au prochain<br>programme d'intro<br>${formatShortDate(getNextIntroProgram().startDate)} au ${formatShortDate(getNextIntroProgram().endDate)}</button>` : ''}
       </div>
+      ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">Aucun cours programmé pour l'instant. Revenez bientôt !</div></div>`}
       `}
-      ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">${bookingDayOnly ? 'Aucun cours aujourd\u2019hui.' : 'Aucun cours programm\u00e9 pour l\u2019instant. Revenez bient\u00f4t !'}</div></div>`}
       <div class="card" style="margin-top:20px;">
         <h3>Devenir membre</h3>
         <p class="muted" style="color:var(--chalk-dim);margin-bottom:0;">Un abonnement actif est requis pour réserver un cours.</p>
@@ -8727,6 +8786,7 @@
       // ouverture explicite de l'onglet Réserver (voir renderStudent, state.bookingDayOnly).
       state.view='student';
       state.bookingDayOnly = true;
+      state.bookingSelectedDate = null;
       state.weekOffset = 0;
       render();
     }
@@ -9009,11 +9069,13 @@
       state.shareAnonymous = !!e.currentTarget.checked;
     }
     else if(action==='open-message-coach'){
-      // S48 (23 sept, demande d'Amélie) : accès rapide "Message à un coach" depuis "Mon
-      // compte", sous "Mon carnet" — voir modale 'message-coach' dans renderModal.
+      // S48 (23 sept, demande d'Amélie) : accès rapide "Message à un coach", disponible à 2
+      // endroits — sous "Mon carnet" dans "Mon compte", ET dans le menu du nom en haut à droite
+      // (juste sous "Carnet") — voir modale 'message-coach' dans renderModal.
       const mcEmail = e.currentTarget.dataset.email || (state.studentSession ? state.studentSession.email : '');
       const mcProfileId = e.currentTarget.dataset.profile || null;
       state.msgCoachAnonymous = false;
+      state.accountMenuOpen = false;
       state.modal = {type:'message-coach', payload:{email:mcEmail, profileId:mcProfileId}};
       render();
     }
@@ -9656,7 +9718,15 @@
     }
     else if(action==='booking-show-day'){
       state.bookingDayOnly = true;
+      state.bookingSelectedDate = null;
       state.weekOffset = 0;
+      render();
+    }
+    else if(action==='booking-select-day'){
+      // S48 (23 sept, demande d'Amélie : "ruban de jours cliquables") : clic sur un jour du
+      // ruban dans la vue jour de l'onglet Réserver — change juste le jour affiché, sans
+      // basculer vers la vue semaine (voir renderStudent, state.bookingSelectedDate).
+      state.bookingSelectedDate = e.currentTarget.dataset.date;
       render();
     }
     else if(action==='goto-next-intro'){
