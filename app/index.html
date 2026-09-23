@@ -9928,6 +9928,33 @@
       render();
       showToast('Bug marqué comme réglé — archivé 30 jours.');
     }
+    // CORRECTIF (22 sept) : ces 3 actions avaient leurs boutons déjà affichés (voir le rendu
+    // de la carte "Bugs et suggestions" et du modal 'reply-bug-report') mais il manquait le
+    // code qui réagit au clic — rien ne se passait. Ajouté ici.
+    else if(action==='set-bug-status'){
+      const bug = (state.data.bugReports||[]).find(b=>b.id===id);
+      if(!bug){ showToast('Signalement introuvable (déjà archivé ?).'); return; }
+      bug.status = e.currentTarget.dataset.status;
+      await persist();
+      render();
+      showToast('Statut mis à jour : ' + bugStatusMeta(bug.status).label);
+    }
+    else if(action==='open-reply-bug-report'){
+      state.modal = {type:'reply-bug-report', payload:{id}};
+      render();
+    }
+    else if(action==='submit-bug-reply'){
+      const bugId = e.currentTarget.dataset.id;
+      const bug = (state.data.bugReports||[]).find(b=>b.id===bugId) || (state.data.bugReportsArchive||[]).find(b=>b.id===bugId);
+      if(!bug){ showToast('Signalement introuvable.'); return; }
+      const text = (document.getElementById('bugreply-text').value || '').trim();
+      bug.adminReply = text || null;
+      bug.repliedAt = text ? Date.now() : null;
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Réponse enregistrée.');
+    }
     else if(action==='open-bug-archive'){
       state.modal = {type:'bug-archive'};
       render();
