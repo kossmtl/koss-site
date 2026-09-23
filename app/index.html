@@ -4105,11 +4105,18 @@
   }
 
   function renderStudent(){
+    // S48 (23 sept, demande d'Amélie : "applique la stratégie de la prise de présence") : même
+    // logique jour/semaine que renderAttendance() — l'onglet Réserver s'ouvre TOUJOURS sur la
+    // journée en cours seulement (state.bookingDayOnly, remis à true à l'action 'goto-student'),
+    // avec un bouton "📅 Voir la semaine" pour basculer sur la vue semaine complète existante.
+    const bookingDayOnly = state.bookingDayOnly !== false;
+    if(bookingDayOnly) state.weekOffset = 0;
     const dates = getWeekDates(state.weekOffset);
     let anyClass = false;
     let weekHasMorning = false;
     let weekHasAfternoon = false;
-    const dayData = dates.map((d,i)=>{
+    const todayForBooking = todayIso();
+    let dayData = dates.map((d,i)=>{
       const dateIso = isoDate(d);
       const dayClasses = state.data.classes.filter(c=>c.dayOfWeek===i)
         .filter(c=> (!c.startDate || dateIso >= c.startDate) && (!c.endDate || dateIso <= c.endDate))
@@ -4121,6 +4128,10 @@
       if(afternoon.length) weekHasAfternoon = true;
       return {d, i, dateIso, dayClasses, morning, afternoon};
     });
+    if(bookingDayOnly){
+      dayData = dayData.filter(dd=>dd.dateIso===todayForBooking);
+      anyClass = dayData.some(dd=>dd.dayClasses.length);
+    }
     const splitAmPm = weekHasMorning && weekHasAfternoon && window.innerWidth > 700;
     let cols = '';
     if(splitAmPm){
@@ -4185,14 +4196,23 @@
 
     return `
       ${myWeekBookingsHtml}
+      ${bookingDayOnly ? `
+      <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
+        <p class="muted" style="color:var(--chalk-dim);margin:0;flex:1;">Cours d\u2019aujourd\u2019hui seulement.</p>
+        <button class="small-btn" data-action="booking-show-week">📅 Voir la semaine</button>
+        ${getNextIntroProgram() ? `<button class="btn-intro-highlight" data-action="goto-next-intro" style="line-height:1.3;text-align:center;">Aller au prochain<br>programme d\u2019intro<br>${formatShortDate(getNextIntroProgram().startDate)} au ${formatShortDate(getNextIntroProgram().endDate)}</button>` : ''}
+      </div>
+      ` : `
       <div class="week-nav">
         ${state.weekOffset>0 ? '<button data-action="week-prev"><span class="full-text">← Semaine préc.</span><span class="short-text">Semaine<br>← Préc.</span></button>' : ''}
         <span class="week-label">${weekLabel(state.weekOffset)}</span>
         <button data-action="week-next"><span class="full-text">Semaine suiv. →</span><span class="short-text">Semaine<br>Suiv. →</span></button>
         ${state.weekOffset!==0 ? '<button data-action="week-today">Aujourd\'hui</button>' : ''}
+        <button data-action="booking-show-day">← Retour à la journée</button>
         ${getNextIntroProgram() ? `<button class="btn-intro-highlight" data-action="goto-next-intro" style="line-height:1.3;text-align:center;">Aller au prochain<br>programme d\u2019intro<br>${formatShortDate(getNextIntroProgram().startDate)} au ${formatShortDate(getNextIntroProgram().endDate)}</button>` : ''}
       </div>
-      ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">Aucun cours programm\u00e9 pour l\u2019instant. Revenez bient\u00f4t !</div></div>`}
+      `}
+      ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">${bookingDayOnly ? 'Aucun cours aujourd\u2019hui.' : 'Aucun cours programm\u00e9 pour l\u2019instant. Revenez bient\u00f4t !'}</div></div>`}
       <div class="card" style="margin-top:20px;">
         <h3>Devenir membre</h3>
         <p class="muted" style="color:var(--chalk-dim);margin-bottom:0;">Un abonnement actif est requis pour réserver un cours.</p>
@@ -4298,6 +4318,11 @@
         <div class="btn-row">
           <button class="btn btn-primary" data-action="goto-notebook" data-profile="">Mon carnet</button>
           ${(acct.familyMembers||[]).map(f=>`<button class="btn btn-secondary" data-action="goto-notebook" data-profile="${f.id}">Carnet de ${escapeHtml(f.name)}</button>`).join('')}
+        </div>
+
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="small-btn" data-action="open-message-coach" data-profile="">💬 Message à un coach</button>
+          ${(acct.familyMembers||[]).map(f=>`<button class="small-btn" data-action="open-message-coach" data-profile="${f.id}">💬 Message à un coach — pour ${escapeHtml(f.name)}</button>`).join('')}
         </div>
 
         ${(()=>{
@@ -5073,24 +5098,38 @@
     // recherche avec un champ vide montre tout le monde (comportement voulu, une fois demandé
     // explicitement) ; sinon la liste reste filtrée sur le mot-clé tapé.
     const studentSearchResults = !state.studentSearchTried ? recentStudentAccounts(5) : (state.studentSearchQuery ? searchStudentAccounts(state.studentSearchQuery) : allStudentsAndChildrenResults());
+    // CORRECTIF (23 sept, demande d'Amélie) : les boutons "Voir la fiche"/"Supprimer" passaient
+    // à la ligne SOUS le nom dès que la ligne d'info (courriel/téléphone) était assez longue,
+    // parce que tout tenait dans un seul <li> flex avec flex-wrap:wrap — le <span> nom+info
+    // (avec son <br>) et le <span> boutons se disputaient la largeur et finissaient par ne plus
+    // tenir sur la même ligne. Restructuré en 2 lignes fixes par <li> : la 1re ligne (flex,
+    // nowrap) contient TOUJOURS le nom (qui peut se scinder sur plusieurs lignes lui-même grâce à
+    // min-width:0) et les boutons (flex-shrink:0, jamais poussés en dessous) ; la 2e ligne, en
+    // dessous, affiche l'info secondaire (courriel/téléphone) en pleine largeur.
     const searchResultsHtml = studentSearchResults.length ? `<ul class="link-list" style="margin-top:10px;">${studentSearchResults.map(s=>{
         if(s.type==='child'){
           return `
-            <li>
-              <span><strong${studentNameStyleAttr(s.parentEmail, s.memberId)}>${escapeHtml(s.name)}</strong><br><span style="color:var(--chalk-dim);font-size:11px;">Enfant de ${escapeHtml(s.parentName)} · 🎂 ${escapeHtml(s.birthday||'—')} · ✉️ ${escapeHtml(s.email||'—')} · 📞 ${escapeHtml(s.phone||'—')}</span></span>
-              <span>
-                <button class="small-btn" data-action="open-child-detail" data-parent-email="${escapeHtml(s.parentEmail)}" data-member-id="${s.memberId}">Voir la fiche</button>
-              </span>
+            <li style="display:block;">
+              <div style="display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:8px;">
+                <strong style="min-width:0;overflow-wrap:break-word;"${studentNameStyleAttr(s.parentEmail, s.memberId)}>${escapeHtml(s.name)}</strong>
+                <span style="flex-shrink:0;">
+                  <button class="small-btn" data-action="open-child-detail" data-parent-email="${escapeHtml(s.parentEmail)}" data-member-id="${s.memberId}">Voir la fiche</button>
+                </span>
+              </div>
+              <div style="color:var(--chalk-dim);font-size:11px;margin-top:2px;">Enfant de ${escapeHtml(s.parentName)} · 🎂 ${escapeHtml(s.birthday||'—')} · ✉️ ${escapeHtml(s.email||'—')} · 📞 ${escapeHtml(s.phone||'—')}</div>
             </li>
           `;
         }
         return `
-        <li>
-          <span><strong${studentNameStyleAttr(s.email, null)}>${escapeHtml(s.name)}</strong><br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(s.email)}${s.phone?' · '+escapeHtml(s.phone):''}</span></span>
-          <span>
-            <button class="small-btn" data-action="open-student-detail" data-email="${escapeHtml(s.email)}">Voir la fiche</button>
-            <button class="small-btn" data-action="delete-student" data-email="${escapeHtml(s.email)}">Supprimer</button>
-          </span>
+        <li style="display:block;">
+          <div style="display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:8px;">
+            <strong style="min-width:0;overflow-wrap:break-word;"${studentNameStyleAttr(s.email, null)}>${escapeHtml(s.name)}</strong>
+            <span style="flex-shrink:0;">
+              <button class="small-btn" data-action="open-student-detail" data-email="${escapeHtml(s.email)}">Voir la fiche</button>
+              <button class="small-btn" data-action="delete-student" data-email="${escapeHtml(s.email)}">Supprimer</button>
+            </span>
+          </div>
+          <div style="color:var(--chalk-dim);font-size:11px;margin-top:2px;">${escapeHtml(s.email)}${s.phone?' · '+escapeHtml(s.phone):''}</div>
         </li>
       `;
       }).join('')}</ul>` : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucun résultat.</p>';
@@ -7412,6 +7451,38 @@
           </div>
         </div>
       ` : '<div class="modal"><p>Note introuvable.</p><div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div></div>';
+    } else if(m.type === 'message-coach'){
+      // S48 (23 sept, demande d'Amélie) : message rapide à un coach, accessible directement
+      // depuis "Mon compte" (juste sous "Mon carnet") — sans passer par le carnet et devoir
+      // d'abord créer un post-it à partager. Réutilise le même mécanisme que 'share-form'
+      // (sharedItems, recipientType='coach', option anonyme + MÊME texte de disclaimer),
+      // mais avec un simple champ texte au lieu de choisir une note existante.
+      const {email:mcEmail, profileId:mcProfileId} = m.payload;
+      const acctMC = findStudentAccount(mcEmail);
+      const participantMC = mcProfileId ? (acctMC && (acctMC.familyMembers||[]).find(f=>f.id===mcProfileId)) : null;
+      const participantNameMC = mcProfileId ? (participantMC ? participantMC.name : '') : (acctMC ? acctMC.name : '');
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>💬 Message à un coach${mcProfileId ? ' — ' + escapeHtml(participantNameMC) : ''}</h3>
+          <label>Choisir un coach</label>
+          <select id="msg-coach-manager-select">
+            ${state.data.managers.map(mg=>`<option value="${mg.id}">${escapeHtml(mg.name)}</option>`).join('')}
+          </select>
+          <label style="margin-top:10px;">Ton message</label>
+          <textarea id="msg-coach-text" rows="5" placeholder="Écris ton message ici..."></textarea>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
+            <input type="checkbox" id="msg-coach-anonymous" data-action="toggle-msg-coach-anonymous" style="width:auto;" ${state.msgCoachAnonymous?'checked':''}>
+            <span>Envoyer de façon anonyme</span>
+          </label>
+          <p class="muted" style="color:var(--chalk-dim);font-size:11px;">Une note anonyme est d’abord vérifiée par un·e gestionnaire avant d’être livrée (pour éviter les abus) — une note signée est livrée immédiatement.</p>
+          <p class="muted" style="color:var(--coral);font-size:11px;">⚠️ Ton anonymat est respecté, mais s’il s’agit d’un message inacceptable, il pourra être retracé — politique de tolérance zéro envers l’intimidation ou les abus.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="submit-message-coach" data-email="${escapeHtml(mcEmail)}" data-profile="${mcProfileId||''}">Envoyer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
     } else if(m.type === 'received-items'){
       const {ownerKey} = m.payload;
       const items = receivedItemsForOwner(ownerKey);
@@ -8650,7 +8721,14 @@
     const action = e.currentTarget.dataset.action;
     const id = e.currentTarget.dataset.id;
 
-    if(action==='goto-student'){ state.view='student'; render(); }
+    if(action==='goto-student'){
+      // S48 (23 sept) : comme goto-attendance, on repart TOUJOURS sur la vue jour à chaque
+      // ouverture explicite de l'onglet Réserver (voir renderStudent, state.bookingDayOnly).
+      state.view='student';
+      state.bookingDayOnly = true;
+      state.weekOffset = 0;
+      render();
+    }
     else if(action==='toggle-password'){
       const targetId = e.currentTarget.dataset.target;
       const input = document.getElementById(targetId);
@@ -8928,6 +9006,61 @@
       // render() la régénérerait à l'identique — on garde juste l'état en mémoire pour
       // que choisir un destinataire ensuite ne la décoche pas.
       state.shareAnonymous = !!e.currentTarget.checked;
+    }
+    else if(action==='open-message-coach'){
+      // S48 (23 sept, demande d'Amélie) : accès rapide "Message à un coach" depuis "Mon
+      // compte", sous "Mon carnet" — voir modale 'message-coach' dans renderModal.
+      const mcEmail = e.currentTarget.dataset.email || (state.studentSession ? state.studentSession.email : '');
+      const mcProfileId = e.currentTarget.dataset.profile || null;
+      state.msgCoachAnonymous = false;
+      state.modal = {type:'message-coach', payload:{email:mcEmail, profileId:mcProfileId}};
+      render();
+    }
+    else if(action==='toggle-msg-coach-anonymous'){
+      state.msgCoachAnonymous = !!e.currentTarget.checked;
+    }
+    else if(action==='submit-message-coach'){
+      // Même garde-fou anti-double-clic que submit-bug-report (23 sept, voir note générale en
+      // haut du doc de suivi) : on capture et désactive le bouton avant tout await.
+      const submitBtn = e.currentTarget;
+      if(submitBtn && submitBtn.disabled) return;
+      const mcEmail = submitBtn ? submitBtn.dataset.email : '';
+      const mcProfileId = (submitBtn ? submitBtn.dataset.profile : '') || null;
+      const sel = document.getElementById('msg-coach-manager-select');
+      const recipientManagerId = sel ? sel.value : null;
+      if(!recipientManagerId){ showToast('Choisissez un coach.'); return; }
+      const text = (document.getElementById('msg-coach-text').value||'').trim();
+      if(!text){ showToast('Écris un message avant d’envoyer.'); return; }
+      if(submitBtn) submitBtn.disabled = true;
+      try{
+        const anonymous = !!(document.getElementById('msg-coach-anonymous') && document.getElementById('msg-coach-anonymous').checked);
+        const ownerKey = notebookOwnerKey(mcEmail, mcProfileId);
+        const item = {
+          id: uid(),
+          kind: 'text',
+          category: '',
+          text,
+          fontFamily: null,
+          color: null,
+          hAlign: 'left',
+          anonymous,
+          recipientType: 'coach',
+          recipientManagerId,
+          recipientOwnerKey: null,
+          senderOwnerKey: ownerKey,
+          status: anonymous ? 'pending_review' : 'delivered',
+          createdAt: Date.now(),
+          decidedAt: null,
+        };
+        state.data.sharedItems.push(item);
+        await persist();
+        state.modal = null; closeModalDom();
+        render();
+        showToast(anonymous ? 'Message envoyé — il sera livré dès qu’un·e gestionnaire l’aura approuvé.' : 'Message envoyé !');
+      } catch(err){
+        if(submitBtn) submitBtn.disabled = false;
+        throw err;
+      }
     }
     else if(action==='set-share-recipient-type'){
       state.shareRecipientType = e.currentTarget.dataset.value;
@@ -9511,6 +9644,17 @@
     }
     else if(action==='attendance-show-day'){
       state.attendanceDayOnly = true;
+      state.weekOffset = 0;
+      render();
+    }
+    else if(action==='booking-show-week'){
+      // S48 (23 sept) : même bascule que attendance-show-week/day, appliquée à l'onglet
+      // Réserver des usagers (voir renderStudent, state.bookingDayOnly).
+      state.bookingDayOnly = false;
+      render();
+    }
+    else if(action==='booking-show-day'){
+      state.bookingDayOnly = true;
       state.weekOffset = 0;
       render();
     }
