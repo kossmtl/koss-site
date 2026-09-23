@@ -11585,6 +11585,15 @@
         const myEmail = (sessData2 && sessData2.session && sessData2.session.user) ? sessData2.session.user.email.toLowerCase() : '';
         const mgr = state.data.managers.find(m=>(m.email||'').toLowerCase()===myEmail);
         state.currentManagerId = mgr ? mgr.id : null;
+        // CORRECTIF (22 sept, signalé par Amélie) : cette résolution de l'identité gestionnaire
+        // est asynchrone et arrive APRÈS le premier rendu déclenché par loadData() (qui affiche
+        // déjà l'écran admin, mais sans nom ni couleur d'accent puisque state.currentManagerId
+        // n'était pas encore connu à ce moment-là). Le nom en haut ET la couleur choisie
+        // (managerAccentHex) dépendent tous les deux de currentManager(), donc les deux
+        // "manquaient" pareillement jusqu'à ce qu'une navigation quelconque (ex. aller sur
+        // Présence) redessine l'écran par hasard avec la bonne identité. Un render() explicite
+        // ici, dès que l'identité est connue, corrige les deux d'un coup sans attendre un clic.
+        if(mgr) render();
       }catch(err){ console.error('Échec résolution de l\'identité gestionnaire:', err); }
     }
     // Retour d'un login Google (redirection) : repère si Google/Supabase a renvoyé une erreur
