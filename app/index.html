@@ -1074,7 +1074,8 @@
       bookings: [],
       membershipPlans: [],
       memberships: [],
-      studentAccounts: []
+      studentAccounts: [],
+      consents: []
     };
   }
 
@@ -1131,6 +1132,7 @@
     if(!state.data.managers) state.data.managers = [];
     if(!state.data.bugReports) state.data.bugReports = [];
     if(!state.data.bugReportsArchive) state.data.bugReportsArchive = [];
+    if(!state.data.consents) state.data.consents = [];
     if(!state.data.config) state.data.config = { name: 'Mon Studio', pin: '1234' };
     // CORRECTIF URGENT (22 sept) : cette section (migration + seed initial) pouvait planter
     // — notamment `persist()` qui, depuis le correctif du même jour plus haut, LANCE une
@@ -2241,6 +2243,27 @@
     const c = state.data.classes.find(cl=>cl.id===classId);
     if(!c){ showToast('Ce cours n\u2019existe plus.'); return; }
 
+    // S48 (23 sept, demande d'Am\u00e9lie) : Reconnaissance des risques obligatoire avant TOUTE
+    // r\u00e9servation (cours normal ou programme) \u2014 signature une fois par personne, puis
+    // renouvellement d'un clic \u00e0 chaque r\u00e9servation. Point de passage unique : proceedBooking
+    // est appel\u00e9 par tous les chemins de r\u00e9servation (session existante, connexion/inscription
+    // en ligne, double-r\u00e9servation confirm\u00e9e, choix d'abonnement) donc le garde-fou les couvre
+    // tous sans dupliquer la logique ailleurs.
+    const consentOwnerKey = notebookOwnerKey(email, profileId);
+    const pendingBooking = {classId, dateIso, name, email, isDuplicateConfirmed, profileId, membershipId};
+    const consent = getConsentForOwner(consentOwnerKey);
+    if(!consent){
+      state.modal = {type:'consent-required', payload:{pendingBooking}};
+      render();
+      return;
+    }
+    const renewKey = consentOwnerKey+'|'+classId+'|'+dateIso;
+    if(state.consentRenewedFor !== renewKey){
+      state.modal = {type:'confirm-consent-renewal', payload:{pendingBooking, consent, renewKey}};
+      render();
+      return;
+    }
+
     if(isProgramClass(c)){
       return await proceedProgramBooking(c, name, email, isDuplicateConfirmed, profileId);
     }
@@ -2834,6 +2857,48 @@
   // exclut le compte technique du carnet admin, qui n'est pas un·e vrai·e élève.
   function visibleStudentAccounts(){
     return state.data.studentAccounts.filter(a=>!a.isAdminNotebook);
+  }
+
+  // S48 (23 sept, demande d'Amélie) : Reconnaissance des risques — consentement obligatoire,
+  // une signature par personne (ownerKey = email::self ou email::idProfilEnfant, comme pour le
+  // carnet), renouvelé d'un clic à CHAQUE réservation (voir le garde-fou dans proceedBooking).
+  function getConsentForOwner(ownerKey){
+    return (state.data.consents||[]).find(c=>c.ownerKey===ownerKey) || null;
+  }
+  // true si CE profil précis (soi-même ou un enfant) doit encore signer.
+  function needsConsent(email, profileId){
+    if(!email) return true;
+    return !getConsentForOwner(notebookOwnerKey(email, profileId));
+  }
+  // Tous les profils d'un compte (soi-même + enfants) qui n'ont pas encore signé — utilisé pour
+  // le message dans "Mon compte" et pour le rappel par courriel.
+  function accountProfilesMissingConsent(acct){
+    if(!acct) return [];
+    const missing = [];
+    if(needsConsent(acct.email, null)) missing.push({profileId:null, name:acct.name});
+    (acct.familyMembers||[]).forEach(f=>{
+      if(needsConsent(acct.email, f.id)) missing.push({profileId:f.id, name:f.name});
+    });
+    return missing;
+  }
+  // Membres ACTUELS ayant déjà réservé au moins un cours mais sans consentement signé —
+  // cible du rappel par courriel (bouton admin "Envoyer les rappels de consentement").
+  function accountsNeedingConsentReminder(){
+    const results = [];
+    visibleStudentAccounts().forEach(acct=>{
+      const hasBooked = (profileId)=> state.data.bookings.some(b=>
+        b.studentEmail && b.studentEmail.toLowerCase()===acct.email.toLowerCase() && (b.profileId||null)===(profileId||null)
+      );
+      if(hasBooked(null) && needsConsent(acct.email, null)){
+        results.push({email:acct.email, name:acct.name, profileId:null});
+      }
+      (acct.familyMembers||[]).forEach(f=>{
+        if(hasBooked(f.id) && needsConsent(acct.email, f.id)){
+          results.push({email:acct.email, name:f.name, profileId:f.id, parentName:acct.name});
+        }
+      });
+    });
+    return results;
   }
   // Décompose un ownerKey de carnet ("email::self" ou "email::idProfilEnfant").
   function parseOwnerKey(ownerKey){
@@ -4104,6 +4169,9 @@
 
     // L'abonnement actif n'est plus dupliqué ici depuis qu'il est toujours visible sous le
     // nom dans le coin en haut à droite (renderHeader) — évite un doublon d'affichage.
+    // S48 (23 sept, demande d'Amélie) : message bien visible (même compte replié) quand soi-même
+    // ou un membre de la famille doit encore signer la Reconnaissance des risques K-OSS.
+    const missingConsent = acct ? accountProfilesMissingConsent(acct) : [];
     const header = `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
         <div>
@@ -4112,6 +4180,14 @@
         </div>
         <button class="small-btn" data-action="toggle-account-expand" title="${state.accountExpanded?'Réduire':'Agrandir'}" style="font-size:14px;padding:6px 10px;">${state.accountExpanded ? '▲' : '▼'}</button>
       </div>
+      ${missingConsent.length ? `
+        <div style="margin-top:10px;background:rgba(226,114,91,0.12);border:1px solid var(--coral);border-radius:8px;padding:10px 12px;">
+          <p style="font-size:13px;margin:0 0 8px;color:var(--chalk);">⚠️ Consentement à signer pour : <strong>${missingConsent.map(p=>escapeHtml(p.name)).join(', ')}</strong> — nécessaire pour réserver un cours.</p>
+          <div class="btn-row" style="margin:0;">
+            ${missingConsent.map(p=>`<button class="small-btn" data-action="open-sign-consent" data-email="${escapeHtml(email)}" data-profile="${p.profileId||''}" style="background:var(--coral);border-color:var(--coral);color:#fff;">✍️ Signer pour ${escapeHtml(p.name)}</button>`).join('')}
+          </div>
+        </div>
+      ` : ''}
     `;
 
     if(!state.accountExpanded){
@@ -4936,6 +5012,22 @@
         <p style="font-size:13px;margin:6px 0;"><strong style="color:#E8B94A;">🟡 Jaune</strong> : a déjà eu un mode de paiement actif (abonnement, 10 classes, drop-in, etc.), mais aucun actif maintenant</p>
         <p style="font-size:13px;margin:6px 0 2px;"><strong style="color:var(--chalk);">⚪ Blanc</strong> : n’a jamais rien acheté</p>
       `, null, null, false)}
+
+      ${(()=>{
+        const needReminder = accountsNeedingConsentReminder();
+        if(!needReminder.length) return '';
+        return adminCard('consent-reminders', `⚠️ Consentement non signé — membres ayant déjà réservé (${needReminder.length})`, `
+          <p class="muted" style="color:var(--chalk-dim);">Ces personnes ont déjà réservé un cours mais n’ont pas encore signé la Reconnaissance des risques. Elles seront invitées à signer à leur prochaine réservation — ce bouton leur envoie aussi un courriel de rappel dès maintenant.</p>
+          <div class="btn-row" style="margin-bottom:10px;">
+            <button class="btn btn-primary" data-action="send-consent-reminders">📧 Envoyer les rappels de consentement (${needReminder.length})</button>
+          </div>
+          <div id="consent-reminder-results"></div>
+          <table>
+            <tr><th>Nom</th><th>Courriel du compte</th></tr>
+            ${needReminder.map(p=>`<tr><td>${escapeHtml(p.name)}${p.parentName?' <span class="muted" style="font-size:11px;">(enfant de '+escapeHtml(p.parentName)+')</span>':''}</td><td>${escapeHtml(p.email)}</td></tr>`).join('')}
+          </table>
+        `, 'var(--coral)', 'var(--coral)', false);
+      })()}
 
       <div style="background:var(--bg-panel);border:1px solid ${storageColor};border-radius:10px;padding:14px 16px;margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -5950,6 +6042,124 @@
           `}
         </div>
       `;
+      }
+    } else if(m.type === 'consent-required'){
+      const {pendingBooking} = m.payload;
+      const acctCR = findStudentAccount(pendingBooking.email);
+      const isMinorCR = !!pendingBooking.profileId;
+      const childCR = isMinorCR && acctCR ? (acctCR.familyMembers||[]).find(f=>f.id===pendingBooking.profileId) : null;
+      const participantNameCR = isMinorCR ? (childCR?childCR.name:pendingBooking.name) : (acctCR?acctCR.name:pendingBooking.name);
+      html = `
+        <div class="modal" style="max-width:400px;text-align:center;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>⚠️ Consentement requis</h3>
+          <p style="font-size:13.5px;line-height:1.5;">Pour réserver, <strong>${escapeHtml(participantNameCR)}</strong> doit d’abord signer la Reconnaissance des risques de K-OSS — une seule fois.</p>
+          <p class="muted" style="color:var(--chalk-dim);font-size:12px;font-style:italic;">On sait, c’est long et plate à remplir... mais promis, une seule fois — pour chaque membre de ta famille 😅</p>
+          <div class="btn-row" style="flex-direction:column;gap:8px;">
+            <button class="btn btn-primary" data-action="open-sign-consent" data-email="${escapeHtml(pendingBooking.email)}" data-profile="${pendingBooking.profileId||''}" style="width:100%;">✍️ Signer le consentement</button>
+            <button class="btn btn-secondary" data-action="close-modal" style="width:100%;">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'confirm-consent-renewal'){
+      const {pendingBooking, consent, renewKey} = m.payload;
+      html = `
+        <div class="modal" style="max-width:400px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Renouvellement du consentement</h3>
+          <p style="font-size:13px;color:var(--chalk-dim);">Consentement signé le ${new Date(consent.signedAt).toLocaleDateString('fr-CA')} par ${escapeHtml(consent.signerName)}. <a href="#" data-action="view-signed-consent" data-owner="${escapeHtml(consent.ownerKey)}" style="color:var(--sage);text-decoration:underline;">Voir le consentement signé</a></p>
+          <label style="display:flex;gap:10px;align-items:flex-start;margin-top:10px;cursor:pointer;">
+            <input type="checkbox" id="consent-renew-check" style="width:auto;margin-top:2px;">
+            <span style="font-size:13px;">Je comprends les risques et je renouvelle mon consentement pour ce cours.</span>
+          </label>
+          <div class="btn-row" style="margin-top:14px;">
+            <button class="btn btn-primary" data-action="confirm-renew-consent" data-renewkey="${escapeHtml(renewKey)}">Confirmer la réservation</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'sign-consent'){
+      const {email:csEmail, profileId:csProfileId} = m.payload;
+      const acctCS = findStudentAccount(csEmail);
+      if(!acctCS){
+        html = `<div class="modal" style="max-width:380px;text-align:center;"><button class="close-x" data-action="close-modal">✕</button><h3>Session expirée</h3><p class="muted" style="color:var(--chalk-dim);">Reconnectez-vous et réessayez.</p></div>`;
+      } else {
+        const isMinorCS = !!csProfileId;
+        const childCS = isMinorCS ? (acctCS.familyMembers||[]).find(f=>f.id===csProfileId) : null;
+        const participantNameCS = isMinorCS ? (childCS?childCS.name:'') : acctCS.name;
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>🛡️ Reconnaissance des risques${isMinorCS ? ' — ' + escapeHtml(participantNameCS) : ''}</h3>
+            <p class="muted" style="color:var(--chalk-dim);font-size:12.5px;line-height:1.5;">
+              Le Jiu-Jitsu comporte des risques inhérents à ce sport de contact (chutes, immobilisations, étranglements, clés articulaires, blessures possibles, y compris de nature grave), même avec un encadrement adéquat. ${isMinorCS ? 'En signant, tu confirmes avoir l’autorité légale de consentir au nom de ton enfant et avoir lu, compris et accepté ces risques en son nom.' : 'En signant, tu confirmes avoir lu, compris et accepté librement ces risques.'}
+            </p>
+            ${isMinorCS ? `
+              <label>Nom du parent ou tuteur</label>
+              <input id="cs-name" value="${escapeHtml(acctCS.name)}">
+              <label>Lien avec l’enfant</label>
+              <input id="cs-relation" placeholder="Parent, tuteur...">
+              <label>Nom de l’enfant</label>
+              <input id="cs-childname" value="${escapeHtml(participantNameCS)}" disabled>
+              <label>Date de naissance de l’enfant</label>
+              <input id="cs-dob" type="date" value="${escapeHtml((childCS&&childCS.birthday)||'')}" disabled>
+            ` : `
+              <label>Nom complet</label>
+              <input id="cs-name" value="${escapeHtml(acctCS.name)}">
+              <label>Date de naissance</label>
+              <input id="cs-dob" type="date" value="${escapeHtml(acctCS.birthday||'')}">
+            `}
+            <label>Téléphone</label>
+            <input id="cs-phone" value="${escapeHtml(acctCS.phone||'')}">
+            <label>Courriel</label>
+            <input id="cs-email" value="${escapeHtml(acctCS.email)}" disabled>
+
+            <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;cursor:pointer;">
+              <input type="checkbox" id="cs-risk" style="width:auto;margin-top:2px;">
+              <span style="font-size:13px;">Je comprends les risques inhérents au Jiu-Jitsu brésilien et je les accepte librement${isMinorCS?' au nom de mon enfant':''}.</span>
+            </label>
+            <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;cursor:pointer;">
+              <input type="checkbox" id="cs-zero" style="width:auto;margin-top:2px;">
+              <span style="font-size:13px;">J’ai lu et j’accepte la Politique de tolérance zéro K-OSS (obligatoire).</span>
+            </label>
+            <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;cursor:pointer;">
+              <input type="checkbox" id="cs-photo" style="width:auto;margin-top:2px;">
+              <span style="font-size:13px;">J’autorise l’utilisation de photos/vidéos ${isMinorCS?'de mon enfant ':''}à des fins promotionnelles <em>(facultatif)</em>.</span>
+            </label>
+
+            <label style="margin-top:12px;">Signature électronique — ${isMinorCS?'nom du parent ou tuteur':'ton nom complet'}</label>
+            <input id="cs-signature" style="font-family:'Great Vibes',cursive;font-size:22px;" placeholder="Tape ton nom ici">
+            <p style="font-size:11px;color:var(--chalk-dim);margin-top:4px;">Signature électronique avec valeur légale, datée automatiquement.</p>
+
+            <div class="btn-row" style="margin-top:14px;">
+              <button class="btn btn-primary" data-action="submit-consent-signature" data-email="${escapeHtml(csEmail)}" data-profile="${csProfileId||''}">✅ Je signe et confirme</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+            <div style="font-size:11px;color:var(--chalk-dim);text-align:center;font-style:italic;margin-top:10px;">
+              À remplir une seule fois par personne — promis, plus jamais à recommencer (sauf pour chaque nouveau membre de ta famille 😄).
+            </div>
+          </div>
+        `;
+      }
+    } else if(m.type === 'view-consent'){
+      const consentVC = getConsentForOwner(m.payload.ownerKey);
+      if(!consentVC){
+        html = `<div class="modal" style="max-width:380px;text-align:center;"><button class="close-x" data-action="close-modal">✕</button><h3>Introuvable</h3><p class="muted" style="color:var(--chalk-dim);">Ce consentement n’existe plus.</p></div>`;
+      } else {
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>🛡️ Consentement signé</h3>
+            <p style="font-size:13px;"><strong>${escapeHtml(consentVC.participantName||consentVC.signerName)}</strong>${consentVC.isMinor?' (mineur·e)':''}</p>
+            <p style="font-size:12.5px;color:var(--chalk-dim);">Signé le ${new Date(consentVC.signedAt).toLocaleString('fr-CA')} par ${escapeHtml(consentVC.signerName)}${consentVC.parentRelation?' ('+escapeHtml(consentVC.parentRelation)+')':''}</p>
+            <p style="font-size:12.5px;">Date de naissance : ${escapeHtml(consentVC.dob||'—')} · Téléphone : ${escapeHtml(consentVC.phone||'—')} · Courriel : ${escapeHtml(consentVC.email||'—')}</p>
+            <p style="font-size:12.5px;">✅ Risques acceptés · ✅ Tolérance zéro acceptée · ${consentVC.photoConsent?'✅':'❌'} Autorisation photo/vidéo</p>
+            <div style="margin:10px 0;border-bottom:2px solid var(--border);padding-bottom:8px;">
+              <span style="font-family:'Great Vibes',cursive;font-size:30px;">${escapeHtml(consentVC.signatureText)}</span>
+            </div>
+            <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+          </div>
+        `;
       }
     } else if(m.type === 'need-membership'){
       const {name,email,intro,neededCategory,requireCreditsOnly,profileId,classId,dateIso} = m.payload;
@@ -9776,6 +9986,113 @@
       const email = e.currentTarget.dataset.email;
       const profileId = e.currentTarget.dataset.profile || null;
       await proceedBooking(classId, dateIso, name, email, true, profileId);
+    }
+    else if(action==='send-consent-reminders'){
+      // Amélie (23 sept) : envoi manuel (elle clique elle-même demain matin à 8h) des rappels
+      // par courriel à tous les membres actuels ayant déjà réservé un cours mais n'ayant pas
+      // encore signé la Reconnaissance des risques. Un appel séparé par personne, comme les
+      // autres courriels transactionnels (koss-send-payment-request, etc.) — voir
+      // koss-send-consent-reminder.ts, fourni séparément à déployer sur Supabase.
+      const btn = e.currentTarget;
+      const originalLabel = btn.textContent;
+      btn.disabled = true;
+      const list = accountsNeedingConsentReminder();
+      const resultsEl = document.getElementById('consent-reminder-results');
+      let ok = 0, fail = 0;
+      for(let i=0;i<list.length;i++){
+        const p = list[i];
+        btn.textContent = `Envoi en cours… (${i+1}/${list.length})`;
+        try{
+          const resp = await sb.functions.invoke('koss-send-consent-reminder', {body:{email:p.email, name:p.name, parentName:p.parentName||null}});
+          if(resp.error || !resp.data || !resp.data.ok) throw new Error('send failed');
+          ok++;
+        }catch(err){
+          console.error('Échec envoi rappel consentement à', p.email, err);
+          fail++;
+        }
+      }
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      if(resultsEl){
+        resultsEl.innerHTML = `<p style="font-size:12.5px;color:${fail?'var(--coral)':'var(--sage)'};margin:6px 0 10px;">${ok} courriel${ok>1?'s':''} envoyé${ok>1?'s':''}${fail?`, ${fail} échec${fail>1?'s':''}`:''}.</p>`;
+      }
+      showToast(fail ? `${ok} envoyés, ${fail} échecs.` : `${ok} rappel(s) de consentement envoyé(s) !`);
+    }
+    else if(action==='open-sign-consent'){
+      const csEmail = e.currentTarget.dataset.email;
+      const csProfileId = e.currentTarget.dataset.profile || null;
+      // Si on arrive depuis le popup "Consentement requis" (réservation bloquée), on garde la
+      // réservation en attente pour la reprendre automatiquement une fois signé.
+      const pendingBooking = (state.modal && state.modal.payload && state.modal.payload.pendingBooking) || null;
+      state.modal = {type:'sign-consent', payload:{email:csEmail, profileId:csProfileId, pendingBooking}};
+      render();
+    }
+    else if(action==='submit-consent-signature'){
+      const csEmail = e.currentTarget.dataset.email;
+      const csProfileId = e.currentTarget.dataset.profile || null;
+      const acctCS = findStudentAccount(csEmail);
+      if(!acctCS){ showToast('Session expirée, reconnectez-vous.'); return; }
+      const risk = document.getElementById('cs-risk').checked;
+      const zero = document.getElementById('cs-zero').checked;
+      const photo = document.getElementById('cs-photo').checked;
+      const signature = (document.getElementById('cs-signature').value||'').trim();
+      if(!risk || !zero){
+        showToast('Les deux premières cases (risques et tolérance zéro) sont obligatoires.');
+        return;
+      }
+      if(signature.length < 2){
+        markInvalid('cs-signature');
+        showToast('Signature requise.');
+        return;
+      }
+      const isMinorCS = !!csProfileId;
+      const childCS = isMinorCS ? (acctCS.familyMembers||[]).find(f=>f.id===csProfileId) : null;
+      const name = (document.getElementById('cs-name').value||'').trim() || acctCS.name;
+      const dob = (document.getElementById('cs-dob').value||'').trim();
+      const phone = (document.getElementById('cs-phone').value||'').trim();
+      const relation = isMinorCS ? (document.getElementById('cs-relation').value||'').trim() : null;
+      const ownerKey = notebookOwnerKey(csEmail, csProfileId);
+      const consentRecord = {
+        id: uid(), ownerKey,
+        isMinor: isMinorCS,
+        signerName: name,
+        parentRelation: relation,
+        participantName: isMinorCS ? (childCS ? childCS.name : '') : name,
+        dob: dob || (isMinorCS ? ((childCS&&childCS.birthday)||'') : ''),
+        phone: phone || acctCS.phone || '',
+        email: acctCS.email,
+        riskAccepted: true, zeroToleranceAccepted: true, photoConsent: !!photo,
+        signatureText: signature,
+        signedAt: Date.now(),
+      };
+      state.data.consents = (state.data.consents||[]).filter(c=>c.ownerKey!==ownerKey);
+      state.data.consents.push(consentRecord);
+      await persist();
+      const pendingBooking = state.modal.payload.pendingBooking;
+      state.modal = null; closeModalDom();
+      showToast('Consentement signé — merci !');
+      if(pendingBooking){
+        // La signature initiale vaut aussi renouvellement pour CETTE réservation précise —
+        // pas besoin de redemander la case juste après avoir signé.
+        state.consentRenewedFor = ownerKey+'|'+pendingBooking.classId+'|'+pendingBooking.dateIso;
+        await proceedBooking(pendingBooking.classId, pendingBooking.dateIso, pendingBooking.name, pendingBooking.email, pendingBooking.isDuplicateConfirmed, pendingBooking.profileId, pendingBooking.membershipId);
+      } else {
+        render();
+      }
+    }
+    else if(action==='confirm-renew-consent'){
+      const checked = document.getElementById('consent-renew-check').checked;
+      if(!checked){ showToast('Coche la case pour renouveler ton consentement.'); return; }
+      const renewKey = e.currentTarget.dataset.renewkey;
+      const pendingBooking = state.modal.payload.pendingBooking;
+      state.consentRenewedFor = renewKey;
+      state.modal = null; closeModalDom();
+      await proceedBooking(pendingBooking.classId, pendingBooking.dateIso, pendingBooking.name, pendingBooking.email, pendingBooking.isDuplicateConfirmed, pendingBooking.profileId, pendingBooking.membershipId);
+    }
+    else if(action==='view-signed-consent'){
+      const ownerKey = e.currentTarget.dataset.owner;
+      state.modal = {type:'view-consent', payload:{ownerKey}};
+      render();
     }
     else if(action==='confirm-membership-choice'){
       // Capturer le bouton et ses data-* avant tout await (e.currentTarget devient null après).
