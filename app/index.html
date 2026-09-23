@@ -10635,27 +10635,49 @@
         showToast('Connecte-toi d’abord pour envoyer un signalement.');
         return;
       }
+      // CORRECTIF (23 sept, bug rapporté par Amélie — signalements en double dans l'admin) :
+      // rien n'empêchait plusieurs clics successifs sur "Envoyer le signalement" (réseau lent,
+      // la personne croit que rien ne s'est passé et clique à nouveau) de créer chacun un
+      // signalement identique séparé (même texte, id différent, quelques secondes d'écart —
+      // exactement le symptôme observé). On capture le bouton et on le désactive TOUT DE SUITE,
+      // avant tout await, en se basant sur son état `disabled` actuel comme verrou : un second
+      // clic pendant que le premier est encore en vol ne fait plus rien.
+      const submitBtn = e.currentTarget;
+      if(submitBtn && submitBtn.disabled) return;
+      if(submitBtn) submitBtn.disabled = true;
       const text = (document.getElementById('bugreport-text').value || '').trim();
-      if(!text){ showToast('Décris le bug avant d’envoyer.'); return; }
-      const mgr = state.adminUnlocked ? currentManager() : null;
-      const reporterLabel = mgr ? mgr.name + ' (gestionnaire)' : state.studentSession.email;
-      if(!state.data.bugReports) state.data.bugReports = [];
-      state.data.bugReports.unshift({
-        id: uid(),
-        text,
-        screenshot: pendingBugScreenshot || null,
-        reporter: reporterLabel,
-        reporterKey: currentReporterKey(),
-        status: 'en_attente',
-        adminReply: null,
-        repliedAt: null,
-        createdAt: Date.now(),
-      });
-      pendingBugScreenshot = null;
-      await persist();
-      state.modal = null; closeModalDom();
-      render();
-      showToast('Bug signalé — merci !');
+      if(!text){
+        showToast('Décris le bug avant d’envoyer.');
+        if(submitBtn) submitBtn.disabled = false;
+        return;
+      }
+      try{
+        const mgr = state.adminUnlocked ? currentManager() : null;
+        const reporterLabel = mgr ? mgr.name + ' (gestionnaire)' : state.studentSession.email;
+        if(!state.data.bugReports) state.data.bugReports = [];
+        state.data.bugReports.unshift({
+          id: uid(),
+          text,
+          screenshot: pendingBugScreenshot || null,
+          reporter: reporterLabel,
+          reporterKey: currentReporterKey(),
+          status: 'en_attente',
+          adminReply: null,
+          repliedAt: null,
+          createdAt: Date.now(),
+        });
+        pendingBugScreenshot = null;
+        await persist();
+        state.modal = null; closeModalDom();
+        render();
+        showToast('Bug signalé — merci !');
+      } catch(err){
+        // En cas d'échec d'enregistrement, on redonne la main (le modal reste ouvert via le
+        // catch générique d'attachHandlers, qui affiche déjà le message d'erreur) plutôt que de
+        // laisser le bouton bloqué pour toujours.
+        if(submitBtn) submitBtn.disabled = false;
+        throw err;
+      }
     }
     else if(action==='delete-bug-report'){
       const bug = (state.data.bugReports||[]).find(b=>b.id===id);
