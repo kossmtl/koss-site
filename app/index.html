@@ -4336,8 +4336,8 @@
         ${state.weekOffset>0 ? '<button data-action="week-prev"><span class="full-text">← Semaine préc.</span><span class="short-text">Semaine<br>← Préc.</span></button>' : ''}
         <span class="week-label">${weekLabel(state.weekOffset)}</span>
         <button data-action="week-next"><span class="full-text">Semaine suiv. →</span><span class="short-text">Semaine<br>Suiv. →</span></button>
-        ${state.weekOffset!==0 ? '<button data-action="week-today">Aujourd\'hui</button>' : ''}
-        <button data-action="booking-show-day">← Retour à la journée</button>
+        ${state.weekOffset!==0 ? '<button data-action="week-today">Semaine actuelle</button>' : ''}
+        <button data-action="booking-show-day">Aujourd'hui</button>
         ${getNextIntroProgram() ? `<button class="btn-intro-highlight" data-action="goto-next-intro" style="line-height:1.3;text-align:center;">Aller au prochain<br>programme d'intro<br>${formatShortDate(getNextIntroProgram().startDate)} au ${formatShortDate(getNextIntroProgram().endDate)}</button>` : ''}
       </div>
       ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">Aucun cours programmé pour l'instant. Revenez bientôt !</div></div>`}
