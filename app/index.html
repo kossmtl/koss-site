@@ -4481,6 +4481,12 @@
     const mgr = currentManager();
     const isSuperMgr = !!(mgr && mgr.role==='super');
     if(!isSuperMgr) state.weekOffset = 0;
+    // Demande d'Amélie (22 sept) : même pour le super gestionnaire, l'ouverture de la prise de
+    // présences doit d'abord montrer SEULEMENT la journée en cours, avec un bouton pour passer
+    // à la vue semaine si besoin (state.attendanceDayOnly, remis à true à chaque ouverture —
+    // voir l'action 'goto-attendance'). Un gestionnaire normal reste toujours en mode journée.
+    const dayOnly = !isSuperMgr || state.attendanceDayOnly !== false;
+    if(dayOnly) state.weekOffset = 0;
     const dates = getWeekDates(state.weekOffset);
     let anyClass = false;
     let weekHasMorning = false;
@@ -4498,7 +4504,7 @@
       if(afternoon.length) weekHasAfternoon = true;
       return {d, i, dateIso, dayClasses, morning, afternoon};
     });
-    if(!isSuperMgr){
+    if(dayOnly){
       dayData = dayData.filter(dd=>dd.dateIso===today);
       anyClass = dayData.some(dd=>dd.dayClasses.length);
     }
@@ -4536,15 +4542,21 @@
     return `
       <div class="btn-row" style="margin-top:0;margin-bottom:14px;"><button class="btn btn-secondary" data-action="goto-admin">← Retour à Gérer</button></div>
       <h3 style="font-family:var(--font-d);text-transform:uppercase;letter-spacing:0.01em;">Prise de présences</h3>
-      ${isSuperMgr ? `
+      ${isSuperMgr && !dayOnly ? `
       <div class="week-nav">
         <button data-action="week-prev"><span class="full-text">← Semaine préc.</span><span class="short-text">Semaine<br>← Préc.</span></button>
         <span class="week-label">${weekLabel(state.weekOffset)}</span>
         <button data-action="week-next"><span class="full-text">Semaine suiv. →</span><span class="short-text">Semaine<br>Suiv. →</span></button>
         ${state.weekOffset!==0 ? '<button data-action="week-today">Aujourd\'hui</button>' : ''}
+        <button data-action="attendance-show-day">← Retour à la journée</button>
+      </div>
+      ` : isSuperMgr ? `
+      <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
+        <p class="muted" style="color:var(--chalk-dim);margin:0;flex:1;">Cours d’aujourd’hui seulement.</p>
+        <button class="small-btn" data-action="attendance-show-week">📅 Voir la semaine</button>
       </div>
       ` : `<p class="muted" style="color:var(--chalk-dim);">Cours d’aujourd’hui seulement.</p>`}
-      ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">${isSuperMgr ? 'Aucun cours programmé cette semaine.' : 'Aucun cours aujourd’hui.'}</div></div>`}
+      ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">${dayOnly ? 'Aucun cours aujourd’hui.' : 'Aucun cours programmé cette semaine.'}</div></div>`}
     `;
   }
 
@@ -5066,6 +5078,7 @@
               <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
                 ${sharedContentPreviewHtml(it)}
                 <div class="btn-row" style="margin-top:8px;">
+                  <button class="small-btn" data-action="admin-claim-shared-item" data-id="${it.id}">📓 Placer dans mon carnet</button>
                   <button class="small-btn" data-action="archive-shared-item" data-id="${it.id}">Marquer comme lu</button>
                 </div>
               </div>
@@ -5090,6 +5103,7 @@
                   <div style="margin-top:10px;">
                     ${sharedContentPreviewHtml(it)}
                     <div class="btn-row" style="margin-top:8px;">
+                      <button class="small-btn" data-action="admin-claim-shared-item" data-id="${it.id}">📓 Placer dans mon carnet</button>
                       <button class="small-btn" data-action="confirm-delete-archived-shared-item" data-id="${it.id}" style="color:var(--coral);">Supprimer définitivement</button>
                     </div>
                   </div>
@@ -8374,7 +8388,15 @@
       showToast('Infos du compte enregistrées.');
     }
     else if(action==='goto-admin'){ state.view = state.adminUnlocked ? 'admin' : 'admin-login'; render(); }
-    else if(action==='goto-attendance'){ state.view = 'attendance'; render(); }
+    else if(action==='goto-attendance'){
+      // Demande d'Amélie (22 sept) : à CHAQUE ouverture de la prise de présences, on doit
+      // repartir sur la vue "journée en cours seulement" — jamais se souvenir qu'on avait
+      // laissé la vue semaine ouverte la dernière fois.
+      state.view = 'attendance';
+      state.attendanceDayOnly = true;
+      state.weekOffset = 0;
+      render();
+    }
     else if(action==='open-notebook-cover'){ state.notebookOpened = true; render(); }
     else if(action==='close-notebook-cover'){ state.notebookOpened = false; state.notebookEditMode = false; state.notebookSelectedEntry = null; render(); }
     else if(action==='toggle-notebook-edit-mode'){ state.notebookEditMode = !state.notebookEditMode; if(!state.notebookEditMode) state.notebookSelectedEntry = null; render(); }
@@ -8702,6 +8724,44 @@
       state.notebookActivePage = entry.page;
       state.view = 'notebook';
       state.modal = null;
+      render();
+      showToast('Ajouté à votre carnet.');
+    }
+    else if(action==='admin-claim-shared-item'){
+      // Demande d'Amélie (22 sept) : tout ce qu'un·e admin/coach reçoit dans sa plateforme de
+      // gestion (notes reçues, notes archivées) doit pouvoir être placé dans SON PROPRE carnet
+      // — même mécanique que "claim-shared-item" côté élève, mais vers le carnet technique de
+      // l'admin (ensureAdminNotebookAccount) plutôt que vers un carnet élève.
+      const itemId = e.currentTarget.dataset.id;
+      const mgr = currentManager();
+      if(!mgr){ showToast('Session gestionnaire introuvable.'); return; }
+      const item = state.data.sharedItems.find(s=>s.id===itemId);
+      if(!item){ showToast('Introuvable.'); return; }
+      const acct = ensureAdminNotebookAccount(mgr);
+      const ownerKey = notebookOwnerKey(acct.email, null);
+      const nb = getOrCreateActiveNotebook(ownerKey);
+      const entry = Object.assign({}, item, {
+        id: uid(), ownerKey, notebookId: nb.id,
+        page: 1,
+        x: 10+Math.round(Math.random()*40), y: 10+Math.round(Math.random()*40),
+        size: item.kind==='sticker' ? 60 : undefined, rotation: 0,
+        fontSize: item.kind==='text' ? 16 : undefined,
+        createdAt: Date.now(), shareId: item.id,
+      });
+      delete entry.anonymous; delete entry.recipientType; delete entry.recipientManagerId;
+      delete entry.recipientOwnerKey; delete entry.senderOwnerKey; delete entry.status; delete entry.decidedAt;
+      state.data.notebookEntries.push(entry);
+      item.status = 'claimed';
+      state.adminNotebookActive = true;
+      state.notebookProfileId = null;
+      state.notebookActiveId = nb.id;
+      state.notebookOpened = true;
+      state.notebookActivePage = entry.page;
+      state.notebookFilterCategory = null;
+      state.managerMenuOpen = false;
+      state.view = 'notebook';
+      state.modal = null;
+      await persist();
       render();
       showToast('Ajouté à votre carnet.');
     }
@@ -9096,6 +9156,15 @@
     }
     else if(action==='week-next'){ state.weekOffset++; render(); }
     else if(action==='week-today'){ state.weekOffset=0; render(); }
+    else if(action==='attendance-show-week'){
+      state.attendanceDayOnly = false;
+      render();
+    }
+    else if(action==='attendance-show-day'){
+      state.attendanceDayOnly = true;
+      state.weekOffset = 0;
+      render();
+    }
     else if(action==='goto-next-intro'){
       const program = getNextIntroProgram();
       if(!program){ showToast('Aucun programme Intro au BJJ programmé pour l\u2019instant.'); return; }
@@ -9292,8 +9361,12 @@
       const filtered = category ? inRange.filter(m=>(m.categories||[]).includes(category)) : inRange;
       const rows = filtered.map(m=>{
         const plan = state.data.membershipPlans.find(p=>p.id===m.planId);
-        const amountStr = m.planPrice || (plan?plan.price:'') || '';
-        const amount = parsePriceAmount(amountStr);
+        // CORRECTIF (22 sept, signalé par Amélie) : le rapport affichait le prix LISTÉ de la
+        // formule même pour un abonnement offert (grantedFree) — donc un abonnement gratuit
+        // apparaissait comme s'il avait été payé plein prix. Le montant réel payé pour un
+        // abonnement offert est 0, peu importe le prix normal de la formule.
+        const amountStr = m.grantedFree ? '0 $' : (m.planPrice || (plan?plan.price:'') || '');
+        const amount = m.grantedFree ? 0 : parsePriceAmount(amountStr);
         const cats = m.categories||[];
         return {
           studentName: m.studentName, email: m.studentEmail, profileId: m.profileId||null,
