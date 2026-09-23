@@ -177,6 +177,17 @@
     border-radius:7px;
     cursor:pointer;
   }
+  /* CORRECTIF (23 sept) : `.week-nav button` (plus haut) a une spécificité CSS plus élevée
+     (deux sélecteurs : classe + élément) que `.btn-intro-highlight` seul (un sélecteur), donc
+     dans la vue SEMAINE (bouton à l'intérieur de `.week-nav`), c'était le gris/beige foncé de
+     `.week-nav button` qui gagnait et écrasait le beige/amber voulu — visible seulement là,
+     jamais en vue jour (pas d'ancêtre `.week-nav`). Cette règle plus spécifique restaure le
+     beige dans les deux contextes. */
+  .week-nav button.btn-intro-highlight{
+    background:var(--amber);
+    border-color:var(--amber);
+    color:var(--ink);
+  }
   .intro-btn-daybar{
     /* Version pleine largeur, une seule ligne, utilisée au-dessus de l'agenda du jour dans
        l'onglet Réserver (demande d'Amélie, 23 sept : coins arrondis comme le bouton de la vue
