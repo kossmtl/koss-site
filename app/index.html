@@ -1018,6 +1018,7 @@
   let pendingStickerImage = null;
   let lastContentClick = {id:null, time:0};
   let pendingBugScreenshot = null; // capture d'écran optionnelle jointe à un signalement de bug
+  let showHiddenBugReports = false; // affichage temporaire (popup ouvert) des signalements masqués localement, pour pouvoir les réafficher
 
   let state = {
     view: 'student', // 'student' | 'admin-login' | 'admin'
@@ -1038,6 +1039,7 @@
     studentSearchTried: false, // liste des étudiants cachée tant qu'on n'a pas cliqué "Rechercher" au moins une fois (vide = tout le monde, une seule fois recherché)
     activeProfileId: null,
     notebookProfileId: undefined,
+    adminNotebookActive: false,
     notebookOpened: false,
     notebookFilterCategory: null,
     notebookSelectedEntry: null,
@@ -2800,6 +2802,39 @@
   function notebookOwnerKey(email, profileId){
     return `${email.toLowerCase()}::${profileId||'self'}`;
   }
+  // Demande d'Amélie (22 sept) : elle veut AUSSI avoir son propre carnet en tant qu'admin,
+  // accessible depuis le menu de son nom en haut à droite ("📓 Mon carnet"). Le carnet est
+  // entièrement branché sur un "compte élève" (studentAccounts) — plutôt que de dupliquer
+  // toute cette mécanique (post-its, autocollants, pages...) pour un cas séparé, on lui crée
+  // un compte élève technique, invisible dans sa liste "Étudiants" (isAdminNotebook:true),
+  // lié à son compte gestionnaire. state.adminNotebookActive indique qu'on est dans SON
+  // carnet à elle (plutôt que dans le carnet d'un·e élève via une session élève normale).
+  function adminNotebookEmail(mgr){
+    return 'admin-carnet-' + mgr.id + '@interne.koss';
+  }
+  function ensureAdminNotebookAccount(mgr){
+    const email = adminNotebookEmail(mgr);
+    let acct = state.data.studentAccounts.find(a=>a.email.toLowerCase()===email);
+    if(!acct){
+      acct = {email, name: mgr.name || 'Admin', isAdminNotebook:true, familyMembers:[], createdAt:Date.now()};
+      state.data.studentAccounts.push(acct);
+    }
+    return acct;
+  }
+  // Compte à utiliser pour toutes les opérations du carnet actuellement affiché — celui de
+  // l'élève connecté normalement, OU le carnet technique de l'admin si adminNotebookActive.
+  function notebookSessionAccount(){
+    if(state.adminNotebookActive && state.adminUnlocked){
+      const mgr = currentManager();
+      return mgr ? ensureAdminNotebookAccount(mgr) : null;
+    }
+    return state.studentSession ? findStudentAccount(state.studentSession.email) : null;
+  }
+  // Liste des comptes élèves à afficher dans l'admin (onglet Étudiants, recherche, etc.) —
+  // exclut le compte technique du carnet admin, qui n'est pas un·e vrai·e élève.
+  function visibleStudentAccounts(){
+    return state.data.studentAccounts.filter(a=>!a.isAdminNotebook);
+  }
   // Décompose un ownerKey de carnet ("email::self" ou "email::idProfilEnfant").
   function parseOwnerKey(ownerKey){
     const idx = String(ownerKey||'').lastIndexOf('::');
@@ -3143,12 +3178,26 @@
       }
     }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
   }
+  function unhideLocalBug(id){
+    try{
+      const hidden = getLocalBugHidden().filter(x=>x!==id);
+      localStorage.setItem('koss_bug_hidden_v1', JSON.stringify(hidden));
+    }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
+  }
   function myVisibleBugReports(){
     const myKey = currentReporterKey();
     if(!myKey) return [];
     const hidden = getLocalBugHidden();
     return [...(state.data.bugReports||[]), ...(state.data.bugReportsArchive||[])]
       .filter(b=>b.reporterKey===myKey && !hidden.includes(b.id))
+      .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  }
+  function myHiddenBugReports(){
+    const myKey = currentReporterKey();
+    if(!myKey) return [];
+    const hidden = getLocalBugHidden();
+    return [...(state.data.bugReports||[]), ...(state.data.bugReportsArchive||[])]
+      .filter(b=>b.reporterKey===myKey && hidden.includes(b.id))
       .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   }
   function hasUnseenBugActivity(){
@@ -3170,12 +3219,15 @@
     return state.data.studentAccounts.find(a=>a.email.toLowerCase()===e) || null;
   }
 
-  // S48 (demande d'Amélie) : code couleur du nom selon l'historique d'abonnement — un coup
-  // d'œil suffit pour voir qui est actif, qui l'a déjà été, qui n'a que des passes/drop-in,
-  // et qui n'a jamais rien acheté (celui-ci reste blanc/couleur par défaut : return null).
-  //   🟢 vert   : a un abonnement actif en ce moment
-  //   🟡 jaune  : a déjà eu un abonnement (type illimité), mais aucun actif maintenant
-  //   🟣 mauve  : n'a jamais eu qu'illimité — seulement des passes/drop-in (type crédits)
+  // S48 (demande d'Amélie, revue le 22 sept) : code couleur du nom selon le statut ACTUEL de
+  // paiement/abonnement — un coup d'œil suffit pour voir qui est actif, comment, qui l'a déjà
+  // été, et qui n'a jamais rien acheté (celui-ci reste blanc/couleur par défaut : return null).
+  //   🟠 orange : a un paiement en attente en ce moment (prioritaire sur tout le reste)
+  //   🟢 vert   : a un ABONNEMENT (illimité — 1 mois, 3 mois, etc.) actif en ce moment
+  //   🟣 mauve  : a une carte de passes/drop-in (type crédits) active en ce moment, mais
+  //               aucun abonnement illimité actif
+  //   🟡 jaune  : a déjà eu un mode de paiement actif (abonnement OU passes/drop-in), mais
+  //               plus rien d'actif maintenant (expiré/annulé/épuisé)
   //   ⚪ blanc  : n'a jamais rien acheté
   function studentStatusColor(email, profileId){
     if(!email) return null;
@@ -3183,9 +3235,10 @@
     const pid = profileId || null;
     const ms = state.data.memberships.filter(x=>x.studentEmail && x.studentEmail.toLowerCase()===key && (x.profileId||null)===pid);
     if(!ms.length) return null;
-    if(ms.some(x=>membershipDisplayStatus(x)==='active')) return 'var(--sage)';
-    if(ms.some(x=>x.type==='illimite')) return '#E8B94A';
-    return '#B08FCE';
+    if(ms.some(x=>x.status==='attente_paiement' || hasDueInstallment(x))) return '#E8973F';
+    if(ms.some(x=>x.type==='illimite' && membershipDisplayStatus(x)==='active')) return 'var(--sage)';
+    if(ms.some(x=>x.type==='credits' && membershipDisplayStatus(x)==='active')) return '#B08FCE';
+    return '#E8B94A';
   }
   function studentNameStyleAttr(email, profileId){
     const c = studentStatusColor(email, profileId);
@@ -3363,7 +3416,7 @@
     const q = normalizeStr(query);
     if(!q) return [];
     const results = [];
-    state.data.studentAccounts.forEach(a=>{
+    visibleStudentAccounts().forEach(a=>{
       const hay = normalizeStr(`${a.name||''} ${a.firstName||''} ${a.lastName||''} ${a.email||''} ${a.phone||''}`);
       if(hay.includes(q)) results.push({type:'account', email:a.email, name:a.name, phone:a.phone||''});
       (a.familyMembers||[]).forEach(f=>{
@@ -3379,7 +3432,7 @@
   // l'onglet Étudiants avant toute recherche (S28, demande explicite d'Amélie : elle ne veut
   // jamais voir tout le monde par défaut, seulement les derniers arrivés).
   function recentStudentAccounts(n){
-    return state.data.studentAccounts
+    return visibleStudentAccounts()
       .slice()
       .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))
       .slice(0, n)
@@ -3388,7 +3441,7 @@
 
   function allStudentsAndChildrenResults(){
     const results = [];
-    state.data.studentAccounts.forEach(a=>{
+    visibleStudentAccounts().forEach(a=>{
       results.push({type:'account', email:a.email, name:a.name, phone:a.phone||''});
       (a.familyMembers||[]).forEach(f=>{
         results.push({type:'child', parentEmail:a.email, parentName:a.name, memberId:f.id, name:f.name, birthday:f.birthday||'', email:f.email||'', phone:f.phone||''});
@@ -3400,7 +3453,7 @@
 
   function allStudents(){
     const map = new Map();
-    state.data.studentAccounts.forEach(a=>{
+    visibleStudentAccounts().forEach(a=>{
       map.set(a.email.toLowerCase(), {email:a.email, name:a.name, phone:a.phone||''});
     });
     state.data.memberships.forEach(m=>{
@@ -3770,7 +3823,7 @@
     })() : '';
     // En zone gestionnaire (Gérer), le rond de profil élève disparaît au profit de celui du
     // gestionnaire connecté — avec son propre menu (compte gestionnaire + déconnexion).
-    const inManagerArea = state.adminUnlocked && (state.view==='admin' || state.view==='attendance');
+    const inManagerArea = state.adminUnlocked && (state.view==='admin' || state.view==='attendance' || (state.view==='notebook' && state.adminNotebookActive));
     const mgr = inManagerArea ? currentManager() : null;
     const accountControl = mgr ? `
       <div style="position:relative;text-align:right;">
@@ -3781,6 +3834,7 @@
         ${state.managerMenuOpen ? `
           <div class="account-menu" style="right:0;left:auto;">
             <div class="account-menu-actions">
+              <button data-action="goto-admin-notebook">📓 Mon carnet</button>
               <button data-action="goto-manager-account">Gérer mon compte</button>
               <button data-action="admin-logout">Me déconnecter</button>
             </div>
@@ -4183,12 +4237,14 @@
   }
 
   function renderNotebook(){
-    const acct = findStudentAccount(state.studentSession.email);
+    const acct = notebookSessionAccount();
     if(!acct) return '<p>Session expirée.</p>';
     const profileId = state.notebookProfileId || null;
     const ownerName = profileId ? getProfileName(acct, profileId) : acct.name;
     const ownerKey = notebookOwnerKey(acct.email, profileId);
-    const backBtn = `<div class="btn-row" style="margin-top:0;margin-bottom:14px;"><button class="btn btn-secondary" data-action="goto-account">← Retour à Mon compte</button></div>`;
+    const backBtn = state.adminNotebookActive
+      ? `<div class="btn-row" style="margin-top:0;margin-bottom:14px;"><button class="btn btn-secondary" data-action="goto-admin-notebook-exit">← Retour à l'administration</button></div>`
+      : `<div class="btn-row" style="margin-top:0;margin-bottom:14px;"><button class="btn btn-secondary" data-action="goto-account">← Retour à Mon compte</button></div>`;
     const myNotebooks = getNotebooksForOwner(ownerKey);
     const activeNotebook = getOrCreateActiveNotebook(ownerKey);
     const settings = activeNotebook;
@@ -4862,9 +4918,10 @@
       </div>
 
       ${adminCard('color-legend', 'Légende des couleurs de noms', `
-        <p style="font-size:13px;margin:2px 0;"><strong style="color:var(--sage);">🟢 Vert</strong> : abonnement actif</p>
-        <p style="font-size:13px;margin:6px 0;"><strong style="color:#E8B94A;">🟡 Jaune</strong> : a déjà eu un abonnement (expiré/annulé), mais aucun actif maintenant</p>
-        <p style="font-size:13px;margin:6px 0;"><strong style="color:#B08FCE;">🟣 Mauve</strong> : passes/drop-in seulement, jamais d’abonnement</p>
+        <p style="font-size:13px;margin:2px 0;"><strong style="color:#E8973F;">🟠 Orange</strong> : paiement en attente en ce moment</p>
+        <p style="font-size:13px;margin:6px 0;"><strong style="color:var(--sage);">🟢 Vert</strong> : abonnement actif (1 mois, 3 mois, etc.)</p>
+        <p style="font-size:13px;margin:6px 0;"><strong style="color:#B08FCE;">🟣 Mauve</strong> : passes/drop-in seulement, actif, jamais d’abonnement actif en ce moment</p>
+        <p style="font-size:13px;margin:6px 0;"><strong style="color:#E8B94A;">🟡 Jaune</strong> : a déjà eu un mode de paiement actif (abonnement, 10 classes, drop-in, etc.), mais aucun actif maintenant</p>
         <p style="font-size:13px;margin:6px 0 2px;"><strong style="color:var(--chalk);">⚪ Blanc</strong> : n’a jamais rien acheté</p>
       `, null, null, false)}
 
@@ -5270,6 +5327,7 @@
       // passés — actifs ET archivés —, leur statut, et la réponse laissée par l'admin, si
       // elle existe.
       const mine = myVisibleBugReports();
+      const hiddenMine = myHiddenBugReports();
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
@@ -5290,6 +5348,25 @@
                 </div>
               `;}).join('')}
             </div>
+          ` : ''}
+          ${hiddenMine.length ? `
+            <button type="button" class="small-btn" data-action="toggle-show-hidden-bug-reports" style="margin-bottom:10px;">${showHiddenBugReports ? '▲ Cacher' : '▼ Afficher'} mes signalements masqués (${hiddenMine.length})</button>
+            ${showHiddenBugReports ? `
+              <div style="max-height:220px;overflow-y:auto;margin-bottom:14px;">
+                ${hiddenMine.map(b=>{
+                  const st = bugStatusMeta(b.status);
+                  return `
+                  <div style="border:1px dashed var(--border);border-radius:8px;padding:8px;margin-bottom:8px;opacity:.75;">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
+                      <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — <strong style="color:${st.color};">${st.label}</strong></p>
+                      <button type="button" class="small-btn" data-action="unhide-bug-report-local" data-id="${b.id}" title="Réafficher dans ma liste" style="flex-shrink:0;">↩️ Réafficher</button>
+                    </div>
+                    <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.text)}</p>
+                    ${b.adminReply ? `<div style="background:var(--paper-alt,rgba(0,0,0,.03));border-radius:6px;padding:6px;margin-top:6px;"><p style="font-size:11px;color:var(--chalk-dim);margin:0 0 2px;">Réponse${b.repliedAt ? ' — '+new Date(b.repliedAt).toLocaleString('fr-CA') : ''}</p><p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.adminReply)}</p></div>` : ''}
+                  </div>
+                `;}).join('')}
+              </div>
+            ` : ''}
           ` : ''}
           <p class="muted" style="color:var(--chalk-dim);">Décris ce qui ne fonctionne pas (ce que tu faisais, ce qui s’est passé, ce que tu attendais), ou propose une idée.</p>
           <label>Description du bug ou de la suggestion</label>
@@ -8063,7 +8140,7 @@
       const leftPx = parseFloat(previewEl.style.left)||0;
       const topPx = parseFloat(previewEl.style.top)||0;
       previewEl.remove(); previewEl = null;
-      const acct = findStudentAccount(state.studentSession.email);
+      const acct = notebookSessionAccount();
       const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
       const nb = getOrCreateActiveNotebook(ownerKey);
       const entry = {
@@ -8180,7 +8257,7 @@
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onUp);
       if(moved){
-        const acct = findStudentAccount(state.studentSession.email);
+        const acct = notebookSessionAccount();
         const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId || null);
         const nb = getOrCreateActiveNotebook(ownerKey);
         nb.kossLogoX = parseFloat(wrap.style.left);
@@ -8249,6 +8326,7 @@
       state.adminUnlocked = false;
       state.currentManagerId = null;
       state.managerMenuOpen = false;
+      state.adminNotebookActive = false;
       try{ await sb.auth.signOut(); }catch(err){}
       // Sur l'URL ?admin, revenir à l'écran de connexion admin plutôt qu'à la page élève.
       state.view = ADMIN_URL_FLAG ? 'admin-login' : 'student';
@@ -8257,6 +8335,25 @@
     else if(action==='goto-manager-account'){
       state.managerMenuOpen = false;
       state.modal = {type:'manager-account', payload:null};
+      render();
+    }
+    else if(action==='goto-admin-notebook'){
+      const mgr = currentManager();
+      if(!mgr){ showToast('Session gestionnaire introuvable.'); return; }
+      ensureAdminNotebookAccount(mgr);
+      state.adminNotebookActive = true;
+      state.notebookProfileId = null;
+      state.notebookActiveId = null;
+      state.notebookOpened = false;
+      state.notebookFilterCategory = null;
+      state.managerMenuOpen = false;
+      state.view = 'notebook';
+      await persist();
+      render();
+    }
+    else if(action==='goto-admin-notebook-exit'){
+      state.adminNotebookActive = false;
+      state.view = 'admin';
       render();
     }
     else if(action==='set-manager-theme'){
@@ -8286,7 +8383,7 @@
       render();
     }
     else if(action==='new-notebook'){
-      const acct = findStudentAccount(state.studentSession.email);
+      const acct = notebookSessionAccount();
       const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
       const existing = getNotebooksForOwner(ownerKey);
       const defaultCovers = ['#1D5C43','#7A3B12','#2A4B7C','#8B1E3F'];
@@ -8324,7 +8421,7 @@
       render();
     }
     else if(action==='add-notebook-page'){
-      const acct = findStudentAccount(state.studentSession.email);
+      const acct = notebookSessionAccount();
       const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
       const nb = getOrCreateActiveNotebook(ownerKey);
       if((nb.pageCount||1) >= MAX_NOTEBOOK_PAGES){ showToast('Maximum de 40 pages atteint.'); return; }
@@ -8335,7 +8432,7 @@
       showToast('Page ajoutée.');
     }
     else if(action==='delete-notebook-page'){
-      const acct = findStudentAccount(state.studentSession.email);
+      const acct = notebookSessionAccount();
       const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
       const nb = getOrCreateActiveNotebook(ownerKey);
       const pageCount = nb.pageCount || 1;
@@ -8357,7 +8454,7 @@
     }
     else if(action==='new-postit'){
       pendingPostitPhoto = null;
-      const acct = findStudentAccount(state.studentSession.email);
+      const acct = notebookSessionAccount();
       const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
       const nb = getOrCreateActiveNotebook(ownerKey);
       state.modal = {type:'postit-form', payload:{ownerKey, entry:null, notebookId:nb.id, pageCount:nb.pageCount||1}};
@@ -8381,7 +8478,7 @@
       render();
     }
     else if(action==='new-textnote'){
-      const acct = findStudentAccount(state.studentSession.email);
+      const acct = notebookSessionAccount();
       const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
       const nb = getOrCreateActiveNotebook(ownerKey);
       state.modal = {type:'textnote-form', payload:{ownerKey, entry:null, notebookId:nb.id, pageCount:nb.pageCount||1}};
@@ -8432,7 +8529,7 @@
     else if(action==='pick-sticker'){
       const stickerId = e.currentTarget.dataset.sticker;
       const grantId = e.currentTarget.dataset.grant;
-      const acct = findStudentAccount(state.studentSession.email);
+      const acct = notebookSessionAccount();
       const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
       const nb = getOrCreateActiveNotebook(ownerKey);
       state.data.notebookEntries.push({id:uid(), ownerKey, notebookId:nb.id, kind:'sticker', stickerId, grantId: grantId||null, page: state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), size:60, rotation:0, createdAt:Date.now()});
@@ -8915,7 +9012,7 @@
       showToast('Note enregistrée.');
     }
     else if(action==='open-notebook-settings'){
-      const acct = findStudentAccount(state.studentSession.email);
+      const acct = notebookSessionAccount();
       const ownerKey = notebookOwnerKey(acct.email, state.notebookProfileId);
       const nb = getOrCreateActiveNotebook(ownerKey);
       state.modal = {type:'notebook-settings', payload:{notebookId:nb.id}};
@@ -9283,7 +9380,7 @@
       const today = todayIso();
       const todayDate = new Date(today+'T00:00:00');
       const profiles = [];
-      state.data.studentAccounts.forEach(acct=>{
+      visibleStudentAccounts().forEach(acct=>{
         profiles.push({email:acct.email, profileId:null, name:acct.name});
         (acct.familyMembers||[]).forEach(f=> profiles.push({email:acct.email, profileId:f.id, name:f.name}));
       });
@@ -9963,6 +10060,7 @@
     }
     else if(action==='open-report-bug'){
       pendingBugScreenshot = null;
+      showHiddenBugReports = false;
       state.modal = {type:'report-bug'};
       // Ouvrir le popup vaut "j'ai vu" : on marque tous mes signalements comme lus maintenant,
       // ce qui éteint le rond rouge (voir hasUnseenBugActivity()).
@@ -10078,6 +10176,14 @@
       // Masquage purement visuel/local (localStorage) — ne touche à rien côté serveur, le
       // signalement reste intact pour l'admin.
       hideLocalBug(id);
+      render();
+    }
+    else if(action==='unhide-bug-report-local'){
+      unhideLocalBug(id);
+      render();
+    }
+    else if(action==='toggle-show-hidden-bug-reports'){
+      showHiddenBugReports = !showHiddenBugReports;
       render();
     }
     else if(action==='open-bug-archive'){
@@ -10489,7 +10595,7 @@
         };
       };
       let reportRows = [];
-      state.data.studentAccounts.forEach(acct=>{
+      visibleStudentAccounts().forEach(acct=>{
         reportRows.push(computeReportRow(acct.email, null, acct.name, acct.birthday, acct.createdAt, acct.firstName, acct.lastName));
         (acct.familyMembers||[]).forEach(fm=>{
           reportRows.push(computeReportRow(acct.email, fm.id, fm.name, fm.birthday, acct.createdAt));
