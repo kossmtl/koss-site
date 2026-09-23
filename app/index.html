@@ -3113,6 +3113,58 @@
     return BUG_STATUS_META[status] || BUG_STATUS_META.en_attente;
   }
 
+  // S48 (22 sept, demande d'Amélie) : petit rond rouge sur "Bug et suggestions" quand un de
+  // MES signalements a reçu une réponse ou un changement de statut que je n'ai pas encore vu,
+  // + possibilité de "masquer" (visuellement seulement, jamais supprimé côté serveur) mes
+  // vieux signalements. Tout ceci reste 100% local à cet appareil (localStorage) — pas de
+  // nouvelle colonne/table Supabase — donc ça ne se synchronise pas entre appareils, ce qui
+  // est acceptable pour ce genre de petit confort d'affichage.
+  function getLocalBugSeen(){
+    try{ return JSON.parse(localStorage.getItem('koss_bug_seen_v1') || '{}'); }
+    catch(err){ return {}; }
+  }
+  function setLocalBugSeen(id, ts){
+    try{
+      const seen = getLocalBugSeen();
+      seen[id] = ts;
+      localStorage.setItem('koss_bug_seen_v1', JSON.stringify(seen));
+    }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
+  }
+  function getLocalBugHidden(){
+    try{ return JSON.parse(localStorage.getItem('koss_bug_hidden_v1') || '[]'); }
+    catch(err){ return []; }
+  }
+  function hideLocalBug(id){
+    try{
+      const hidden = getLocalBugHidden();
+      if(!hidden.includes(id)){
+        hidden.push(id);
+        localStorage.setItem('koss_bug_hidden_v1', JSON.stringify(hidden));
+      }
+    }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
+  }
+  function myVisibleBugReports(){
+    const myKey = currentReporterKey();
+    if(!myKey) return [];
+    const hidden = getLocalBugHidden();
+    return [...(state.data.bugReports||[]), ...(state.data.bugReportsArchive||[])]
+      .filter(b=>b.reporterKey===myKey && !hidden.includes(b.id))
+      .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  }
+  function hasUnseenBugActivity(){
+    const myKey = currentReporterKey();
+    if(!myKey) return false;
+    const seen = getLocalBugSeen();
+    const hidden = getLocalBugHidden();
+    return [...(state.data.bugReports||[]), ...(state.data.bugReportsArchive||[])]
+      .some(b=>{
+        if(b.reporterKey !== myKey || hidden.includes(b.id)) return false;
+        const lastChange = Math.max(b.statusChangedAt||0, b.repliedAt||0);
+        if(!lastChange) return false;
+        return lastChange > (seen[b.id]||0);
+      });
+  }
+
   function findStudentAccount(email){
     const e = String(email||'').toLowerCase();
     return state.data.studentAccounts.find(a=>a.email.toLowerCase()===e) || null;
@@ -3786,7 +3838,7 @@
         <div class="header-bottom">
           <p class="studio-sub" style="margin-bottom:0;">Plateforme "vibecoder" par Amélie.</p>
           <div style="display:flex;flex-wrap:wrap;gap:10px;">
-            <button type="button" class="small-btn" data-action="open-report-bug">🐛 Bug et suggestions</button>
+            <button type="button" class="small-btn" data-action="open-report-bug" style="position:relative;">🐛 Bug et suggestions${hasUnseenBugActivity() ? '<span style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:var(--coral,#e63946);border:1px solid var(--paper,#fff);"></span>' : ''}</button>
             <button type="button" class="small-btn mobile-only-install" data-action="open-install-app">📲 Ajouter un raccourci</button>
           </div>
           <div class="tabs" style="margin-top:6px;">
@@ -5217,9 +5269,7 @@
       // La personne connectée (élève ou gestionnaire) voit ici ses propres signalements
       // passés — actifs ET archivés —, leur statut, et la réponse laissée par l'admin, si
       // elle existe.
-      const myKey = currentReporterKey();
-      const mine = myKey ? [...(state.data.bugReports||[]), ...(state.data.bugReportsArchive||[])]
-        .filter(b=>b.reporterKey===myKey).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)) : [];
+      const mine = myVisibleBugReports();
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
@@ -5231,7 +5281,10 @@
                 const st = bugStatusMeta(b.status);
                 return `
                 <div style="border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;">
-                  <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — <strong style="color:${st.color};">${st.label}</strong></p>
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
+                    <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — <strong style="color:${st.color};">${st.label}</strong></p>
+                    <button type="button" class="small-btn" data-action="hide-bug-report-local" data-id="${b.id}" title="Masquer de ma liste (ne supprime rien pour l'admin)" style="flex-shrink:0;">🗑 Masquer</button>
+                  </div>
                   <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.text)}</p>
                   ${b.adminReply ? `<div style="background:var(--paper-alt,rgba(0,0,0,.03));border-radius:6px;padding:6px;margin-top:6px;"><p style="font-size:11px;color:var(--chalk-dim);margin:0 0 2px;">Réponse${b.repliedAt ? ' — '+new Date(b.repliedAt).toLocaleString('fr-CA') : ''}</p><p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.adminReply)}</p></div>` : ''}
                 </div>
@@ -9911,6 +9964,10 @@
     else if(action==='open-report-bug'){
       pendingBugScreenshot = null;
       state.modal = {type:'report-bug'};
+      // Ouvrir le popup vaut "j'ai vu" : on marque tous mes signalements comme lus maintenant,
+      // ce qui éteint le rond rouge (voir hasUnseenBugActivity()).
+      const now = Date.now();
+      myVisibleBugReports().forEach(b=>setLocalBugSeen(b.id, now));
       render();
     }
     else if(action==='open-install-app'){
@@ -9996,6 +10053,7 @@
       const bug = (state.data.bugReports||[]).find(b=>b.id===id);
       if(!bug){ showToast('Signalement introuvable (déjà archivé ?).'); return; }
       bug.status = e.currentTarget.dataset.status;
+      bug.statusChangedAt = Date.now();
       await persist();
       render();
       showToast('Statut mis à jour : ' + bugStatusMeta(bug.status).label);
@@ -10015,6 +10073,12 @@
       state.modal = null; closeModalDom();
       render();
       showToast('Réponse enregistrée.');
+    }
+    else if(action==='hide-bug-report-local'){
+      // Masquage purement visuel/local (localStorage) — ne touche à rien côté serveur, le
+      // signalement reste intact pour l'admin.
+      hideLocalBug(id);
+      render();
     }
     else if(action==='open-bug-archive'){
       state.modal = {type:'bug-archive'};
