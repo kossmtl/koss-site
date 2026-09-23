@@ -3801,11 +3801,13 @@
     const hideHeader = state.view === 'welcome' || state.view === 'gate';
     if(!hideHeader) inner += renderHeader();
 
-    // S48 (23 sept, demande explicite d'Amélie) : bandeau rouge FIXE EN HAUT DE TOUTES LES PAGES
-    // élève (pas seulement dans "Mon compte") tant qu'un consentement (Reconnaissance des
-    // risques) manque pour le compte connecté ou un membre de sa famille. Vient EN PLUS de
-    // l'encadré déjà présent dans "Mon compte" (renderAccountCard) — celui-là reste, ce
-    // bandeau-ci le rend impossible à manquer peu importe où l'élève navigue.
+    // S48 (23 sept, demande explicite d'Amélie) : bandeau FIXE EN HAUT DE TOUTES LES PAGES élève
+    // (pas seulement dans "Mon compte") tant qu'un consentement (Reconnaissance des risques)
+    // manque pour le compte connecté ou un membre de sa famille. Vient EN PLUS de l'encadré déjà
+    // présent dans "Mon compte" (renderAccountCard) — celui-là reste, ce bandeau-ci le rend
+    // impossible à manquer peu importe où l'élève navigue. Style repris tel quel de l'encadré de
+    // "Mon compte" (même corail, même carte) — Amélie a demandé explicitement ce style plutôt
+    // qu'un bandeau rouge plein, après capture d'écran de référence.
     if(!hideHeader && state.studentSession){
       const acctForBanner = findStudentAccount(state.studentSession.email);
       const missingForBanner = acctForBanner ? accountProfilesMissingConsent(acctForBanner) : [];
@@ -3815,9 +3817,11 @@
           ? `data-action="open-sign-consent" data-email="${escapeHtml(acctForBanner.email)}" data-profile="${missingForBanner[0].profileId||''}"`
           : `data-action="goto-account"`;
         inner += `
-          <div style="position:sticky;top:0;z-index:50;background:#D9432E;color:#fff;text-align:center;padding:10px 14px;font-size:14px;font-weight:700;letter-spacing:0.01em;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;">
-            <span>⚠️ Consentement obligatoire non signé pour : ${missingForBanner.map(p=>escapeHtml(p.name)).join(', ')}</span>
-            <button ${bannerAction} style="background:#fff;color:#D9432E;border:none;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;">${onlyOneMissing ? 'Signer maintenant' : 'Voir Mon compte'}</button>
+          <div style="position:sticky;top:0;z-index:50;margin:10px 14px 0;background:rgba(226,114,91,0.12);border:1px solid var(--coral);border-radius:8px;padding:10px 12px;">
+            <p style="font-size:13px;margin:0 0 8px;color:var(--chalk);">⚠️ Consentement à signer pour : <strong>${missingForBanner.map(p=>escapeHtml(p.name)).join(', ')}</strong> — nécessaire pour réserver un cours.</p>
+            <div class="btn-row" style="margin:0;">
+              <button class="small-btn" ${bannerAction} style="background:var(--coral);border-color:var(--coral);color:#fff;">${onlyOneMissing ? '✍️ Signer pour '+escapeHtml(missingForBanner[0].name) : 'Voir Mon compte'}</button>
+            </div>
           </div>
         `;
       }
@@ -6222,7 +6226,7 @@
             </label>
             <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;cursor:pointer;">
               <input type="checkbox" id="cs-zero" class="cs-gated" disabled style="width:auto;margin-top:2px;">
-              <span style="font-size:13px;">J’ai lu et j’accepte la Politique de tolérance zéro K-OSS (obligatoire).</span>
+              <span style="font-size:13px;">J’ai lu et j’accepte la <strong style="color:var(--coral);">Politique de tolérance zéro K-OSS</strong> (obligatoire).</span>
             </label>
             <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;cursor:pointer;">
               <input type="checkbox" id="cs-photo" class="cs-gated" disabled style="width:auto;margin-top:2px;">
