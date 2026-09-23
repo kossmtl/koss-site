@@ -5135,10 +5135,27 @@
         `;
       }
     } else if(m.type === 'report-bug'){
-      // S48 (22 sept, demande d'Amélie) : la personne connectée (élève ou gestionnaire) voit
-      // ici ses propres signalements passés — actifs ET archivés —, leur statut, et la réponse
-      // laissée par l'admin, si elle existe. Un·e visiteur·euse non connecté·e n'a pas
-      // d'identifiant stable (currentReporterKey() → null) donc ne voit que le formulaire.
+      // S48 (22 sept, demande explicite d'Amélie) : envoyer un signalement de bug/suggestion
+      // exige maintenant d'être connecté·e (élève ou gestionnaire) — plus d'envoi anonyme.
+      // Ce garde-fou existe aussi côté serveur (koss_sync_all refuse toujours tout appel sans
+      // session), mais on l'affiche clairement ici plutôt que de laisser un visiteur non
+      // connecté remplir le formulaire pour se le faire silencieusement rejeter à l'envoi.
+      if(!state.adminUnlocked && !state.studentSession){
+        html = `
+          <div class="modal" style="max-width:380px;text-align:center;">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>🐛 Bug et suggestions</h3>
+            <p class="muted" style="color:var(--chalk-dim);">Connecte-toi d’abord à ton compte élève pour envoyer un signalement — ça nous permet de te répondre et de te tenir au courant du suivi.</p>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="goto-account-from-bug-report">Me connecter / créer un compte</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          </div>
+        `;
+      } else {
+      // La personne connectée (élève ou gestionnaire) voit ici ses propres signalements
+      // passés — actifs ET archivés —, leur statut, et la réponse laissée par l'admin, si
+      // elle existe.
       const myKey = currentReporterKey();
       const mine = myKey ? [...(state.data.bugReports||[]), ...(state.data.bugReportsArchive||[])]
         .filter(b=>b.reporterKey===myKey).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)) : [];
@@ -5174,6 +5191,7 @@
           </div>
         </div>
       `;
+      }
     } else if(m.type === 'reply-bug-report'){
       const bug = (state.data.bugReports||[]).find(b=>b.id===m.payload.id) || (state.data.bugReportsArchive||[]).find(b=>b.id===m.payload.id);
       if(!bug){
@@ -9824,6 +9842,11 @@
       }
       showToast('Demande de paiement envoyée — Amélie confirmera votre abonnement/carte de cours après vous avoir parlé.');
     }
+    else if(action==='goto-account-from-bug-report'){
+      state.modal = null; closeModalDom();
+      state.view = 'account';
+      render();
+    }
     else if(action==='open-report-bug'){
       pendingBugScreenshot = null;
       state.modal = {type:'report-bug'};
@@ -9863,11 +9886,18 @@
       }
     }
     else if(action==='submit-bug-report'){
+      // Garde-fou (22 sept, demande explicite d'Amélie) : impossible d'envoyer un signalement
+      // sans être connecté·e — le formulaire lui-même est déjà masqué pour une personne non
+      // connectée (voir renderModal, 'report-bug'), mais on revérifie ici au cas où (double
+      // sécurité, comme le refus déjà en place côté serveur dans koss_sync_all).
+      if(!state.adminUnlocked && !state.studentSession){
+        showToast('Connecte-toi d’abord pour envoyer un signalement.');
+        return;
+      }
       const text = (document.getElementById('bugreport-text').value || '').trim();
       if(!text){ showToast('Décris le bug avant d’envoyer.'); return; }
       const mgr = state.adminUnlocked ? currentManager() : null;
-      const reporterLabel = mgr ? mgr.name + ' (gestionnaire)'
-        : (state.studentSession ? state.studentSession.email : 'Visiteur non connecté');
+      const reporterLabel = mgr ? mgr.name + ' (gestionnaire)' : state.studentSession.email;
       if(!state.data.bugReports) state.data.bugReports = [];
       state.data.bugReports.unshift({
         id: uid(),
