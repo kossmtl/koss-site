@@ -509,6 +509,19 @@
     word-break:break-word;
   }
   .postit img{width:100%;border-radius:4px;margin-top:6px;}
+  /* S48 (23 sept, demande d'Amélie) : petite signature au bas d'une note/post-it/texte reçu·e
+     d'une personne qui ne l'a PAS envoyée anonymement — même une fois placée dans le carnet
+     (voir claim-shared-item/admin-claim-shared-item, qui ne conservent `senderOwnerKey` que si
+     `!entry.anonymous`). Une note anonyme n'a jamais ce champ, donc jamais de signature. */
+  .note-signature{
+    font-style:italic;
+    opacity:0.65;
+    margin-top:4px;
+    text-align:right;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
   .postit .postit-actions{
     display:flex;
     flex-wrap:nowrap;
@@ -4723,6 +4736,7 @@
                 <div class="postit-cat" style="font-size:${(10*pScale).toFixed(1)}px;">${escapeHtml(n.category)}</div>
                 <div class="postit-text" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="font-size:${(15*pScale).toFixed(1)}px;">${escapeHtml(n.text)}</div>
                 ${n.photo ? `<img src="${n.photo}">` : ''}
+                ${n.senderOwnerKey ? `<div class="note-signature" style="font-size:${(10*pScale).toFixed(1)}px;">— ${escapeHtml(ownerKeyLabel(n.senderOwnerKey))}</div>` : ''}
                 ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
                   <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
                   <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
@@ -4751,6 +4765,7 @@
               const contentStyle = n.boxWidth ? 'display:block;width:100%;' : (wide ? 'display:block;width:100%;' : '');
               return `
               <div class="textnote-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;translate:${tx} 0;transform:rotate(${n.rotation||0}deg);text-align:${hAlign};${n.boxWidth?`max-width:${n.boxWidth}px;`:''}${wrapStyle}font-family:${textnoteFontCss(n.fontFamily)};font-size:${n.fontSize||16}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};"><span class="textnote-content" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="${contentStyle}">${escapeHtml(n.text)}</span>
+                ${n.senderOwnerKey ? `<div class="note-signature" style="font-size:${Math.round((n.fontSize||16)*0.6)}px;">— ${escapeHtml(ownerKeyLabel(n.senderOwnerKey))}</div>` : ''}
                 ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
                   <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
                   <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
@@ -9352,8 +9367,15 @@
         fontSize: item.kind==='text' ? 16 : undefined,
         createdAt: Date.now(), shareId: item.id,
       });
+      // CORRECTIF (23 sept, demande d'Amélie) : avant, `senderOwnerKey` était supprimé sans
+      // exception au moment de "placer dans le carnet" — une note SIGNÉE perdait donc, elle
+      // aussi, toute trace de qui l'avait envoyée une fois dans le carnet. On ne le supprime
+      // maintenant QUE si la note était anonyme (pour respecter cet anonymat) ; sinon on le
+      // garde sur l'entrée du carnet, pour afficher une petite signature (voir renderNotebook,
+      // .note-signature, et ownerKeyLabel() pour la mise en forme du nom).
+      if(entry.anonymous){ delete entry.senderOwnerKey; }
       delete entry.anonymous; delete entry.recipientType; delete entry.recipientManagerId;
-      delete entry.recipientOwnerKey; delete entry.senderOwnerKey; delete entry.status; delete entry.decidedAt;
+      delete entry.recipientOwnerKey; delete entry.status; delete entry.decidedAt;
       state.data.notebookEntries.push(entry);
       item.status = 'claimed';
       await persist();
@@ -9388,8 +9410,11 @@
         fontSize: item.kind==='text' ? 16 : undefined,
         createdAt: Date.now(), shareId: item.id,
       });
+      // Même correctif (23 sept) que 'claim-shared-item' juste au-dessus : on ne perd
+      // `senderOwnerKey` que si la note était anonyme.
+      if(entry.anonymous){ delete entry.senderOwnerKey; }
       delete entry.anonymous; delete entry.recipientType; delete entry.recipientManagerId;
-      delete entry.recipientOwnerKey; delete entry.senderOwnerKey; delete entry.status; delete entry.decidedAt;
+      delete entry.recipientOwnerKey; delete entry.status; delete entry.decidedAt;
       state.data.notebookEntries.push(entry);
       item.status = 'claimed';
       state.adminNotebookActive = true;
