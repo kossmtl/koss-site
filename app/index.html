@@ -403,6 +403,29 @@
     font-size:13px;padding:4px;line-height:1;transition:transform .15s ease;
   }
   .arrow-btn.open{transform:rotate(180deg);color:var(--chalk);}
+  /* S48 (25 sept, demande d'Amélie) : liste "Bugs et suggestions" (admin) — chaque signalement est
+     replié par défaut (voir bug-card-head, action toggle-admin-bug-expand), avec un fond de
+     couleur subtile qui alterne d'une carte à l'autre (comme un bandage de lignes Excel) pour la
+     lisibilité, et un petit badge avec le nombre total de messages du fil à côté du texte. */
+  .bug-card{
+    border:1px solid var(--border);border-left:4px solid var(--tint-strong,var(--border));
+    border-radius:8px;padding:10px 12px;margin-bottom:10px;
+  }
+  .bug-card.tint-0{ --tint-bg: rgba(147,180,143,0.08); --tint-strong: var(--sage); }
+  .bug-card.tint-1{ --tint-bg: rgba(143,203,217,0.08); --tint-strong: var(--cyan); }
+  .bug-card.tint-2{ --tint-bg: rgba(185,166,217,0.08); --tint-strong: var(--lilac); }
+  .bug-card.tint-3{ --tint-bg: rgba(233,230,213,0.08); --tint-strong: var(--amber); }
+  .bug-card{background:var(--tint-bg,transparent);}
+  .bug-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;cursor:pointer;}
+  .bug-card-badge{
+    background:var(--coral);color:#fff;border-radius:10px;font-size:10px;font-weight:700;
+    padding:1px 7px;margin-left:6px;display:inline-block;
+  }
+  .bug-card-arrow{
+    background:none;border:none;color:var(--chalk-dim);cursor:pointer;
+    font-size:13px;padding:2px 4px;line-height:1;flex-shrink:0;transition:transform .15s ease;
+  }
+  .bug-card-arrow.open{transform:rotate(180deg);}
   .plan-name-link{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px;}
   .plan-name-link:hover{color:var(--sage);}
   .toast{
@@ -1118,6 +1141,7 @@
     membershipSearchTried: false,
     bugSearchQuery: '',
     bugArchiveSearchQuery: '',
+    adminBugExpanded: {}, // S48 (25 sept) : quels signalements sont dépliés dans "Bugs et suggestions" (admin) — replié par défaut, id => true si déplié
     shareRecipientType: 'coach',
     shareSearchQuery: '',
     shareSelectedRecipient: null,
@@ -5149,11 +5173,17 @@
     const monthSales = state.data.memberships.filter(m=>
       !m.grantedFree && m.status!=='attente_paiement' && m.status!=='annulee' && new Date(m.createdAt) >= monthStart
     );
+    // S48 (25 sept, demande d'Amélie) : un paiement comptant/Interac confirmé pour une présence
+    // sans abonnement (voir submit-mark-attendance-paid) est une vente réelle mais ne crée jamais
+    // d'abonnement — il faut l'ajouter séparément, sinon il manque du revenu réel.
+    const monthCashBookings = state.data.bookings.filter(b=>
+      b.paidAmount && b.paidAt && new Date(b.paidAt) >= monthStart
+    );
     const monthRevenue = monthSales.reduce((sum,m)=>{
       const plan = state.data.membershipPlans.find(p=>p.id===m.planId);
       const amountStr = m.planPrice || (plan?plan.price:'') || '';
       return sum + parsePriceAmount(amountStr);
-    }, 0);
+    }, 0) + monthCashBookings.reduce((sum,b)=>sum + b.paidAmount, 0);
 
     const ADMIN_GROUPS = [
       {key:'bjj_adulte', label:'BJJ Adulte'},
@@ -5459,26 +5489,37 @@
             <button class="btn btn-secondary" data-action="run-bug-search">Chercher</button>
             ${q ? `<button class="small-btn" data-action="clear-bug-search">✕</button>` : ''}
           </div>
-          ${bugs.length ? bugs.map(b=>{
+          ${bugs.length ? bugs.map((b,bi)=>{
             const st = bugStatusMeta(b.status);
+            const msgCount = bugThreadMessages(b).length;
+            const isOpen = !!(state.adminBugExpanded && state.adminBugExpanded[b.id]);
             return `
-            <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
-              <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(b.reporter||'')} — <strong style="color:${st.color};">${st.label}</strong></p>
-              <p style="font-size:13px;white-space:pre-wrap;margin:0 0 8px;">${escapeHtml(b.text)}</p>
-              ${b.screenshot ? `<img src="${b.screenshot}" data-action="view-bug-image" data-src="${b.screenshot}" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:8px;cursor:zoom-in;" title="Cliquer pour agrandir">` : ''}
-              ${bugThreadMessages(b).map(msg=>`
-                <div style="background:${msg.from==='admin'?'var(--paper-alt,rgba(0,0,0,.03))':'rgba(147,180,143,0.14)'};border-radius:6px;padding:8px;margin-bottom:8px;">
-                  <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">${msg.from==='admin' ? 'Ta réponse' : escapeHtml(b.reporter||'Élève')}${msg.at ? ' — '+new Date(msg.at).toLocaleString('fr-CA') : ''}</p>
-                  <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(msg.text)}</p>
+            <div class="bug-card tint-${bi%4}">
+              <div class="bug-card-head" data-action="toggle-admin-bug-expand" data-id="${b.id}">
+                <div style="flex:1;min-width:0;">
+                  <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(b.reporter||'')} — <strong style="color:${st.color};">${st.label}</strong></p>
+                  <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.text)}${msgCount ? `<span class="bug-card-badge">${msgCount}</span>` : ''}</p>
                 </div>
-              `).join('')}
-              <div class="btn-row" style="flex-wrap:wrap;gap:6px;margin-bottom:8px;">
-                ${Object.keys(BUG_STATUS_META).map(s=>`<button class="small-btn ${b.status===s?'active':''}" style="${b.status===s?'background:'+BUG_STATUS_META[s].color+';color:#fff;border-color:'+BUG_STATUS_META[s].color+';':''}" data-action="set-bug-status" data-id="${b.id}" data-status="${s}">${BUG_STATUS_META[s].label}</button>`).join('')}
+                <button type="button" class="bug-card-arrow${isOpen?' open':''}">▾</button>
               </div>
-              <div class="btn-row" style="flex-wrap:wrap;gap:6px;">
-                <button class="small-btn" data-action="open-reply-bug-report" data-id="${b.id}">💬 Répondre</button>
-                <button class="small-btn" data-action="delete-bug-report" data-id="${b.id}">Marquer comme réglé (archiver)</button>
+              ${isOpen ? `
+              <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
+                ${b.screenshot ? `<img src="${b.screenshot}" data-action="view-bug-image" data-src="${b.screenshot}" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:8px;cursor:zoom-in;" title="Cliquer pour agrandir">` : ''}
+                ${bugThreadMessages(b).map(msg=>`
+                  <div style="background:${msg.from==='admin'?'var(--paper-alt,rgba(0,0,0,.03))':'rgba(147,180,143,0.14)'};border-radius:6px;padding:8px;margin-bottom:8px;">
+                    <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">${msg.from==='admin' ? 'Ta réponse' : escapeHtml(b.reporter||'Élève')}${msg.at ? ' — '+new Date(msg.at).toLocaleString('fr-CA') : ''}</p>
+                    <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(msg.text)}</p>
+                  </div>
+                `).join('')}
+                <div class="btn-row" style="flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+                  ${Object.keys(BUG_STATUS_META).map(s=>`<button class="small-btn ${b.status===s?'active':''}" style="${b.status===s?'background:'+BUG_STATUS_META[s].color+';color:#fff;border-color:'+BUG_STATUS_META[s].color+';':''}" data-action="set-bug-status" data-id="${b.id}" data-status="${s}">${BUG_STATUS_META[s].label}</button>`).join('')}
+                </div>
+                <div class="btn-row" style="flex-wrap:wrap;gap:6px;">
+                  <button class="small-btn" data-action="open-reply-bug-report" data-id="${b.id}">💬 Répondre</button>
+                  <button class="small-btn" data-action="delete-bug-report" data-id="${b.id}">Marquer comme réglé (archiver)</button>
+                </div>
               </div>
+              ` : ''}
             </div>
           `;}).join('') : `<p class="muted" style="color:var(--chalk-dim);">${q ? 'Aucun résultat.' : 'Aucun bug signalé.'}</p>`}
           <button class="small-btn" data-action="open-bug-archive" style="margin-top:4px;">📁 Archives ${archived.length ? '('+archived.length+')' : ''}</button>
@@ -6978,17 +7019,23 @@
       const salesSD = state.data.memberships.filter(mm=>
         !mm.grantedFree && mm.status!=='attente_paiement' && mm.status!=='annulee' && new Date(mm.createdAt) >= monthStartSD
       ).sort((a,b)=>b.createdAt-a.createdAt);
+      // S48 (25 sept, demande d'Amélie) : les présences sans abonnement payées comptant/Interac
+      // (voir submit-mark-attendance-paid) sont maintenant incluses ici aussi — même total que le
+      // tableau de bord "Revenu" (voir renderAdmin).
+      const cashBookingsSD = state.data.bookings.filter(b=> b.paidAmount && b.paidAt && new Date(b.paidAt) >= monthStartSD)
+        .sort((a,b)=>b.paidAt-a.paidAt);
+      const salesCountSD = salesSD.length + cashBookingsSD.length;
       const totalSD = salesSD.reduce((sum,mm)=>{
         const plan = state.data.membershipPlans.find(p=>p.id===mm.planId);
         const amountStr = mm.planPrice || (plan?plan.price:'') || '';
         return sum + parsePriceAmount(amountStr);
-      }, 0);
+      }, 0) + cashBookingsSD.reduce((sum,b)=>sum + b.paidAmount, 0);
       html = `
         <div class="modal" style="max-width:560px;">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Détail des ventes — ${escapeHtml(monthLabelSD)}</h3>
-          <p class="muted" style="color:var(--chalk-dim);">${salesSD.length} vente${salesSD.length>1?'s':''} · total ${totalSD.toFixed(2)} $</p>
-          ${salesSD.length ? `
+          <p class="muted" style="color:var(--chalk-dim);">${salesCountSD} vente${salesCountSD>1?'s':''} · total ${totalSD.toFixed(2)} $</p>
+          ${salesCountSD ? `
             <table style="margin-top:10px;">
               <tr><th>Client</th><th>Formule</th><th>Montant</th><th>Payé via Helcim</th><th>Date</th></tr>
               ${salesSD.map(mm=>{
@@ -7001,6 +7048,18 @@
                     <td>${escapeHtml(amountStr)}</td>
                     <td>${mm.paidViaHelcim ? '<span style="color:var(--sage);">✅ Oui</span>' : '<span style="color:var(--chalk-dim);">— Non</span>'}</td>
                     <td style="font-size:12px;color:var(--chalk-dim);">${new Date(mm.createdAt).toLocaleDateString('fr-CA')}</td>
+                  </tr>
+                `;
+              }).join('')}
+              ${cashBookingsSD.map(b=>{
+                const c = state.data.classes.find(cl=>cl.id===b.classId);
+                return `
+                  <tr>
+                    <td${studentNameStyleAttr(b.studentEmail, b.profileId)}>${escapeHtml(b.studentName)}</td>
+                    <td>${c?escapeHtml(c.name):'Présence sans abonnement'}</td>
+                    <td>${b.paidAmount.toFixed(2)} $</td>
+                    <td><span style="color:var(--chalk-dim);">— Non (comptant/Interac)</span></td>
+                    <td style="font-size:12px;color:var(--chalk-dim);">${new Date(b.paidAt).toLocaleDateString('fr-CA')}</td>
                   </tr>
                 `;
               }).join('')}
@@ -7306,8 +7365,11 @@
             <button class="close-x" data-action="close-modal">✕</button>
             <h3>Confirmer le paiement</h3>
             <p class="muted">${studentLinkHtml(b.studentName, b.studentEmail, b.profileId)} — ${c?escapeHtml(c.name):'—'} du ${b.dateIso}${b.addedByManagerName ? '<br>Ajouté sans abonnement par : '+escapeHtml(b.addedByManagerName) : ''}</p>
+            <label>Montant payé (obligatoire)</label>
+            <input id="mark-paid-amount" type="text" inputmode="decimal" placeholder="ex. 20">
+            <p class="muted" style="color:var(--chalk-dim);font-size:11px;margin:2px 0 10px;">Ajouté au total des ventes du mois (tableau de bord + rapport de ventes), comme un abonnement — sinon ce paiement comptant/Interac n'est compté nulle part.</p>
             <label>Note sur ce paiement (obligatoire)</label>
-            <textarea id="mark-paid-note" rows="3" placeholder="ex. Payé comptant 20$ le ${todayIso()}"></textarea>
+            <textarea id="mark-paid-note" rows="3" placeholder="ex. Payé comptant le ${todayIso()}"></textarea>
             <p class="muted" style="color:var(--chalk-dim);font-size:11px;">Cette note sera ajoutée aux « Notes sur l’abonnement » du dossier de l’étudiant, avec la date et ton nom.</p>
             <div class="btn-row">
               <button class="btn btn-primary" data-action="submit-mark-attendance-paid" data-id="${id}">Confirmer le paiement</button>
@@ -10211,6 +10273,27 @@
           purchaseDate: isoDate(new Date(m.createdAt)), startDate: m.startDate||'', endDate: m.endDate||''
         };
       });
+      // S48 (25 sept, demande d'Amélie) : mêmes présences sans abonnement payées comptant/Interac
+      // que dans le tableau de bord et "Détail des ventes" (voir submit-mark-attendance-paid) —
+      // sinon ce rapport (et son export CSV) sous-compte les ventes réelles du studio.
+      const cashInRange = state.data.bookings.filter(b=>{
+        if(!b.paidAmount || !b.paidAt) return false;
+        const d = isoDate(new Date(b.paidAt));
+        return d>=from && d<=to;
+      });
+      const cashRows = cashInRange.map(b=>{
+        const c = state.data.classes.find(cl=>cl.id===b.classId);
+        const catKey = c && c.category ? c.category : '';
+        if(category && catKey !== category) return null;
+        return {
+          studentName: b.studentName, email: b.studentEmail, profileId: b.profileId||null,
+          category: catKey ? categoryLabel(catKey) : '—',
+          _categoryKey: catKey,
+          planName: c ? c.name : 'Présence sans abonnement', amountDisplay: b.paidAmount.toFixed(2)+' $', amount: b.paidAmount,
+          purchaseDate: isoDate(new Date(b.paidAt)), startDate: '', endDate: ''
+        };
+      }).filter(Boolean);
+      rows.push(...cashRows);
       const totalsMap = new Map();
       rows.forEach(r=>{
         const key = r._categoryKey || 'none';
@@ -11390,6 +11473,13 @@
       showHiddenBugReports = !showHiddenBugReports;
       render();
     }
+    else if(action==='toggle-admin-bug-expand'){
+      // S48 (25 sept, demande d'Amélie) : chaque carte de "Bugs et suggestions" (admin) est
+      // repliée par défaut — clic sur l'en-tête (ou la flèche) pour voir le fil complet.
+      if(!state.adminBugExpanded) state.adminBugExpanded = {};
+      state.adminBugExpanded[id] = !state.adminBugExpanded[id];
+      render();
+    }
     else if(action==='open-bug-archive'){
       state.modal = {type:'bug-archive'};
       render();
@@ -12086,6 +12176,16 @@
     else if(action==='submit-mark-attendance-paid'){
       const b = state.data.bookings.find(bk=>bk.id===id);
       if(!b){ state.modal = null; closeModalDom(); render(); return; }
+      // S48 (25 sept, demande d'Amélie) : avant, ce paiement comptant/Interac n'était JAMAIS
+      // compté nulle part (ni le tableau de bord, ni "Détail des ventes", ni le rapport de
+      // ventes exportable) — seule une note texte libre était ajoutée au dossier. Amélie a
+      // remarqué que ça faussait son total de vente. Le montant est maintenant obligatoire et
+      // stocké sur la réservation (b.paidAmount/b.paidAt) — voir les 3 endroits qui calculent un
+      // total de ventes (tableau de bord "Revenu", modal "Détail des ventes", "Rapport de
+      // ventes") : ils incluent maintenant aussi ces réservations payées sans abonnement.
+      const amountRaw = (document.getElementById('mark-paid-amount').value || '').trim();
+      const amountNum = parsePriceAmount(amountRaw);
+      if(!amountRaw || !(amountNum > 0)){ markInvalid('mark-paid-amount'); showToast('Indique le montant payé avant de confirmer.'); return; }
       const noteText = document.getElementById('mark-paid-note').value.trim();
       if(!noteText){ markInvalid('mark-paid-note'); showToast('Ajoute une note avant de confirmer le paiement.'); return; }
       const c = state.data.classes.find(cl=>cl.id===b.classId);
@@ -12093,16 +12193,18 @@
       const target = acct ? (b.profileId ? (acct.familyMembers||[]).find(f=>f.id===b.profileId) : acct) : null;
       const approverName = (currentManager()||{}).name || 'Gestionnaire';
       const dateStr = new Date().toLocaleDateString('fr-CA');
-      const line = `[${dateStr}] Présence sans abonnement (${c?c.name:'—'} du ${b.dateIso}) ajoutée par ${b.addedByManagerName||'inconnu'}, paiement approuvé par ${approverName} : ${noteText}`;
+      const line = `[${dateStr}] Présence sans abonnement (${c?c.name:'—'} du ${b.dateIso}) ajoutée par ${b.addedByManagerName||'inconnu'}, paiement de ${amountNum.toFixed(2)} $ approuvé par ${approverName} : ${noteText}`;
       if(target){
         if(!target.notes) target.notes = {};
         target.notes.membership = (target.notes.membership ? target.notes.membership + '\n' : '') + line;
       }
       b.noMembership = false;
+      b.paidAmount = amountNum;
+      b.paidAt = Date.now();
       await persist();
       state.modal = null; closeModalDom();
       render();
-      showToast('Paiement confirmé et note ajoutée au dossier.');
+      showToast('Paiement confirmé, ajouté au total des ventes et au dossier.');
     }
     else if(action==='import-students'){ state.modal = {type:'import-students', payload:null}; render(); }
     else if(action==='run-import'){
