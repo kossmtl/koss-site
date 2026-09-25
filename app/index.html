@@ -11082,6 +11082,19 @@
         state.modal = null; closeModalDom();
         render();
         showToast('Réponse envoyée.');
+        // Courriel « vous avez un nouveau message » — seulement si le signalement vient d'un·e
+        // élève connecté·e (reporterKey === 'student:<courriel>'), jamais pour un signalement
+        // fait par un·e gestionnaire. Best-effort, ne doit jamais bloquer l'envoi de la réponse.
+        try{
+          if(bug.reporterKey && bug.reporterKey.startsWith('student:')){
+            const studentEmail = bug.reporterKey.slice('student:'.length);
+            const acctForEmail = findStudentAccount(studentEmail);
+            const firstName = acctForEmail ? (acctForEmail.firstName || acctForEmail.name) : studentEmail;
+            sb.functions.invoke('koss-send-message-notification', {body:{
+              email: studentEmail, firstName, preview: text.slice(0,140), context:'bug'
+            }});
+          }
+        }catch(err){ console.error('Échec envoi courriel de notification (réponse bug):', err); }
       } catch(err){
         if(submitBtn) submitBtn.disabled = false;
         throw err;
@@ -11694,6 +11707,19 @@
       state.modal = null; closeModalDom();
       render();
       showToast('Note envoyée.');
+      // Courriel « vous avez un nouveau message » — best-effort, ne doit jamais bloquer l'envoi
+      // de la note (même mécanique que grant-sticker → koss-send-sticker-email).
+      try{
+        const acctForEmail = findStudentAccount(email);
+        let firstName = acctForEmail ? (acctForEmail.firstName || acctForEmail.name) : email;
+        if(profileId && acctForEmail){
+          const fm = (acctForEmail.familyMembers||[]).find(f=>f.id===profileId);
+          if(fm) firstName = (fm.name||'').split(' ')[0] || fm.name;
+        }
+        sb.functions.invoke('koss-send-message-notification', {body:{
+          email, firstName, preview: text.slice(0,140), context:'note'
+        }});
+      }catch(err){ console.error('Échec envoi courriel de notification (note):', err); }
     }
     else if(action==='view-full-note'){
       const kind = e.currentTarget.dataset.kind;
