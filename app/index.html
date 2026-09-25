@@ -5261,12 +5261,20 @@
     // nowrap) contient TOUJOURS le nom (qui peut se scinder sur plusieurs lignes lui-même grâce à
     // min-width:0) et les boutons (flex-shrink:0, jamais poussés en dessous) ; la 2e ligne, en
     // dessous, affiche l'info secondaire (courriel/téléphone) en pleine largeur.
+    // BUG DE RÉGRESSION CORRIGÉ (25 sept, rapporté par Amélie : "je ne vois plus le nom des
+    // usagers avec la bonne couleur") : cette même restructuration du 23 sept avait ajouté
+    // `style="min-width:0;overflow-wrap:break-word;"` en dur sur le <strong> du nom, PUIS
+    // collé `studentNameStyleAttr(...)` juste après — qui génère LUI AUSSI un attribut
+    // `style="color:...;"` complet. Deux attributs `style` sur la même balise = HTML invalide ;
+    // le navigateur ne garde que le premier et ignore silencieusement le second, donc la
+    // couleur du statut de paiement (pt. 14) ne s'appliquait plus jamais ici. Corrigé en
+    // fusionnant les deux dans un seul attribut `style`.
     const searchResultsHtml = studentSearchResults.length ? `<ul class="link-list" style="margin-top:10px;">${studentSearchResults.map(s=>{
         if(s.type==='child'){
           return `
             <li style="display:block;">
               <div style="display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:8px;">
-                <strong style="min-width:0;overflow-wrap:break-word;"${studentNameStyleAttr(s.parentEmail, s.memberId)}>${escapeHtml(s.name)}</strong>
+                <strong style="min-width:0;overflow-wrap:break-word;${studentStatusColor(s.parentEmail, s.memberId) ? 'color:'+studentStatusColor(s.parentEmail, s.memberId)+';' : ''}">${escapeHtml(s.name)}</strong>
                 <span style="flex-shrink:0;">
                   <button class="small-btn" data-action="open-child-detail" data-parent-email="${escapeHtml(s.parentEmail)}" data-member-id="${s.memberId}">Voir la fiche</button>
                 </span>
@@ -5278,7 +5286,7 @@
         return `
         <li style="display:block;">
           <div style="display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:8px;">
-            <strong style="min-width:0;overflow-wrap:break-word;"${studentNameStyleAttr(s.email, null)}>${escapeHtml(s.name)}</strong>
+            <strong style="min-width:0;overflow-wrap:break-word;${studentStatusColor(s.email, null) ? 'color:'+studentStatusColor(s.email, null)+';' : ''}">${escapeHtml(s.name)}</strong>
             <span style="flex-shrink:0;">
               <button class="small-btn" data-action="open-student-detail" data-email="${escapeHtml(s.email)}">Voir la fiche</button>
               <button class="small-btn" data-action="delete-student" data-email="${escapeHtml(s.email)}">Supprimer</button>
