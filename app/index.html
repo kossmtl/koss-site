@@ -1121,6 +1121,8 @@
     shareRecipientType: 'coach',
     shareSearchQuery: '',
     shareSelectedRecipient: null,
+    msgPickerQuery: '', // S48 (25 sept) : recherche d'élève dans la modale "Message à un étudiant"
+    msgPickerTried: false,
     lastSyncedData: null, // dernière copie connue comme identique au serveur, sert de base pour la fusion
   };
 
@@ -1200,6 +1202,7 @@
     if(!state.data.bugReports) state.data.bugReports = [];
     if(!state.data.bugReportsArchive) state.data.bugReportsArchive = [];
     if(!state.data.consents) state.data.consents = [];
+    if(!state.data.messageThreads) state.data.messageThreads = [];
     if(!state.data.config) state.data.config = { name: 'Mon Studio', pin: '1234' };
     // CORRECTIF URGENT (22 sept) : cette section (migration + seed initial) pouvait planter
     // — notamment `persist()` qui, depuis le correctif du même jour plus haut, LANCE une
@@ -3452,6 +3455,56 @@
       });
   }
 
+  // S48 (25 sept, demande d'Amélie, pt. 24) : "Message à un étudiant" — fil de conversation direct
+  // gestionnaire↔élève, complètement séparé du carnet et de sharedItems (n'est JAMAIS copié dans
+  // un carnet). Un seul fil par élève (studentEmail), qui s'allonge indéfiniment, toujours créé
+  // par une gestionnaire (jamais par l'élève). Même patron "vu localement" que les signalements
+  // de bug ci-dessus (localStorage, par appareil, juste un confort visuel).
+  function findMessageThread(email){
+    const e = String(email||'').toLowerCase();
+    return (state.data.messageThreads||[]).find(t=>t.studentEmail && t.studentEmail.toLowerCase()===e) || null;
+  }
+  function getLocalMsgSeenStudent(){
+    try{ return JSON.parse(localStorage.getItem('koss_msg_seen_student_v1') || '{}'); }
+    catch(err){ return {}; }
+  }
+  function setLocalMsgSeenStudent(threadId, ts){
+    try{
+      const seen = getLocalMsgSeenStudent();
+      seen[threadId] = ts;
+      localStorage.setItem('koss_msg_seen_student_v1', JSON.stringify(seen));
+    }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
+  }
+  function hasUnseenMessagesForStudent(){
+    if(!state.studentSession || !state.studentSession.email) return false;
+    const t = findMessageThread(state.studentSession.email);
+    if(!t || !(t.messages||[]).length) return false;
+    const adminAts = (t.messages||[]).filter(m=>m.from==='admin').map(m=>m.at||0);
+    if(!adminAts.length) return false;
+    const lastAdminMsg = Math.max(...adminAts);
+    const seen = getLocalMsgSeenStudent();
+    return lastAdminMsg > (seen[t.id]||0);
+  }
+  function getLocalMsgSeenAdmin(){
+    try{ return JSON.parse(localStorage.getItem('koss_msg_seen_admin_v1') || '{}'); }
+    catch(err){ return {}; }
+  }
+  function setLocalMsgSeenAdmin(threadId, ts){
+    try{
+      const seen = getLocalMsgSeenAdmin();
+      seen[threadId] = ts;
+      localStorage.setItem('koss_msg_seen_admin_v1', JSON.stringify(seen));
+    }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
+  }
+  function hasUnseenMessagesForAdmin(){
+    const seen = getLocalMsgSeenAdmin();
+    return (state.data.messageThreads||[]).some(t=>{
+      const studentAts = (t.messages||[]).filter(m=>m.from==='student').map(m=>m.at||0);
+      if(!studentAts.length) return false;
+      return Math.max(...studentAts) > (seen[t.id]||0);
+    });
+  }
+
   function findStudentAccount(email){
     const e = String(email||'').toLowerCase();
     return state.data.studentAccounts.find(a=>a.email.toLowerCase()===e) || null;
@@ -4100,6 +4153,7 @@
           <div class="account-menu" style="right:0;left:auto;">
             <div class="account-menu-actions">
               <button data-action="goto-admin-notebook">📓 Mon carnet</button>
+              <button data-action="open-admin-message-picker">✉️ Message à un étudiant${hasUnseenMessagesForAdmin() ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--coral,#e63946);margin-left:6px;"></span>' : ''}</button>
               <button data-action="goto-manager-account">Gérer mon compte</button>
               <button data-action="admin-logout">Me déconnecter</button>
             </div>
@@ -4159,6 +4213,7 @@
           <p class="studio-sub" style="margin-bottom:0;">Plateforme "vibecodée" par Amélie.</p>
           <div style="display:flex;flex-wrap:wrap;gap:10px;">
             <button type="button" class="small-btn" data-action="open-report-bug" style="position:relative;">🐛 Bug et suggestions${hasUnseenBugActivity() ? '<span style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:var(--coral,#e63946);border:1px solid var(--paper,#fff);"></span>' : ''}</button>
+            ${(state.studentSession && state.studentSession.email && findMessageThread(state.studentSession.email)) ? `<button type="button" class="small-btn" data-action="open-my-messages" style="position:relative;">✉️ Messages${hasUnseenMessagesForStudent() ? '<span style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:var(--coral,#e63946);border:1px solid var(--paper,#fff);"></span>' : ''}</button>` : ''}
             <button type="button" class="small-btn mobile-only-install" data-action="open-install-app">📲 Ajouter un raccourci</button>
           </div>
           <div class="tabs" style="margin-top:6px;">
@@ -5831,6 +5886,88 @@
           </div>
         `;
       }
+    } else if(m.type === 'admin-message-picker'){
+      // S48 (25 sept, pt. 24) : modale ouverte depuis le menu du compte gestionnaire (en haut à
+      // droite) → "✉️ Message à un étudiant" — choisir une conversation en cours, ou chercher un
+      // nouvel·le élève à qui écrire pour la première fois.
+      const mpq = state.msgPickerQuery || '';
+      const mpResults = state.msgPickerTried
+        ? searchStudentAccounts(mpq).filter(r=>r.type==='account')
+        : recentStudentAccounts(8);
+      const mpThreads = (state.data.messageThreads||[]).slice().sort((a,b)=>{
+        const la = (a.messages||[]).reduce((mx,x)=>Math.max(mx,x.at||0),0);
+        const lb = (b.messages||[]).reduce((mx,x)=>Math.max(mx,x.at||0),0);
+        return lb - la;
+      });
+      const mpSeenAdmin = getLocalMsgSeenAdmin();
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>✉️ Message à un étudiant</h3>
+          ${mpThreads.length ? `
+            <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">Conversations en cours</p>
+            <ul class="link-list" style="max-height:170px;overflow-y:auto;margin-bottom:14px;">
+              ${mpThreads.map(t=>{
+                const last = (t.messages||[]).slice().sort((a,b)=>(b.at||0)-(a.at||0))[0];
+                const studentAts = (t.messages||[]).filter(x=>x.from==='student').map(x=>x.at||0);
+                const unseen = studentAts.length && Math.max(...studentAts) > (mpSeenAdmin[t.id]||0);
+                const acctT = findStudentAccount(t.studentEmail);
+                const labelT = acctT ? acctT.name : t.studentEmail;
+                return `<li>
+                  <button class="small-btn" style="width:100%;text-align:left;" data-action="open-message-thread" data-email="${escapeHtml(t.studentEmail)}">
+                    ${unseen ? '🔴 ' : ''}${escapeHtml(labelT)}${last ? ` — <span style="color:var(--chalk-dim);">${escapeHtml((last.text||'').slice(0,40))}${(last.text||'').length>40?'…':''}</span>` : ''}
+                  </button>
+                </li>`;
+              }).join('')}
+            </ul>
+          ` : ''}
+          <label>Trouver un·e élève</label>
+          <div style="display:flex;gap:6px;">
+            <input id="msg-picker-search-input" placeholder="Nom ou courriel..." value="${escapeHtml(mpq)}">
+            <button class="btn btn-secondary" data-action="msg-picker-search-submit">Rechercher</button>
+          </div>
+          <ul class="link-list" style="max-height:190px;overflow-y:auto;margin-top:10px;">
+            ${mpResults.length ? mpResults.map(r=>`
+              <li>
+                <button class="small-btn" style="width:100%;text-align:left;" data-action="open-message-thread" data-email="${escapeHtml(r.email)}">
+                  ${escapeHtml(r.name)} <span style="color:var(--chalk-dim);">${escapeHtml(r.email||'')}</span>
+                </button>
+              </li>
+            `).join('') : (state.msgPickerTried ? `<li><span class="muted" style="color:var(--chalk-dim);">Aucun résultat.</span></li>` : '')}
+          </ul>
+        </div>
+      `;
+    } else if(m.type === 'message-thread'){
+      // S48 (25 sept, pt. 24) : fenêtre de type "chat" — utilisée à la fois côté gestionnaire
+      // (envoyer/répondre à un·e élève, depuis la modale ci-dessus) et côté élève (bouton
+      // "✉️ Messages" dans l'en-tête, seulement visible si un fil existe déjà). Jamais copié dans
+      // le carnet — collection dédiée state.data.messageThreads.
+      const mtEmail = m.payload.email;
+      const mtThread = findMessageThread(mtEmail);
+      const mtAcct = findStudentAccount(mtEmail);
+      const mtLabel = mtAcct ? mtAcct.name : mtEmail;
+      const mtViewerIsAdmin = !!state.adminUnlocked;
+      const mtMsgs = mtThread ? (mtThread.messages||[]).slice().sort((a,b)=>(a.at||0)-(b.at||0)) : [];
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>✉️ ${mtViewerIsAdmin ? escapeHtml(mtLabel) : 'Messages'}</h3>
+          <div style="max-height:280px;overflow-y:auto;margin-bottom:12px;display:flex;flex-direction:column;gap:8px;">
+            ${mtMsgs.length ? mtMsgs.map(msg=>{
+              const mine = mtViewerIsAdmin ? msg.from==='admin' : msg.from==='student';
+              return `<div style="align-self:${mine?'flex-end':'flex-start'};max-width:82%;background:${mine?'rgba(147,180,143,0.20)':'var(--paper-alt,rgba(0,0,0,.03))'};border-radius:8px;padding:8px 10px;">
+                <p style="font-size:10px;color:var(--chalk-dim);margin:0 0 3px;">${msg.from==='admin' ? 'Coach' : escapeHtml(mtLabel)}${msg.at ? ' — '+new Date(msg.at).toLocaleString('fr-CA') : ''}</p>
+                <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(msg.text)}</p>
+              </div>`;
+            }).join('') : `<p class="muted" style="color:var(--chalk-dim);font-size:13px;">Aucun message pour l'instant.</p>`}
+          </div>
+          <textarea id="msgthread-text" rows="3" placeholder="Écris ton message..."></textarea>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="${mtViewerIsAdmin?'send-admin-message':'send-student-message'}" data-email="${escapeHtml(mtEmail)}">Envoyer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
+          </div>
+        </div>
+      `;
     } else if(m.type === 'bug-archive'){
       const allArchived = state.data.bugReportsArchive || [];
       const aq = state.bugArchiveSearchQuery || '';
@@ -11124,6 +11261,116 @@
         state.bugFollowupOpenId = null;
         render();
         showToast('Message envoyé.');
+      } catch(err){
+        if(submitBtn) submitBtn.disabled = false;
+        throw err;
+      }
+    }
+    else if(action==='open-admin-message-picker'){
+      // S48 (25 sept, pt. 24) : "✉️ Message à un étudiant", ouvert depuis le menu du compte
+      // gestionnaire (en haut à droite) — PAS le carnet, un fil de conversation dédié.
+      state.msgPickerQuery = '';
+      state.msgPickerTried = false;
+      state.managerMenuOpen = false;
+      state.modal = {type:'admin-message-picker'};
+      render();
+    }
+    else if(action==='msg-picker-search-submit'){
+      const inputEl = document.getElementById('msg-picker-search-input');
+      state.msgPickerQuery = inputEl ? inputEl.value.trim() : '';
+      state.msgPickerTried = true;
+      render();
+    }
+    else if(action==='open-message-thread'){
+      const email = e.currentTarget.dataset.email;
+      const t = findMessageThread(email);
+      if(t) setLocalMsgSeenAdmin(t.id, Date.now());
+      state.modal = {type:'message-thread', payload:{email}};
+      render();
+    }
+    else if(action==='open-my-messages'){
+      // Bouton "✉️ Messages" dans l'en-tête élève — visible seulement si un fil existe déjà
+      // (voir renderHeader), donc toujours ouvert avec un fil existant.
+      const email = state.studentSession ? state.studentSession.email : null;
+      if(!email){ showToast('Connecte-toi pour voir tes messages.'); return; }
+      const t = findMessageThread(email);
+      if(t) setLocalMsgSeenStudent(t.id, Date.now());
+      state.modal = {type:'message-thread', payload:{email}};
+      render();
+    }
+    else if(action==='send-admin-message'){
+      // Envoyé par une gestionnaire, depuis la modale 'message-thread' (payload email). Crée le
+      // fil s'il n'existe pas encore (toujours la gestionnaire qui initie un nouveau fil — voir
+      // le piège d'autorisation SQL : un·e élève ne peut QUE mettre à jour un fil existant, jamais
+      // en créer un). Double-clic protégé, même patron que send-coach-note/submit-bug-reply.
+      const submitBtn = e.currentTarget;
+      if(submitBtn && submitBtn.disabled) return;
+      const email = e.currentTarget.dataset.email;
+      const textEl = document.getElementById('msgthread-text');
+      const text = (textEl ? textEl.value : '').trim();
+      if(!text){ showToast('Écris un message.'); return; }
+      if(submitBtn) submitBtn.disabled = true;
+      try{
+        if(!state.data.messageThreads) state.data.messageThreads = [];
+        let thread = findMessageThread(email);
+        const mgr = currentManager();
+        if(!thread){
+          thread = {id: uid(), studentEmail: email, lastAdminMgrId: mgr?mgr.id:null, messages:[], createdAt: Date.now()};
+          state.data.messageThreads.push(thread);
+        }
+        thread.lastAdminMgrId = mgr ? mgr.id : thread.lastAdminMgrId;
+        thread.messages.push({id: uid(), from:'admin', text, at: Date.now()});
+        thread.updatedAt = Date.now();
+        await persist();
+        setLocalMsgSeenAdmin(thread.id, Date.now());
+        render();
+        showToast('Message envoyé.');
+        // Courriel « vous avez un nouveau message » — best-effort, ne doit jamais bloquer l'envoi.
+        try{
+          const acctForEmail = findStudentAccount(email);
+          const firstName = acctForEmail ? (acctForEmail.firstName || acctForEmail.name) : email;
+          sb.functions.invoke('koss-send-message-notification', {body:{
+            email, firstName, preview: text.slice(0,140), context:'chat-to-student'
+          }});
+        }catch(err){ console.error('Échec envoi courriel de notification (message étudiant):', err); }
+      } catch(err){
+        if(submitBtn) submitBtn.disabled = false;
+        throw err;
+      }
+    }
+    else if(action==='send-student-message'){
+      // Réponse de l'élève dans son propre fil. Le fil doit déjà exister (créé par une
+      // gestionnaire) — côté serveur, koss_sync_all n'autorise l'élève qu'à METTRE À JOUR un fil
+      // qui lui appartient déjà, jamais à en créer un nouveau (voir koss_message_threads_setup.sql).
+      const submitBtn = e.currentTarget;
+      if(submitBtn && submitBtn.disabled) return;
+      const email = state.studentSession ? state.studentSession.email : null;
+      if(!email){ showToast('Connecte-toi pour répondre.'); return; }
+      const thread = findMessageThread(email);
+      if(!thread){ showToast('Conversation introuvable.'); return; }
+      const textEl = document.getElementById('msgthread-text');
+      const text = (textEl ? textEl.value : '').trim();
+      if(!text){ showToast('Écris un message.'); return; }
+      if(submitBtn) submitBtn.disabled = true;
+      try{
+        if(!thread.messages) thread.messages = [];
+        thread.messages.push({id: uid(), from:'student', text, at: Date.now()});
+        await persist();
+        setLocalMsgSeenStudent(thread.id, Date.now());
+        render();
+        showToast('Message envoyé.');
+        // Courriel à la gestionnaire qui a écrit en dernier dans ce fil — best-effort, ne doit
+        // jamais bloquer l'envoi. Si aucun courriel n'est configuré pour cette gestionnaire
+        // (champ optionnel), l'envoi est simplement ignoré (voir mgr-email dans la fiche
+        // gestionnaire).
+        try{
+          const mgr = thread.lastAdminMgrId ? state.data.managers.find(mm=>mm.id===thread.lastAdminMgrId) : null;
+          if(mgr && mgr.email){
+            sb.functions.invoke('koss-send-message-notification', {body:{
+              email: mgr.email, firstName: mgr.name, preview: text.slice(0,140), context:'chat-to-admin'
+            }});
+          }
+        }catch(err){ console.error('Échec envoi courriel de notification (message gestionnaire):', err); }
       } catch(err){
         if(submitBtn) submitBtn.disabled = false;
         throw err;
