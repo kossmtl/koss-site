@@ -10648,6 +10648,15 @@
         state.studentSession = {email: existing.email};
         await saveSessionToStorage(existing.email);
         try{ await storageBackend.set('my_profile', JSON.stringify({name:existing.name,email}), false); }catch(e){}
+        const cForCheckExisting = state.data.classes.find(cl=>cl.id===classId);
+        if(cForCheckExisting && cForCheckExisting.category === 'enfants'){
+          // Cours réservé aux enfants : jamais de réservation automatique au nom du parent
+          // qui vient de se connecter — on réaffiche le popin pour qu'il/elle choisisse un
+          // enfant via "Réserver pour" (ou tombe sur l'avertissement habituel via submit-booking
+          // s'il n'a pas encore ajouté d'enfant à son compte).
+          render();
+          return;
+        }
         await proceedBooking(classId, dateIso, existing.name, email, false);
         return;
       }
@@ -10673,6 +10682,14 @@
       }
       if(auth.needsCode){
         state.modal = {type:'confirm-signup-code', payload:{email, name, password, firstName, lastName, onVerified: async ()=>{
+          const cForCheckNew = state.data.classes.find(cl=>cl.id===classId);
+          if(cForCheckNew && cForCheckNew.category === 'enfants'){
+            // Nouveau compte : pas encore d'enfant enregistré, donc pas de réservation
+            // automatique au nom du parent qui vient de créer son compte.
+            state.modal = {type:'book-class', payload:{classId, dateIso}};
+            render();
+            return;
+          }
           await proceedBooking(classId, dateIso, name, email, false);
           if(!state.modal){
             state.modal = {type:'ask-phone', payload:{email}};
@@ -10685,6 +10702,12 @@
       state.studentSession = {email};
       await saveSessionToStorage(email);
       try{ await storageBackend.set('my_profile', JSON.stringify({name,email}), false); }catch(e){}
+      const cForCheckNew2 = state.data.classes.find(cl=>cl.id===classId);
+      if(cForCheckNew2 && cForCheckNew2.category === 'enfants'){
+        state.modal = {type:'book-class', payload:{classId, dateIso}};
+        render();
+        return;
+      }
       await proceedBooking(classId, dateIso, name, email, false);
     }
     else if(action==='confirm-double-yes'){
