@@ -870,6 +870,10 @@
       const { data, error } = await sb.rpc(hasSession ? 'koss_load_all' : 'koss_load_public');
       if(error) throw error;
       if(data == null){ const e = new Error('not found'); e.notFound = true; throw e; }
+      // Suivi d'inactivité (gestionnaires seulement) : gardé À PART de state.data — jamais renvoyé
+      // à koss_sync_all, qui ne le connaît pas. Lu via inactivityRows().
+      window.__kossInactivity = Array.isArray(data.inactivity) ? data.inactivity : [];
+      delete data.inactivity;
       return { value: JSON.stringify(data) };
     },
     async set(key, value){
@@ -2587,6 +2591,328 @@
     return activeMembershipsForEmail(email, null, profileId||null).length === 0;
   }
 
+  // ===== Export du carnet (PDF / HTML / TXT / DOCX) — 29 sept 2026 =====
+  // Disponible pour un profil dont le carnet est verrouillé (plus d'abonnement actif) : il peut
+  // ainsi récupérer son contenu. Tout est généré dans le navigateur, aucune donnée n'est envoyée.
+  function nbxSlug(s){
+    return String(s||'carnet').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase() || 'carnet';
+  }
+  function nbxDateFr(ts){
+    if(!ts) return '';
+    try{ return new Date(ts).toLocaleDateString('fr-CA',{year:'numeric',month:'long',day:'numeric'}); }catch(_){ return ''; }
+  }
+  // Rassemble le contenu (hors corbeille) d'un carnet, page par page.
+  function nbxCollect(ownerKey, ownerName){
+    const notebooks = getNotebooksForOwner(ownerKey).map(nb=>{
+      const entries = state.data.notebookEntries.filter(n=>n.ownerKey===ownerKey && n.notebookId===nb.id && !n.trashed);
+      const pageNums = Array.from(new Set(entries.map(n=>n.page||1))).sort((a,b)=>a-b);
+      const pages = pageNums.map(pn=>({
+        page: pn,
+        items: entries.filter(n=>(n.page||1)===pn).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).map(n=>{
+          const it = {kind:n.kind, category:n.category||'', date:nbxDateFr(n.createdAt), text:n.text||'', from:'', image:null, imageName:''};
+          if(n.senderOwnerKey){ try{ it.from = ownerKeyLabel(n.senderOwnerKey); }catch(_){} }
+          if(n.kind==='sticker'){
+            const st = state.data.stickers.find(s=>s.id===n.stickerId);
+            if(st){ it.image = st.image||null; it.imageName = st.name||'Autocollant'; }
+          } else if(n.photo){ it.image = n.photo; }
+          return it;
+        })
+      }));
+      return {name: nb.name||'Mon carnet', pages};
+    });
+    return {ownerName: ownerName||'', generatedAt: nbxDateFr(Date.now()), notebooks};
+  }
+  function nbxIsEmpty(d){ return !d.notebooks.some(nb=>nb.pages.some(p=>p.items.length)); }
+
+  function nbxToTxt(d){
+    let out = 'CARNET K-OSS — ' + d.ownerName + '\nExporté le ' + d.generatedAt + '\n';
+    d.notebooks.forEach(nb=>{
+      out += '\n==============================\n' + nb.name + '\n==============================\n';
+      nb.pages.forEach(p=>{
+        out += '\n--- Page ' + p.page + ' ---\n';
+        p.items.forEach(it=>{
+          const head = [it.category, it.date].filter(Boolean).join(' · ');
+          if(it.kind==='sticker') out += '\n[Autocollant : ' + it.imageName + ']' + (head?' ('+head+')':'') + '\n';
+          else {
+            out += '\n' + (head ? '['+head+']\n' : '') + it.text + '\n';
+            if(it.image) out += '[Photo jointe — voir les formats HTML, PDF ou Word]\n';
+          }
+          if(it.from) out += '— ' + it.from + '\n';
+        });
+      });
+    });
+    return out;
+  }
+
+  function nbxToHtml(d){
+    const e = escapeHtml;
+    let body = '';
+    d.notebooks.forEach(nb=>{
+      body += '<h2>' + e(nb.name) + '</h2>';
+      if(!nb.pages.length) body += '<p class="muted">Aucun contenu.</p>';
+      nb.pages.forEach(p=>{
+        body += '<h3>Page ' + p.page + '</h3>';
+        p.items.forEach(it=>{
+          const head = [it.category, it.date].filter(Boolean).join(' · ');
+          body += '<div class="item">' + (head?'<div class="meta">'+e(head)+'</div>':'');
+          if(it.kind==='sticker') body += (it.image?'<img class="stk" src="'+e(it.image)+'" alt="">':'') + '<div>' + e(it.imageName) + '</div>';
+          else {
+            body += '<div class="txt">' + e(it.text) + '</div>';
+            if(it.image) body += '<img class="ph" src="' + e(it.image) + '" alt="">';
+          }
+          if(it.from) body += '<div class="from">— ' + e(it.from) + '</div>';
+          body += '</div>';
+        });
+      });
+    });
+    return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Carnet K-OSS — ' + e(d.ownerName) + '</title><style>'
+      + 'body{font-family:Georgia,serif;max-width:760px;margin:24px auto;padding:0 18px;color:#222;line-height:1.5}'
+      + 'h1{font-size:26px;margin:0}h2{margin-top:34px;border-bottom:2px solid #333;padding-bottom:4px}h3{margin:22px 0 8px;color:#555}'
+      + '.sub{color:#777;font-size:13px;margin-bottom:8px}.muted{color:#888}'
+      + '.item{border:1px solid #ccc;border-left:5px solid #93B48F;border-radius:6px;padding:10px 14px;margin:10px 0;page-break-inside:avoid;background:#fffdf8}'
+      + '.meta{font-size:12px;color:#777;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}'
+      + '.txt{white-space:pre-wrap}.from{font-size:13px;color:#666;margin-top:6px;font-style:italic}'
+      + '.ph{display:block;max-width:100%;max-height:420px;margin-top:8px;border-radius:4px}.stk{width:80px;height:80px;object-fit:cover;border-radius:6px}'
+      + '@media print{body{margin:0}}</style></head><body><h1>Carnet K-OSS — ' + e(d.ownerName) + '</h1><div class="sub">Exporté le ' + e(d.generatedAt) + '</div>' + body + '</body></html>';
+  }
+
+  // --- DOCX : archive ZIP sans compression, écrite à la main (aucune bibliothèque) ---
+  let nbxCrcTable = null;
+  function nbxCrc32(bytes){
+    if(!nbxCrcTable){
+      nbxCrcTable = new Uint32Array(256);
+      for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320 ^ (c>>>1)) : (c>>>1); nbxCrcTable[n]=c>>>0; }
+    }
+    let crc = 0xFFFFFFFF;
+    for(let i=0;i<bytes.length;i++) crc = nbxCrcTable[(crc^bytes[i])&0xFF] ^ (crc>>>8);
+    return (crc ^ 0xFFFFFFFF)>>>0;
+  }
+  function nbxZip(files){ // files: [{name, data:Uint8Array}]
+    const enc = new TextEncoder();
+    const chunks = [], central = [];
+    let offset = 0;
+    const u16 = v=>[v&255,(v>>>8)&255], u32 = v=>[v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255];
+    files.forEach(f=>{
+      const name = enc.encode(f.name), crc = nbxCrc32(f.data), size = f.data.length;
+      const local = new Uint8Array([0x50,0x4b,0x03,0x04, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(size), ...u32(size), ...u16(name.length), ...u16(0)]);
+      chunks.push(local, name, f.data);
+      central.push({name, crc, size, offset});
+      offset += local.length + name.length + size;
+    });
+    const cdStart = offset;
+    central.forEach(c=>{
+      const rec = new Uint8Array([0x50,0x4b,0x01,0x02, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(c.crc), ...u32(c.size), ...u32(c.size), ...u16(c.name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(c.offset)]);
+      chunks.push(rec, c.name);
+      offset += rec.length + c.name.length;
+    });
+    const cdSize = offset - cdStart;
+    chunks.push(new Uint8Array([0x50,0x4b,0x05,0x06, ...u16(0), ...u16(0), ...u16(central.length), ...u16(central.length), ...u32(cdSize), ...u32(cdStart), ...u16(0)]));
+    return new Blob(chunks, {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  }
+  function nbxXml(s){
+    return String(s==null?'':s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function nbxRuns(text, rPr){
+    const lines = String(text||'').split(/\r?\n/);
+    return lines.map((ln,i)=>'<w:r>' + (rPr?'<w:rPr>'+rPr+'</w:rPr>':'') + (i>0?'<w:br/>':'') + '<w:t xml:space="preserve">' + nbxXml(ln) + '</w:t></w:r>').join('');
+  }
+  function nbxPara(text, style, rPr){
+    return '<w:p>' + (style?'<w:pPr><w:pStyle w:val="'+style+'"/></w:pPr>':'') + nbxRuns(text, rPr) + '</w:p>';
+  }
+  // images : tableau {bytes:Uint8Array, ext:'png'|'jpeg', w, h} aligné avec les éléments (null si absent)
+  function nbxBuildDocx(d, imageFor){
+    const media = [], rels = [];
+    let body = nbxPara('Carnet K-OSS — ' + d.ownerName, 'Title') + nbxPara('Exporté le ' + d.generatedAt, null, '<w:color w:val="777777"/>');
+    let imgN = 0;
+    function imgXml(img, maxPx){
+      imgN++;
+      const rid = 'rIdImg' + imgN, fname = 'image' + imgN + '.' + img.ext;
+      media.push({name:'word/media/' + fname, data: img.bytes});
+      rels.push('<Relationship Id="' + rid + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/' + fname + '"/>');
+      const k = Math.min(1, maxPx / Math.max(img.w, 1));
+      const cx = Math.max(1, Math.round(img.w * k * 9525)), cy = Math.max(1, Math.round(img.h * k * 9525));
+      return '<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:docPr id="' + imgN + '" name="Image ' + imgN + '"/>'
+        + '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        + '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="' + imgN + '" name="' + fname + '"/><pic:cNvPicPr/></pic:nvPicPr>'
+        + '<pic:blipFill><a:blip r:embed="' + rid + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        + '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>'
+        + '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>';
+    }
+    let idx = 0;
+    d.notebooks.forEach(nb=>{
+      body += nbxPara(nb.name, 'Heading1');
+      if(!nb.pages.length) body += nbxPara('Aucun contenu.', null, '<w:color w:val="888888"/>');
+      nb.pages.forEach(p=>{
+        body += nbxPara('Page ' + p.page, 'Heading2');
+        p.items.forEach(it=>{
+          const myIdx = idx++;
+          const head = [it.category, it.date].filter(Boolean).join(' · ');
+          if(head) body += nbxPara(head, null, '<w:i/><w:color w:val="777777"/><w:sz w:val="18"/>');
+          if(it.kind==='sticker'){
+            const img = imageFor(myIdx);
+            if(img) body += imgXml(img, 90);
+            body += nbxPara(it.imageName || 'Autocollant');
+          } else {
+            body += nbxPara(it.text);
+            const img = it.image ? imageFor(myIdx) : null;
+            if(img) body += imgXml(img, 380);
+          }
+          if(it.from) body += nbxPara('— ' + it.from, null, '<w:i/><w:color w:val="666666"/>');
+        });
+      });
+    });
+    const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"';
+    const enc = new TextEncoder();
+    const files = [
+      {name:'[Content_Types].xml', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>')},
+      {name:'_rels/.rels', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')},
+      {name:'word/_rels/document.xml.rels', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' + rels.join('') + '</Relationships>')},
+      {name:'word/styles.xml', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="44"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="360" w:after="120"/></w:pPr><w:rPr><w:b/><w:sz w:val="34"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="240" w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/><w:color w:val="555555"/></w:rPr></w:style></w:styles>')},
+      {name:'word/document.xml', data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' + NS + '><w:body>' + body + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>')},
+    ].concat(media);
+    return nbxZip(files);
+  }
+  // Prépare (navigateur seulement) une image → PNG/JPEG via canvas, avec ses dimensions.
+  function nbxPrepareImage(src, asPng){
+    return new Promise(resolve=>{
+      if(!src){ resolve(null); return; }
+      const im = new Image();
+      im.onload = ()=>{
+        try{
+          const c = document.createElement('canvas');
+          c.width = im.naturalWidth || 1; c.height = im.naturalHeight || 1;
+          const ctx = c.getContext('2d');
+          if(!asPng){ ctx.fillStyle = '#fff'; ctx.fillRect(0,0,c.width,c.height); }
+          ctx.drawImage(im,0,0);
+          const url = c.toDataURL(asPng ? 'image/png' : 'image/jpeg', 0.88);
+          const bin = atob(url.split(',')[1]), bytes = new Uint8Array(bin.length);
+          for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+          resolve({bytes, ext: asPng?'png':'jpeg', w:c.width, h:c.height});
+        }catch(_){ resolve(null); } // image externe « tainted » : on l'omet plutôt que d'échouer
+      };
+      im.onerror = ()=>resolve(null);
+      im.src = src;
+    });
+  }
+  function nbxDownloadBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  }
+
+
+  // ===== Inactivité des comptes (29 sept 2026) =====
+  // Le serveur (tâche quotidienne koss-inactivity-daily) envoie les avis et tient le suivi dans la
+  // table koss_inactivity ; l'app ne fait que (1) afficher les demandes d'approbation, (2) archiver
+  // dans « Comptes supprimés » les comptes échus — l'app est la seule à écrire les comptes.
+  function inactivityRows(){ return Array.isArray(window.__kossInactivity) ? window.__kossInactivity : []; }
+  function iaAddMonths(iso, n){
+    const d = new Date(iso + 'T12:00:00Z');
+    const day = d.getUTCDate();
+    d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n);
+    const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+1, 0)).getUTCDate();
+    d.setUTCDate(Math.min(day, last));
+    return d.toISOString().slice(0,10);
+  }
+  function iaFrDate(iso){
+    if(!iso) return '—';
+    const [y,m,d] = String(iso).slice(0,10).split('-').map(Number);
+    const mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    return d + (d===1?'er':'') + ' ' + mois[m-1] + ' ' + y;
+  }
+  function iaLastActivity(email){
+    const e = String(email||'').toLowerCase();
+    let best = null;
+    const consider = iso=>{ if(iso && /^\d{4}-\d{2}-\d{2}/.test(iso) && (!best || iso.slice(0,10) > best)) best = iso.slice(0,10); };
+    state.data.bookings.forEach(b=>{ if(b.studentEmail && b.studentEmail.toLowerCase()===e && b.status!=='annulee') consider(b.dateIso); });
+    state.data.memberships.forEach(m=>{
+      if(!m.studentEmail || m.studentEmail.toLowerCase()!==e) return;
+      if(m.type==='illimite') consider(m.endDate);
+      if(typeof m.createdAt==='number') consider(isoDate(new Date(m.createdAt)));
+    });
+    return best;
+  }
+  function iaStageLabel(stage){ return stage==='unused' ? 'Jamais utilisé' : stage==='3m' ? 'Inactif 3 mois' : stage==='6m' ? 'Inactif 6 mois' : (stage||'—'); }
+  function iaStatusLabel(r){
+    const st = r.status;
+    if(st==='pending') return 'Avis envoyé le ' + iaFrDate(r.noticeDate) + ' — suppression prévue le ' + iaFrDate(r.deleteOn);
+    if(st==='extended') return 'Conservé par l’élève jusqu’au ' + iaFrDate(r.extendedUntil);
+    if(st==='approved') return 'Approuvé jusqu’au ' + iaFrDate(r.extendedUntil);
+    if(st==='approval_requested') return 'Approbation demandée';
+    if(st==='delete_requested') return 'Suppression demandée — archivage à la prochaine ouverture';
+    if(st==='expired') return 'Délai écoulé — archivage à la prochaine ouverture';
+    return st || '—';
+  }
+
+  // Archive les comptes dont la suppression est échue (demandée par l'élève, refusée par une
+  // gestionnaire, ou délai de 30 jours écoulé sans réponse). Exécuté UNE fois par chargement de
+  // page, à l'ouverture de l'administration.
+  async function processInactivityArchives(){
+    const rows = inactivityRows();
+    const today = todayIso();
+    const due = rows.filter(r=> r && r.email && (r.status==='delete_requested' || r.status==='expired' || (r.status==='pending' && r.deleteOn && r.deleteOn<=today)));
+    if(!due.length) return;
+    let archived = 0;
+    const doneEmails = [];
+    for(const r of due){
+      const email = String(r.email).toLowerCase();
+      const acct = findStudentAccount(email);
+      if(!acct){ doneEmails.push(email); continue; }
+      if(r.status !== 'delete_requested'){
+        // Filet de sécurité : si la personne est redevenue active depuis l'avis, on n'archive pas.
+        const noticeDate = r.noticeDate || '';
+        const active = state.data.memberships.some(m=> m.studentEmail && m.studentEmail.toLowerCase()===email && isMembershipActive(m));
+        const recent = state.data.bookings.some(b=> b.studentEmail && b.studentEmail.toLowerCase()===email && b.status!=='annulee' && b.dateIso > noticeDate)
+          || state.data.memberships.some(m=> m.studentEmail && m.studentEmail.toLowerCase()===email && typeof m.createdAt==='number' && isoDate(new Date(m.createdAt)) > noticeDate);
+        if(active || recent){ doneEmails.push(email); continue; }
+      }
+      archiveDeletedAccount(acct, 'inactivité');
+      archived++;
+      doneEmails.push(email);
+    }
+    if(archived) await persist();
+    for(const e of doneEmails){ try{ await sb.rpc('koss_inactivity_done', {p_email:e}); }catch(err){ console.error('koss_inactivity_done:', err); } }
+    window.__kossInactivity = inactivityRows().filter(r=>!doneEmails.includes(String(r.email).toLowerCase()));
+    render(); // avant le toast : render() efface les toasts déjà affichés
+    if(archived) showToast(archived + ' compte(s) archivé(s) pour inactivité — voir « Comptes supprimés ».');
+  }
+  function maybeProcessInactivity(){
+    if(state._iaRunning) return;
+    if(!state.adminUnlocked || state.view!=='admin' || !state.data) return;
+    // Une seule tentative par chargement de données (chaque lecture crée un nouveau tableau).
+    const cur = window.__kossInactivity;
+    if(!Array.isArray(cur) || !cur.length || state._iaSeen === cur) return;
+    state._iaSeen = cur;
+    state._iaRunning = true;
+    setTimeout(async ()=>{
+      try{ await processInactivityArchives(); }
+      catch(err){ console.error('Archivage inactivité:', err); }
+      finally{ state._iaRunning = false; }
+    }, 0);
+  }
+
+  // Réponse d'un·e élève au bouton d'un courriel (?ia=<jeton>) : confirmation puis appel de
+  // koss-inactivity-action. Marche sans être connecté.
+  async function startInactivityResponse(token){
+    state.modal = {type:'inactivity-response', payload:{token, phase:'loading'}};
+    render();
+    try{
+      const { data, error } = await sb.functions.invoke('koss-inactivity-action', {body:{token, confirm:false}});
+      if(error) throw error;
+      if(!data || data.valid === false){
+        state.modal = {type:'inactivity-response', payload:{token, phase:'invalid', reason:(data&&data.reason)||'invalid'}};
+      } else {
+        state.modal = {type:'inactivity-response', payload:{token, phase:'confirm', info:data}};
+      }
+    }catch(err){
+      console.error('koss-inactivity-action (vérification):', err);
+      state.modal = {type:'inactivity-response', payload:{token, phase:'error'}};
+    }
+    render();
+  }
+
   function buyerQualifiesForMemberPrice(plan, email, profileId){
     if(!plan || !plan.memberPrice) return false;
     if(plan.familyMemberCheck){
@@ -4104,6 +4430,7 @@
 
     closeModalDom();
     if(state.modal) renderModal();
+    maybeProcessInactivity();
     wirePhotoInput('mgr-photo-file', true);
 
     document.querySelectorAll('.toast').forEach(t=>t.remove());
@@ -4710,6 +5037,15 @@
           <div style="background:var(--bg-tile);border-left:4px solid var(--coral);border-radius:8px;padding:12px 14px;text-align:left;color:var(--chalk);font-size:14px;margin:16px 0;">Carnet accessible seulement avec un abonnement payant.</div>
           <p class="muted" style="color:var(--chalk-dim);">${profileId ? escapeHtml(ownerName)+' doit avoir son propre abonnement actif pour utiliser son carnet.' : 'Ton contenu est conservé : il réapparaîtra dès que tu auras un abonnement actif (1 mois, 3 mois ou passes).'}</p>
           <div class="btn-row" style="justify-content:center;"><button class="btn btn-primary" data-action="goto-account">Voir les abonnements</button></div>
+          <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--border);">
+            <p class="muted" style="color:var(--chalk-dim);margin:0 0 10px;">Tu peux télécharger ${profileId ? 'ce carnet' : 'ton carnet'} :</p>
+            <div class="btn-row" style="justify-content:center;flex-wrap:wrap;">
+              <button class="small-btn" data-action="download-notebook" data-format="pdf" data-profile="${profileId||''}">📄 PDF</button>
+              <button class="small-btn" data-action="download-notebook" data-format="docx" data-profile="${profileId||''}">📝 Word (.docx)</button>
+              <button class="small-btn" data-action="download-notebook" data-format="html" data-profile="${profileId||''}">🌐 HTML</button>
+              <button class="small-btn" data-action="download-notebook" data-format="txt" data-profile="${profileId||''}">📃 Texte (.txt)</button>
+            </div>
+          </div>
         </div>
       `;
     }
@@ -5440,6 +5776,43 @@
         <p style="font-size:13px;margin:6px 0;"><strong style="color:#E8B94A;">🟡 Jaune</strong> : a déjà eu un mode de paiement actif (abonnement, 10 classes, drop-in, etc.), mais aucun actif maintenant</p>
         <p style="font-size:13px;margin:6px 0 2px;"><strong style="color:var(--chalk);">⚪ Blanc</strong> : n’a jamais rien acheté</p>
       `, null, null, false)}
+
+      ${(()=>{
+        const iaRows = inactivityRows();
+        if(!iaRows.length) return '';
+        const reqs = iaRows.filter(r=>r.status==='approval_requested').sort((a,b)=>String(a.approvalRequestedAt||'').localeCompare(String(b.approvalRequestedAt||'')));
+        const others = iaRows.filter(r=>r.status!=='approval_requested');
+        const nameOf = em=>{ const a = findStudentAccount(em); return a ? a.name : em; };
+        const reqHtml = reqs.length ? `
+          <p class="muted" style="color:var(--chalk-dim);">Ces personnes sont inactives depuis 6 mois et demandent à garder leur compte. Choisis la durée de la prolongation, ou refuse (le compte sera alors archivé).</p>
+          <table>
+            <tr><th>Élève</th><th>Dernière activité</th><th>Demande</th><th>Prolonger de</th><th></th></tr>
+            ${reqs.map((r,i)=>{
+              const la = iaLastActivity(r.email);
+              return `<tr>
+                <td>${escapeHtml(nameOf(r.email))}<br><span class="muted" style="font-size:11px;">${escapeHtml(r.email)}</span></td>
+                <td>${la ? iaFrDate(la) : '—'}</td>
+                <td>${r.approvalRequestedAt ? iaFrDate(String(r.approvalRequestedAt).slice(0,10)) : '—'}</td>
+                <td>
+                  <select id="ia-dur-${i}" style="font-size:12px;padding:5px;">
+                    <option value="1">1 mois</option><option value="3" selected>3 mois</option><option value="6">6 mois</option><option value="12">1 an</option>
+                  </select>
+                  <div style="margin-top:4px;"><span class="muted" style="font-size:11px;">ou date précise :</span><br><input type="date" id="ia-date-${i}" style="font-size:12px;padding:4px;"></div>
+                </td>
+                <td><button class="small-btn" style="background:var(--sage);border-color:var(--sage);color:var(--ink);" data-action="inactivity-approve" data-email="${escapeHtml(r.email)}" data-idx="${i}">Approuver</button>
+                    <button class="small-btn" data-action="inactivity-refuse" data-email="${escapeHtml(r.email)}">Refuser</button></td>
+              </tr>`;
+            }).join('')}
+          </table>` : '<p class="muted" style="color:var(--chalk-dim);">Aucune demande d’approbation en attente.</p>';
+        const othersHtml = others.length ? `
+          <h4 style="margin:18px 0 8px;font-family:var(--font-d);text-transform:uppercase;font-size:13px;color:var(--chalk-dim);">Suivi des avis (${others.length})</h4>
+          <table>
+            <tr><th>Élève</th><th>Cas</th><th>Situation</th></tr>
+            ${others.map(r=>`<tr><td>${escapeHtml(nameOf(r.email))}</td><td>${escapeHtml(iaStageLabel(r.stage))}</td><td>${escapeHtml(iaStatusLabel(r))}</td></tr>`).join('')}
+          </table>` : '';
+        return adminCard('inactivity', `Inactivité des comptes${reqs.length ? ' — '+reqs.length+' demande(s) à traiter' : ''}`, reqHtml + othersHtml,
+          reqs.length ? 'var(--amber)' : null, reqs.length ? 'var(--amber)' : null, reqs.length > 0);
+      })()}
 
       ${(()=>{
         const needReminder = accountsNeedingConsentReminder();
@@ -7363,6 +7736,51 @@
           <p class="muted">Cette action est irréversible : la note sera effacée définitivement.</p>
           <div class="btn-row">
             <button class="btn btn-danger" data-action="confirm-purge-note-yes" data-kind="${pKind}" data-id="${id}">Oui, supprimer pour de bon</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'inactivity-response'){
+      const {phase, info, reason, result, token} = m.payload;
+      let inner = '';
+      if(phase === 'loading'){
+        inner = `<h3>Un instant…</h3><p class="muted">Vérification de votre lien.</p>`;
+      } else if(phase === 'invalid' || phase === 'error'){
+        const msg = phase==='error' ? 'Une erreur est survenue. Réessayez plus tard ou communiquez avec le studio.'
+          : reason==='expired' ? 'Ce lien a expiré.'
+          : reason==='superseded' ? 'Ce lien n’est plus valide : une réponse a déjà été donnée ou un nouvel avis a été envoyé.'
+          : reason==='no_account' ? 'Ce compte n’existe plus.'
+          : 'Ce lien est invalide.';
+        inner = `<h3>Lien non valide</h3><p class="muted">${msg}</p><div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>`;
+      } else if(phase === 'done'){
+        const t = result && result.action==='keep' ? `Merci ! Votre compte est conservé${result.until ? ' jusqu’au <strong>'+iaFrDate(result.until)+'</strong>' : ''}.`
+          : result && result.action==='approval' ? 'Votre demande a été transmise à l’équipe K-OSS, qui vous répondra.'
+          : 'Votre demande est enregistrée : votre compte sera supprimé sous peu.';
+        inner = `<h3>${result && result.alreadyDone ? 'Déjà enregistré' : 'C’est fait'}</h3><p>${t}</p><div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>`;
+      } else {
+        const a = info.action;
+        const title = a==='keep' ? 'Conserver votre compte ?' : a==='approval' ? 'Demander l’approbation ?' : 'Supprimer votre compte ?';
+        const text = a==='keep' ? 'Votre compte restera actif <strong>3 mois de plus</strong>.'
+          : a==='approval' ? 'Votre demande sera transmise à l’équipe K-OSS, qui vous répondra.'
+          : 'Votre compte sera supprimé. Si vous voulez garder votre carnet, connectez-vous d’abord à votre compte pour le télécharger.';
+        const label = a==='keep' ? 'Oui, conserver mon compte' : a==='approval' ? 'Envoyer ma demande' : 'Oui, supprimer mon compte';
+        inner = `<h3>${title}</h3><p>${info.firstName ? 'Bonjour '+escapeHtml(info.firstName)+',<br>' : ''}${text}</p>
+          <div class="btn-row">
+            <button class="btn ${a==='delete'?'btn-danger':'btn-primary'}" data-action="inactivity-confirm">${label}</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>`;
+      }
+      html = `<div class="modal" style="max-width:440px;"><button class="close-x" data-action="close-modal">✕</button>${inner}</div>`;
+    } else if(m.type === 'confirm-inactivity-refuse'){
+      const {email} = m.payload;
+      const a = findStudentAccount(email);
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Refuser et archiver ce compte ?</h3>
+          <p class="muted">${escapeHtml(a ? a.name : email)} sera archivé dans « Comptes supprimés » (récupérable).</p>
+          <div class="btn-row">
+            <button class="btn btn-danger" data-action="inactivity-refuse-yes" data-email="${escapeHtml(email)}">Oui, refuser</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
         </div>
@@ -10085,6 +10503,104 @@
       state.view = 'notebook';
       state.accountMenuOpen = false;
       render();
+    }
+    else if(action==='inactivity-approve'){
+      const btn = e.currentTarget; // capturé avant le premier await
+      if(btn.disabled) return;
+      const email = btn.dataset.email, idx = btn.dataset.idx;
+      const dateVal = (document.getElementById('ia-date-'+idx)||{}).value || '';
+      const months = parseInt((document.getElementById('ia-dur-'+idx)||{}).value, 10) || 3;
+      const until = dateVal || iaAddMonths(todayIso(), months);
+      if(until <= todayIso()){ showToast('Choisis une date de fin dans le futur.'); return; }
+      btn.disabled = true;
+      const { error } = await sb.rpc('koss_inactivity_decide', {p_email:email, p_action:'approve', p_until:until});
+      if(error){ console.error(error); btn.disabled = false; showToast('Impossible d’approuver : ' + (error.message||'erreur')); return; }
+      window.__kossInactivity = inactivityRows().map(r=> String(r.email).toLowerCase()===email.toLowerCase() ? Object.assign({}, r, {status:'approved', extendedUntil:until}) : r);
+      render();
+      showToast('Compte conservé jusqu’au ' + iaFrDate(until) + '.');
+    }
+    else if(action==='inactivity-refuse'){
+      state.modal = {type:'confirm-inactivity-refuse', payload:{email:e.currentTarget.dataset.email}};
+      render();
+    }
+    else if(action==='inactivity-refuse-yes'){
+      const btn = e.currentTarget;
+      if(btn.disabled) return;
+      const email = btn.dataset.email;
+      btn.disabled = true;
+      const { error } = await sb.rpc('koss_inactivity_decide', {p_email:email, p_action:'refuse'});
+      if(error){ console.error(error); btn.disabled = false; showToast('Impossible de refuser : ' + (error.message||'erreur')); return; }
+      window.__kossInactivity = inactivityRows().map(r=> String(r.email).toLowerCase()===email.toLowerCase() ? Object.assign({}, r, {status:'delete_requested'}) : r);
+      state.modal = null;
+      await processInactivityArchives(); // archive tout de suite (fait aussi render + toast)
+    }
+    else if(action==='inactivity-confirm'){
+      const btn = e.currentTarget; // capturé avant le premier await
+      if(btn.disabled) return;
+      const payload = state.modal && state.modal.type==='inactivity-response' ? state.modal.payload : null;
+      if(!payload || !payload.token) return;
+      btn.disabled = true;
+      try{
+        const { data, error } = await sb.functions.invoke('koss-inactivity-action', {body:{token:payload.token, confirm:true}});
+        if(error) throw error;
+        if(!data || data.valid === false){
+          state.modal = {type:'inactivity-response', payload:{token:payload.token, phase:'invalid', reason:(data&&data.reason)||'invalid'}};
+        } else {
+          state.modal = {type:'inactivity-response', payload:{token:payload.token, phase:'done', result:data}};
+        }
+      }catch(err){
+        console.error('koss-inactivity-action (confirmation):', err);
+        state.modal = {type:'inactivity-response', payload:{token:payload.token, phase:'error'}};
+      }
+      render();
+    }
+    else if(action==='download-notebook'){
+      const dlBtn = e.currentTarget; // capturé avant le premier await
+      if(dlBtn.disabled) return;
+      const fmt = dlBtn.dataset.format;
+      const dlProfile = dlBtn.dataset.profile || null;
+      if(!state.studentSession){ showToast('Connectez-vous pour télécharger le carnet.'); return; }
+      const dlAcct = notebookSessionAccount();
+      if(!dlAcct){ showToast('Session expirée.'); return; }
+      const dlName = dlProfile ? getProfileName(dlAcct, dlProfile) : dlAcct.name;
+      const dlData = nbxCollect(notebookOwnerKey(dlAcct.email, dlProfile), dlName);
+      if(nbxIsEmpty(dlData)){ showToast('Le carnet est vide : rien à télécharger.'); return; }
+      const dlBase = 'carnet-' + nbxSlug(dlName) + '-' + todayIso();
+      try{
+        if(fmt==='txt'){
+          nbxDownloadBlob(new Blob(['\ufeff' + nbxToTxt(dlData)], {type:'text/plain;charset=utf-8'}), dlBase + '.txt');
+          showToast('Carnet téléchargé (.txt).');
+        } else if(fmt==='html'){
+          nbxDownloadBlob(new Blob([nbxToHtml(dlData)], {type:'text/html;charset=utf-8'}), dlBase + '.html');
+          showToast('Carnet téléchargé (.html).');
+        } else if(fmt==='pdf'){
+          const html = nbxToHtml(dlData);
+          const w = window.open('', '_blank');
+          if(w){
+            w.document.open(); w.document.write(html); w.document.close();
+            setTimeout(()=>{ try{ w.focus(); w.print(); }catch(_){} }, 700);
+          } else {
+            const fr = document.createElement('iframe');
+            fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+            document.body.appendChild(fr);
+            fr.contentDocument.open(); fr.contentDocument.write(html); fr.contentDocument.close();
+            setTimeout(()=>{ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(_){} setTimeout(()=>fr.remove(), 60000); }, 700);
+          }
+          showToast('Dans la fenêtre d’impression, choisissez « Enregistrer en PDF ».');
+        } else if(fmt==='docx'){
+          dlBtn.disabled = true;
+          const flat = [];
+          dlData.notebooks.forEach(nb=>nb.pages.forEach(pg=>pg.items.forEach(it=>flat.push(it))));
+          const prepared = await Promise.all(flat.map(it=> it.image ? nbxPrepareImage(it.image, it.kind==='sticker') : null));
+          nbxDownloadBlob(nbxBuildDocx(dlData, i=>prepared[i]||null), dlBase + '.docx');
+          dlBtn.disabled = false;
+          showToast('Carnet téléchargé (.docx).');
+        }
+      }catch(err){
+        console.error('Échec du téléchargement du carnet:', err);
+        dlBtn.disabled = false;
+        showToast('Le téléchargement a échoué. Réessayez.');
+      }
     }
     else if(action==='open-attendance'){
       const classId = e.currentTarget.dataset.class;
@@ -13276,6 +13792,16 @@
       const payParam = new URLSearchParams(window.location.search).get('pay');
       if(payParam) state.pendingPayMembershipId = payParam;
     }catch(err){}
+    // NOUVEAU : ?ia=<jeton> (bouton d'un courriel d'inactivité) — capté en mémoire puis retiré de
+    // l'URL (pour qu'une actualisation ne le rejoue pas) ; la confirmation s'affiche après loadData().
+    let iaToken = null;
+    try{
+      iaToken = new URLSearchParams(window.location.search).get('ia');
+      if(iaToken){
+        const keep = ADMIN_URL_FLAG ? '?admin' : '';
+        window.history.replaceState(null, '', window.location.pathname + keep);
+      }
+    }catch(err){}
     // Restaure une session gestionnaire déjà active (compte courriel/mot de passe) AVANT
     // loadData(), pour qu'elle choisisse tout de suite la bonne vue au chargement/actualisation
     // — c'est le serveur seul (koss_is_manager) qui décide, jamais un NIP local.
@@ -13291,6 +13817,7 @@
       }catch(err){ console.error('Échec vérification session gestionnaire:', err); state.adminUnlocked = false; }
     }
     await loadData();
+    if(iaToken){ startInactivityResponse(iaToken); }
     if(ADMIN_URL_FLAG && state.adminUnlocked && !state.currentManagerId){
       try{
         const { data: sessData2 } = await sb.auth.getSession();
