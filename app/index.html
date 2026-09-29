@@ -1370,7 +1370,10 @@
     {
       const cutoff = Date.now() - 2*60*60*1000;
       const before = state.data.memberships.length;
-      state.data.memberships = state.data.memberships.filter(m=> !(m.status==='attente_paiement' && (m.createdAt||0) < cutoff));
+      // Une demande envoyée par une gestionnaire (adminRequest) n'est PAS un brouillon : elle reste
+      // 30 jours. Seuls les brouillons ouverts par l'élève (Helcim) sont nettoyés après 2 h.
+      const cutoffAdmin = Date.now() - 30*24*60*60*1000;
+      state.data.memberships = state.data.memberships.filter(m=> !(m.status==='attente_paiement' && (m.createdAt||0) < (m.adminRequest ? cutoffAdmin : cutoff)));
       if(state.data.memberships.length !== before) changed = true;
     }
     if(!state.data.migratedFreeClassesV1){
@@ -2555,7 +2558,19 @@
   // ---------- membership logic ----------
   function todayIso(){ return isoDate(new Date()); }
 
+  // Abonnement PLANIFIÉ (offert avec une date de début future) : il existe déjà mais n'est ni
+  // actif ni visible par l'étudiant avant cette date — aucune écriture nécessaire le jour J, tout
+  // est calculé à partir de la date du jour.
+  function isScheduledFuture(m){
+    return !!(m && m.scheduledStart && m.scheduledStart > todayIso());
+  }
+  function fmtScheduledDate(iso){
+    try{ return new Date(iso+'T12:00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'long',year:'numeric'}); }
+    catch(e){ return iso; }
+  }
+
   function isMembershipActive(m){
+    if(isScheduledFuture(m)) return false;
     if(m.status !== 'active') return false;
     if(m.type === 'illimite') return m.endDate >= todayIso();
     if(m.type === 'credits') return m.creditsRemaining > 0;
@@ -2563,6 +2578,7 @@
   }
 
   function membershipDisplayStatus(m){
+    if(m.status === 'active' && isScheduledFuture(m)) return 'planifiee';
     if(m.status === 'active' && !isMembershipActive(m)) return 'expiree';
     return m.status;
   }
@@ -2937,6 +2953,7 @@
       expiree: ['badge-cancelled','Expiré'],
       annulee: ['badge-cancelled','Annulé'],
     };
+    if(ds==='planifiee') return `<span class="badge badge-declared">Débute le ${fmtScheduledDate(m.scheduledStart)}</span>`;
     const [cls,label] = map[ds] || ['badge-pending', ds];
     return `<span class="badge ${cls}">${label}</span>`;
   }
@@ -3532,6 +3549,7 @@
   // maintenant facturer/confirmer le bon versement précis.
   function nextDueInstallment(m){
     if(!m || !m.paymentPlan || !Array.isArray(m.paymentPlan.installments)) return null;
+    if(isScheduledFuture(m)) return null;
     return m.paymentPlan.installments.find(i=>i && i.status!=='paye') || null;
   }
   function hasDueInstallment(m){
@@ -3969,7 +3987,12 @@
     // pour une demande PAS ENCORE payée (attente_paiement) — exclue de ce bloc générique
     // pour ne pas empiler 6 boutons sur cette ligne (trop de place à l'écran, signalé par
     // Amélie). Elle garde son propre petit jeu de boutons ciblés juste en dessous.
-    if(ds!=='annulee' && ds!=='attente_paiement'){
+    if(ds==='planifiee'){
+      // Abonnement planifié (date de début future) : seulement corriger ou annuler l'offre.
+      extra += ` <button class="small-btn" data-action="edit-membership" data-id="${m.id}">Modifier</button>`;
+      extra += ` <button class="small-btn" data-action="refuse-membership" data-id="${m.id}">Annuler l’offre</button>`;
+    }
+    if(ds!=='annulee' && ds!=='attente_paiement' && ds!=='planifiee'){
       extra += ` <button class="small-btn" data-action="edit-membership" data-id="${m.id}">Modifier</button>`;
       extra += ` <button class="small-btn" data-action="refund-membership" data-id="${m.id}">Rembourser</button>`;
       if(findStudentAccount(m.studentEmail)) extra += ` <button class="small-btn" data-action="open-transfer-membership" data-id="${m.id}">Transférer</button>`;
@@ -4849,7 +4872,7 @@
     const showHiddenMemberships = !!state.accountShowHiddenMemberships;
     const allOwnMemberships = state.data.memberships.filter(m=>m.studentEmail.toLowerCase()===email.toLowerCase() && m.status!=='annulee');
     const hiddenOwnCount = allOwnMemberships.filter(m=>m.hiddenByStudent).length;
-    const memberships = showHiddenMemberships ? allOwnMemberships : allOwnMemberships.filter(m=>!m.hiddenByStudent);
+    const memberships = (showHiddenMemberships ? allOwnMemberships : allOwnMemberships.filter(m=>!m.hiddenByStudent)).filter(m=>!isScheduledFuture(m));
     const bookings = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===email.toLowerCase() && b.status!=='annulee')
       .sort((a,b)=>a.dateIso.localeCompare(b.dateIso));
 
@@ -7396,6 +7419,9 @@
           <input type="hidden" id="g-profile" value="${escapeHtml(prefill.prefillProfileId||'')}">
           <label>Formule</label>
           <select id="g-plan">${plans.map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${p.type==='illimite'?p.durationDays+' jours':p.creditsCount+' cours'})</option>`).join('') || '<option value="">Aucune formule créée</option>'}</select>
+          <label style="margin-top:14px;">Date de début (facultatif)</label>
+          <input type="date" id="g-start" min="${todayIso()}" style="max-width:220px;">
+          <p id="g-start-hint" style="font-size:11px;color:var(--chalk-dim);margin:6px 0 0;">Laissez vide pour commencer aujourd\u2019hui. Avec une date future, l\u2019abonnement reste invisible pour l\u2019étudiant et s\u2019active ce jour-là ; s\u2019il est payant, la demande de paiement est envoyée par courriel ce jour-là (pas avant) et la période commence à cette date, même si l\u2019étudiant paie plus tard.</p>
           <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
             <input type="checkbox" id="g-paid" style="width:auto;margin:0;" onchange="document.getElementById('g-amount-wrap').style.display=this.checked?'block':'none';">
             <span>Payant (montant personnalis\u00e9) \u2014 envoie une demande de paiement au client</span>
@@ -7406,7 +7432,7 @@
             <p style="font-size:11px;color:var(--chalk-dim);margin:6px 0 0;">Le client recevra un courriel l\u2019informant qu\u2019il doit payer ce montant sur Helcim pour activer son abonnement (bouton \u00ab Payer maintenant \u00bb aussi visible dans son compte). Laissez vide pour utiliser le prix normal de la formule.</p>
 
             <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
-              <input type="checkbox" id="g-installments-toggle" style="width:auto;margin:0;" onchange="document.getElementById('g-installments-wrap').style.display=this.checked?'block':'none'; if(this.checked) kossGenerateInstallmentRows();">
+              <input type="checkbox" id="g-installments-toggle" style="width:auto;margin:0;" onchange="document.getElementById('g-installments-wrap').style.display=this.checked?'block':'none'; if(this.checked) kossGenerateInstallmentRows(); var gs=document.getElementById('g-start'); if(gs){ gs.disabled=this.checked; if(this.checked) gs.value=''; } var gh=document.getElementById('g-start-hint'); if(gh) gh.style.opacity=this.checked?'0.5':'1';">
               <span>Payer en versements</span>
             </label>
             <div id="g-installments-wrap" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:10px;">
@@ -13112,7 +13138,39 @@
         // maintenant" / le courriel tant que ce versement n'est pas réglé).
         customPrice = installments[0].amount;
       }
+      // NOUVEAU (29 sept) : date de début future (ignorée pour les versements, qui ont déjà leurs dates).
+      const startEl = document.getElementById('g-start');
+      let scheduledStart = (startEl && !startEl.disabled && startEl.value) ? startEl.value : '';
+      if(scheduledStart && !/^\d{4}-\d{2}-\d{2}$/.test(scheduledStart)) scheduledStart = '';
+      if(scheduledStart && scheduledStart < todayIso()){ showToast('La date de début ne peut pas être dans le passé.'); return; }
+      if(scheduledStart && scheduledStart === todayIso()) scheduledStart = '';
+      if(useInstallments) scheduledStart = '';
       const m = activatePlanForStudent(plan, name, email, !isPaid, profileId, customPrice);
+      if(isPaid) m.adminRequest = true;
+      if(scheduledStart){
+        m.scheduledStart = scheduledStart;
+        if(plan.type === 'illimite'){
+          const endD = new Date(scheduledStart+'T12:00:00'); endD.setDate(endD.getDate() + plan.durationDays);
+          m.startDate = scheduledStart;
+          m.endDate = isoDate(endD);
+        } else {
+          m.creditsRemaining = plan.creditsCount;
+        }
+        if(isPaid){
+          // Actif (à la date choisie) avec UN versement dû à cette date : le paiement — même tardif —
+          // ne change plus les dates. La demande de paiement part par courriel le jour même
+          // (fonction quotidienne koss-scheduled-offers-daily), jamais avant.
+          const amt = m.planPrice || '';
+          m.status = 'active';
+          m.scheduledPaid = true;
+          m.paymentPlan = {
+            activateBeforePayment: true,
+            scheduledOffer: true,
+            totalAmount: amt,
+            installments: [{ id: uid(), dueDate: scheduledStart, amount: amt, status: 'a_venir' }],
+          };
+        }
+      }
       if(paymentPlan){
         m.paymentPlan = paymentPlan;
         if(paymentPlan.activateBeforePayment){
@@ -13133,7 +13191,11 @@
       await persist();
       state.modal = null; closeModalDom();
       render();
-      if(isPaid){
+      if(scheduledStart){
+        showToast(isPaid
+          ? `Abonnement planifié au ${fmtScheduledDate(scheduledStart)} — la demande de paiement sera envoyée ce jour-là.`
+          : `Abonnement planifié : il s’activera le ${fmtScheduledDate(scheduledStart)}.`);
+      } else if(isPaid){
         showToast(paymentPlan ? 'Calendrier de versements créé, 1er avis envoyé au client.' : 'Demande de paiement envoyée au client.');
         // Best-effort : n'échoue jamais l'opération si le courriel ne part pas — le client
         // garde de toute façon le bouton « Payer maintenant » dans son compte (badge « Paiement
