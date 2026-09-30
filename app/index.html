@@ -313,6 +313,37 @@
      ligne surlignée à l'intérieur d'un <select> natif — on lui donne un fond ambre bien
      contrasté avec le même texte sombre que les autres options.  */
   select option:checked, select option:hover{ color:#141413; background:var(--amber); }
+  /* 🔴 CORRIGÉ (S49) : dans le menu déroulant OUVERT, la ligne survolée était dessinée par le
+     navigateur avec un fond sombre PAR-DESSUS notre texte foncé (noir sur noir), et chaque ligne
+     s'affichait avec des coins arrondis. Sur les navigateurs modernes (Chrome/Edge/Opera 135+),
+     `appearance: base-select` nous donne le contrôle complet du menu : fond sombre du thème, texte
+     clair, ligne survolée/choisie en ambre avec texte foncé, coins carrés. S'applique à TOUS les
+     <select> du site. Les autres navigateurs gardent la règle de secours ci-dessus. */
+  @supports (appearance: base-select){
+    select, select::picker(select){ appearance: base-select; }
+    select::picker(select){
+      background:var(--bg-panel);
+      color:var(--chalk);
+      border:1px solid var(--border);
+      border-radius:6px;
+      padding:4px 0;
+      max-height:min(60vh, 420px);
+      box-shadow:0 8px 24px rgba(0,0,0,.45);
+    }
+    select option{
+      background:transparent;
+      color:var(--chalk);
+      border-radius:0;
+      padding:8px 12px;
+    }
+    select option:checked{ background:rgba(233,230,213,.16); color:var(--chalk); }
+    select option:hover, select option:focus{
+      background:var(--amber);
+      color:#141413;
+    }
+    select option::checkmark{ display:none; }
+    select option:disabled{ color:var(--chalk-dim); background:transparent; }
+  }
   .pw-wrap{position:relative;}
   .pw-wrap input{padding-right:66px;}
   .pw-toggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);padding:3px 8px;font-size:10px;background:var(--bg-tile);}
@@ -3691,6 +3722,11 @@
     return fm ? fm.name : acct.name;
   }
 
+  // Tri alphabétique (français, sans tenir compte des accents ni des majuscules) des formules,
+  // pour les menus déroulants et la liste admin. Ne modifie pas le tableau d'origine.
+  function sortPlansAlpha(list){
+    return (list||[]).slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''), 'fr', {sensitivity:'base'}));
+  }
   function currentManager(){
     return state.data.managers.find(m=>m.id===state.currentManagerId) || null;
   }
@@ -5659,7 +5695,7 @@
       return null;
     };
     let planRows = ADMIN_GROUPS.map(g=>{
-      const items = state.data.membershipPlans.filter(p=>planGroupOf(p)===g.key);
+      const items = sortPlansAlpha(state.data.membershipPlans.filter(p=>planGroupOf(p)===g.key));
       if(!items.length) return '';
       const isOpen = !!state.expandedPlanGroups[g.key];
       const rows = items.map(p=>`
@@ -7388,7 +7424,7 @@
         </div>
       `;
     } else if(m.type === 'grant-membership'){
-      const plans = state.data.membershipPlans;
+      const plans = sortPlansAlpha(state.data.membershipPlans);
       const prefill = m.payload || {};
       html = `
         <div class="modal">
@@ -8146,7 +8182,7 @@
           <label>Filtrer par formule d’abonnement (actif)</label>
           <select id="report-plan-filter">
             <option value="">Tous les étudiants</option>
-            ${state.data.membershipPlans.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
+            ${sortPlansAlpha(state.data.membershipPlans).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
           </select>
           <p class="muted" style="margin-top:10px;">Choisissez les colonnes à inclure.</p>
           <div style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;">
