@@ -5377,9 +5377,27 @@
       dayData = dayData.filter(dd=>dd.dateIso===today);
       anyClass = dayData.some(dd=>dd.dayClasses.length);
     }
-    const splitAmPm = weekHasMorning && weekHasAfternoon && window.innerWidth > 700;
+    const splitAmPm = !dayOnly && weekHasMorning && weekHasAfternoon && window.innerWidth > 700;
     let cols = '';
-    if(splitAmPm){
+    if(dayOnly){
+      // 🔴 CORRIGÉ (S49, tablette) : la vue « journée » réutilisait la grille de la semaine
+      // (7 colonnes) avec un seul jour → une colonne étroite collée à gauche, coupée en
+      // matin/soir, avec barres de défilement. Maintenant : agenda centré, tous les cours du
+      // jour empilés dans l'ordre (comme l'agenda du jour côté élèves).
+      const entry = dayData[0];
+      const dayTitle = entry ? `${DAYS[entry.i]} ${entry.d.getDate()} ${MONTHS_FULL[entry.d.getMonth()]}` : '';
+      const dayTiles = entry ? entry.dayClasses.map(c=>buildAttendanceTileHtml(c, entry.dateIso)).join('') : '';
+      cols = `
+        <div class="day-agenda-wrap" style="max-width:560px;">
+          <div class="day-agenda-header">
+            <span class="day-agenda-title">${escapeHtml(dayTitle)}</span>
+          </div>
+          <div class="day-agenda-tiles">
+            ${dayTiles || '<div class="empty-note">Aucun cours aujourd’hui.</div>'}
+          </div>
+        </div>
+      `;
+    } else if(splitAmPm){
       cols += '<div class="board board-am">';
       dayData.forEach(({d,i,dateIso,morning})=>{
         const tiles = morning.map(c=>buildAttendanceTileHtml(c, dateIso)).join('');
@@ -5425,7 +5443,7 @@
         <button class="small-btn" data-action="attendance-show-week">📅 Voir la semaine</button>
       </div>
       ` : `<p class="muted" style="color:var(--chalk-dim);">Cours d’aujourd’hui seulement.</p>`}
-      ${anyClass ? (splitAmPm ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">${dayOnly ? 'Aucun cours aujourd’hui.' : 'Aucun cours programmé cette semaine.'}</div></div>`}
+      ${anyClass ? ((splitAmPm || dayOnly) ? cols : `<div class="board">${cols}</div>`) : `<div class="board"><div class="empty-note">${dayOnly ? 'Aucun cours aujourd’hui.' : 'Aucun cours programmé cette semaine.'}</div></div>`}
     `;
   }
 
