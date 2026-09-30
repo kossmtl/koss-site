@@ -11953,7 +11953,8 @@
             const acctForEmail = findStudentAccount(studentEmail);
             const firstName = acctForEmail ? (acctForEmail.firstName || acctForEmail.name) : studentEmail;
             sb.functions.invoke('koss-send-message-notification', {body:{
-              email: studentEmail, firstName, preview: text.slice(0,140), context:'bug'
+              email: studentEmail, firstName, preview: text.slice(0,140), context:'bug',
+              senderName: (currentManager()||{}).name || ''
             }});
           }
         }catch(err){ console.error('Échec envoi courriel de notification (réponse bug):', err); }
@@ -12055,7 +12056,8 @@
           const acctForEmail = findStudentAccount(email);
           const firstName = acctForEmail ? (acctForEmail.firstName || acctForEmail.name) : email;
           sb.functions.invoke('koss-send-message-notification', {body:{
-            email, firstName, preview: text.slice(0,140), context:'chat-to-student'
+            email, firstName, preview: text.slice(0,140), context:'chat-to-student',
+            senderName: (currentManager()||{}).name || ''
           }});
         }catch(err){ console.error('Échec envoi courriel de notification (message étudiant):', err); }
       } catch(err){
@@ -12650,7 +12652,8 @@
           email, firstName,
           stickerName: sticker ? sticker.name : 'Autocollant K-OSS',
           stickerImage: sticker ? sticker.image : null,
-          message
+          message,
+          senderName: (currentManager()||{}).name || ''
         }});
       }catch(err){ console.error('Échec envoi courriel autocollant:', err); }
     }
@@ -12696,7 +12699,8 @@
           if(fm) firstName = (fm.name||'').split(' ')[0] || fm.name;
         }
         sb.functions.invoke('koss-send-message-notification', {body:{
-          email, firstName, preview: text.slice(0,140), context:'note'
+          email, firstName, preview: text.slice(0,140), context:'note',
+          senderName: (currentManager()||{}).name || ''
         }});
       }catch(err){ console.error('Échec envoi courriel de notification (note):', err); }
     }
