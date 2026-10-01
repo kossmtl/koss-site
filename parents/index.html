@@ -14,18 +14,21 @@
 @font-face{font-family:'Aestetico';src:url('../fonts/aestetico-500.otf') format('opentype');font-weight:500;font-display:swap;}
 @font-face{font-family:'Aestetico';src:url('../fonts/aestetico-400.otf') format('opentype');font-weight:400;font-display:swap;}
 *{box-sizing:border-box;margin:0;padding:0;} html{scroll-behavior:smooth;}
-body{font-family:'Aestetico',sans-serif;font-weight:400;line-height:1.65;font-size:16px;-webkit-font-smoothing:antialiased;background:#FBFAF7;color:#222;}
+body{font-family:'Aestetico',sans-serif;font-weight:400;line-height:1.65;font-size:16px;-webkit-font-smoothing:antialiased;background:#1B1C20;color:#222;}
 a{color:inherit;}
 .inner{max-width:760px;margin:0 auto;padding:0 24px;}
+/* Colonne centrale : sur grand écran, les côtés restent sombres */
+.page{max-width:960px;margin:0 auto;box-shadow:0 0 0 1px rgba(255,255,255,.06),0 0 70px rgba(0,0,0,.45);}
 
 /* Bannières d'annulation — cadre corail, fond rouge sourd comme dans l'app */
-.alerts{background:#25262B;padding:14px 16px 4px;}
+.alerts{background:#1B1C20;padding:14px 16px 4px;}
 .alerts:not(:has(.alert)){display:none;}
-.alerts .alert{max-width:880px;margin:0 auto 10px;border:3px solid #E2725B;background:linear-gradient(rgba(226,114,91,.22),rgba(226,114,91,.22)),#28292E;color:#FFFBF8;text-align:center;padding:14px 22px;line-height:1.5;font-size:15px;}
-.alerts .alert .k{display:block;font-weight:800;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:#E2725B;margin-bottom:4px;}
+.alerts .alert{max-width:880px;margin:0 auto 10px;border:3px solid #E2725B;background:linear-gradient(rgba(226,114,91,.22),rgba(226,114,91,.22)),#28292E;color:#FFFBF8;text-align:center;padding:15px 22px;line-height:1.5;font-size:15px;}
+.alerts .alert .l1{font-size:16px;margin-bottom:2px;} .alerts .alert .l1 strong{color:#E2725B;}
+.alerts .alert .l2{font-size:15px;}
 .alerts .alert strong{font-weight:800;}
 
-.top{padding:34px 0 8px;} .top header{display:flex;justify-content:space-between;align-items:baseline;} .logo{font-weight:800;font-size:18px;} .top header span{font-size:13px;color:#777;}
+.top{background:#FBFAF7;padding:34px 0 8px;} .top header{display:flex;justify-content:space-between;align-items:baseline;} .logo{font-weight:800;font-size:18px;} .top header span{font-size:13px;color:#777;}
 h1{font-weight:500;font-size:40px;line-height:1.12;margin:56px 0 10px;letter-spacing:-.015em;} .sub{color:#777;font-size:15px;padding-bottom:46px;}
 
 .band{scroll-margin-top:0;}
@@ -63,10 +66,12 @@ footer{background:#FBFAF7;border-top:1px solid #E4DFD5;padding:34px 0 60px;font-
 <!-- Annulations : les bannières des cours d'enfants annulés dans l'app s'ajoutent ici automatiquement (voir le script en bas). Cette bannière manuelle sert de secours : elle disparaît le lendemain de data-until, ou dès que l'app annonce la même date (data-date). -->
 <div class="alerts" aria-live="polite">
   <div class="alert" data-until="2026-10-03" data-date="2026-10-03">
-    <span class="k">Cours annulé</span><strong>Samedi 3 octobre :</strong> le cours est annulé en raison de la compétition au centre Pierre-Charbonneau. Retour lundi 5 octobre.
+    <div class="l1"><strong>Samedi 3 octobre :</strong> Kids Essentials (10 h)</div>
+    <div class="l2">Cours annulé en raison de la compétition au centre Pierre-Charbonneau.</div>
   </div>
 </div>
 
+<div class="page">
 <div class="top"><div class="inner">
   <header><div class="logo">K-OSS</div><span>Cours d'enfants</span></header>
   <h1>Informations pour les parents</h1>
@@ -152,6 +157,7 @@ footer{background:#FBFAF7;border-top:1px solid #E4DFD5;padding:34px 0 60px;font-
 </div></details></section>
 
 <footer><div class="inner"><span>K-OSS Jiu-Jitsu · Villeray, Montréal</span><span><a href="mailto:kossmtl@gmail.com" data-field-href="courriel" data-field-href-type="mailto" data-field="courriel">kossmtl@gmail.com</a> · <a href="tel:4388699187" data-field-href="telephone" data-field-href-type="tel" data-field="telephone">438-869-9187</a></span></div></footer>
+</div>
 
 <script src="../site-data.js"></script>
 <script>
@@ -178,6 +184,8 @@ footer{background:#FBFAF7;border-top:1px solid #E4DFD5;padding:34px 0 60px;font-
 
     function addDays(iso,n){ var d=new Date(iso+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
     function dow(iso){ return (new Date(iso+'T12:00:00Z').getUTCDay()+6)%7; } /* 0 = lundi ... 6 = dimanche, comme dans l'app */
+    /* 2e ligne = exactement la « Raison de l'annulation » écrite dans l'app (« Cours annulé. » si vide). */
+    function sentence(raw){ var t=String(raw||'').trim(); return t ? t : 'Cours annulé.'; }
     function fmtDate(iso){
       var t=new Intl.DateTimeFormat('fr-CA',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(iso+'T12:00:00Z'));
       return t.charAt(0).toUpperCase()+t.slice(1);
@@ -223,16 +231,20 @@ footer{background:#FBFAF7;border-top:1px solid #E4DFD5;padding:34px 0 60px;font-
 
           var a=el('div','alert');
           a.setAttribute('data-live','1');
-          a.appendChild(el('span','k',many?'Cours annulés':'Cours annulé'));
-          a.appendChild(el('strong',null,fmtDate(date)+' : '));
-          a.appendChild(document.createTextNode((many?'les cours ':'le cours ')+names.join(' et ')+(many?' sont annulés.':' est annulé.')));
 
+          /* ligne 1 : « Samedi 3 octobre : Kids Essentials (10 h) » */
+          var l1=el('div','l1');
+          l1.appendChild(el('strong',null,fmtDate(date)+' : '));
+          l1.appendChild(document.createTextNode(names.join(' et ')));
+          a.appendChild(l1);
+
+          /* ligne 2 : « Cours annulé en raison de … » (la raison écrite dans l'app) */
           var reasons=ids.map(function(id){ return notes[id+'|'+date]||''; });
-          var uniq=reasons.filter(function(r,i){ return r && reasons.indexOf(r)===i; });
-          if(uniq.length===1 && reasons.every(function(r){ return r===uniq[0]; })){
-            a.appendChild(document.createTextNode(' Raison : '+uniq[0]));
-          } else if(uniq.length){
-            ids.forEach(function(id,i){ if(reasons[i]) a.appendChild(document.createTextNode(' '+classes[id].name+' — '+reasons[i])); });
+          var allSame=reasons.every(function(r){ return r===reasons[0]; });
+          if(allSame){
+            a.appendChild(el('div','l2',sentence(reasons[0])));
+          } else {
+            ids.forEach(function(id,i){ a.appendChild(el('div','l2',classes[id].name+' — '+sentence(reasons[i]))); });
           }
           box.insertBefore(a,first);
         });
