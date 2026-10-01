@@ -6177,11 +6177,12 @@
       `)}
 
       ${adminCard('advanced-reports', 'Rapports', `
-        <p class="muted" style="color:var(--chalk-dim);">Ventes, conversions intro-BJJ et présence.</p>
+        <p class="muted" style="color:var(--chalk-dim);">Ventes, conversions intro-BJJ, présence et listes de courriels.</p>
         <div class="btn-row" style="margin-top:0;">
           <button class="btn btn-secondary" data-action="open-sales-report">Rapport de ventes</button>
           <button class="btn btn-secondary" data-action="open-intro-report">Conversions intro → abonnement</button>
           <button class="btn btn-secondary" data-action="open-noshow-report">Rapport de présence</button>
+          <button class="btn btn-secondary" data-action="open-email-report">Listes de courriels</button>
         </div>
       `)}
 
@@ -6745,6 +6746,33 @@
           </div>
         `;
       }
+    } else if(m.type === 'email-report'){
+      const p = m.payload || {};
+      const months = p.months || '6';
+      const mk = (id, list)=>`
+        <textarea id="${id}" readonly rows="5" style="width:100%;font-size:13px;" onclick="this.select()">${escapeHtml(list.join(', '))}</textarea>`;
+      html = `
+        <div class="modal" style="max-width:90vw;width:640px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Listes de courriels</h3>
+          <p class="muted">Personnes ayant une réservation confirmée dans la période (sans doublons, prêt à coller dans le champ Cci).</p>
+          <label>Réservations depuis</label>
+          <select id="er-months">
+            <option value="1" ${months==='1'?'selected':''}>Le dernier mois</option>
+            <option value="3" ${months==='3'?'selected':''}>Les 3 derniers mois</option>
+            <option value="6" ${months==='6'?'selected':''}>Les 6 derniers mois</option>
+            <option value="12" ${months==='12'?'selected':''}>Les 12 derniers mois</option>
+          </select>
+          <div class="btn-row" style="margin-top:8px;"><button class="btn btn-secondary" data-action="run-email-report">Actualiser</button></div>
+          <h4 style="margin:16px 0 4px;">👨‍👩‍👧 Parents (${(p.parents||[]).length}) — réservations faites pour un enfant</h4>
+          ${mk('er-parents', p.parents||[])}
+          <div class="btn-row" style="margin-top:6px;"><button class="btn btn-primary" data-action="copy-email-list" data-target="er-parents">Copier les courriels des parents</button></div>
+          <h4 style="margin:16px 0 4px;">🥋 Étudiants (${(p.students||[]).length}) — réservations faites pour eux-mêmes</h4>
+          ${mk('er-students', p.students||[])}
+          <div class="btn-row" style="margin-top:6px;"><button class="btn btn-primary" data-action="copy-email-list" data-target="er-students">Copier les courriels des étudiants</button></div>
+          <div class="btn-row"><button class="btn btn-primary" data-action="download-email-report-csv">Télécharger (CSV) avec les noms</button><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
+        </div>
+      `;
     } else if(m.type === 'noshow-report'){
       const p = m.payload || {};
       if(p.results){
@@ -11041,6 +11069,53 @@
         ['studentName','email','introDate','nextPlanName','visitCount','topClass'],
         {studentName:'Étudiant', email:'Courriel', introDate:'Date intro', nextPlanName:'Abonnement suivant', visitCount:'Nb présences', topClass:'Cours le plus visité'},
         rows);
+    }
+    else if(action==='open-email-report' || action==='run-email-report'){
+      const sel = document.getElementById('er-months');
+      const months = (action==='run-email-report' && sel) ? sel.value : '6';
+      const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - parseInt(months,10));
+      const cutoffIso = isoDate(cutoff);
+      const parents = new Map(), students = new Map();
+      (state.data.bookings||[]).forEach(b=>{
+        if(b.status!=='confirmee' || !b.studentEmail || !b.dateIso || b.dateIso < cutoffIso) return;
+        const email = String(b.studentEmail).trim();
+        if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || /@example\.com$/i.test(email)) return;
+        const key = email.toLowerCase();
+        const map = b.profileId ? parents : students;
+        let r = map.get(key);
+        if(!r){
+          const acct = findStudentAccount(email);
+          r = {type: b.profileId ? 'Parent' : 'Étudiant', name: (acct&&acct.name) || (b.profileId ? '' : (b.studentName||'')), email, kids: new Set(), count:0, last:''};
+          map.set(key, r);
+        }
+        r.count++;
+        if(b.dateIso > r.last) r.last = b.dateIso;
+        if(b.profileId){
+          const acct = findStudentAccount(email);
+          const f = acct ? (acct.familyMembers||[]).find(x=>x.id===b.profileId) : null;
+          r.kids.add((f&&f.name) || b.studentName || '');
+        }
+      });
+      const sortRows = m=>[...m.values()].sort((a,b)=>a.email.toLowerCase().localeCompare(b.email.toLowerCase()))
+        .map(r=>({type:r.type, name:r.name, email:r.email, kids:[...r.kids].filter(Boolean).join(' ; '), count:r.count, last:r.last}));
+      const pRows = sortRows(parents), sRows = sortRows(students);
+      state.modal = {type:'email-report', payload:{months, parents:pRows.map(r=>r.email), students:sRows.map(r=>r.email), rows:pRows.concat(sRows)}};
+      render();
+    }
+    else if(action==='download-email-report-csv'){
+      const pl = state.modal.payload;
+      downloadCsv(`courriels-${pl.months}-mois-${todayIso()}.csv`,
+        ['type','name','email','kids','count','last'],
+        {type:'Type', name:'Nom', email:'Courriel', kids:'Enfant(s)', count:'Nb réservations', last:'Dernière réservation'},
+        pl.rows||[]);
+    }
+    else if(action==='copy-email-list'){
+      const ta = document.getElementById(e.currentTarget.dataset.target);
+      const txt = ta ? ta.value : '';
+      if(!txt){ showToast('Liste vide.'); }
+      else if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(txt).then(()=>showToast('Courriels copiés !')).catch(()=>{ ta.select(); showToast('Sélectionné — copie avec Ctrl/Cmd+C.'); });
+      } else { ta.select(); showToast('Sélectionné — copie avec Ctrl/Cmd+C.'); }
     }
     else if(action==='open-noshow-report'){
       const prev = (state.modal && state.modal.type==='noshow-report') ? state.modal.payload : null;
