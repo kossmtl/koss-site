@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Infos aux parents — K-OSS Jiu-Jitsu</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/icons/favicon-32x32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="color-scheme" content="dark">
+<style>
+  @font-face{font-family:'Aestetico';src:url('../fonts/aestetico-800.otf') format('opentype');font-weight:800;font-display:swap;}
+  @font-face{font-family:'Aestetico';src:url('../fonts/aestetico-600.otf') format('opentype');font-weight:600;font-display:swap;}
+  @font-face{font-family:'Aestetico';src:url('../fonts/aestetico-500.otf') format('opentype');font-weight:500;font-display:swap;}
+  @font-face{font-family:'Aestetico';src:url('../fonts/aestetico-400.otf') format('opentype');font-weight:400;font-display:swap;}
+  :root{
+    --paper:#FFFBF8; --paper-2:#E9E6D5; --tan:#DBC3A7; --sage:#AEBA8F; --deep:#384639; --ink:#28292E;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0;background-color:var(--ink);background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.96  0 0 0 0 0.9  0 0 0 0.2 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");color:var(--paper);font-family:'Aestetico',sans-serif;font-weight:400;line-height:1.6;font-size:17px;-webkit-font-smoothing:antialiased;}
+  a{color:inherit;}
+  .wrap{max-width:760px;margin:0 auto;padding:0 20px;}
+
+  /* En-tête */
+  .top{background:var(--deep);color:var(--paper);padding:22px 0 40px;}
+  .brand{font-weight:800;font-size:22px;letter-spacing:0.02em;}
+  .eyebrow{font-weight:500;font-size:13px;color:var(--sage);letter-spacing:0.15em;text-transform:uppercase;margin:44px 0 14px;}
+  h1{font-weight:800;font-size:clamp(40px,9vw,72px);line-height:0.9;text-transform:uppercase;margin:0;}
+  h1 span{color:var(--tan);}
+  .updated{margin-top:18px;font-weight:500;font-size:13px;color:var(--tan);letter-spacing:0.05em;}
+
+  /* Navigation par sujets */
+  .topics{position:sticky;top:0;z-index:5;background:var(--paper-2);border-bottom:2px solid var(--ink);}
+  .topics .wrap{display:flex;gap:8px;overflow-x:auto;padding:12px 20px;scrollbar-width:none;}
+  .topics .wrap::-webkit-scrollbar{display:none;}
+  .topics a{flex:none;text-decoration:none;font-weight:600;font-size:13px;letter-spacing:0.06em;text-transform:uppercase;border:1.5px solid var(--ink);color:var(--ink);padding:8px 14px;white-space:nowrap;}
+  
+  .topics a:hover{background:var(--deep);color:var(--paper);border-color:var(--deep);}
+  @media (min-width:700px){.topics .wrap{max-width:900px;justify-content:center;}.topics a{font-size:12px;padding:8px 12px;}}
+  section[id]{scroll-margin-top:70px;}
+
+
+  /* À lire obligatoirement */
+  .must{border:2px solid var(--tan);background:rgba(219,195,167,0.12);padding:22px 24px;margin:6px 0 10px;}
+  .must .tag{display:inline-block;background:var(--tan);color:var(--ink);font-weight:800;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;padding:5px 10px;margin-bottom:12px;}
+  .must p{margin:0 0 12px;}
+  .must ul{margin:0 0 14px;}
+  .btn-accept{display:inline-block;background:var(--tan);color:var(--ink);font-weight:800;font-size:14px;letter-spacing:0.06em;text-transform:uppercase;text-decoration:none;padding:14px 22px;margin-top:4px;}
+  .btn-accept:hover{background:var(--sage);}
+  .must-end{margin-top:30px;}
+  .topics a.must-link{background:var(--tan);}
+
+  /* Étapes numérotées */
+  .steps{list-style:none;counter-reset:step;padding:0;margin:16px 0 18px;}
+  .steps li{counter-increment:step;position:relative;padding:14px 16px 14px 62px;margin:0 0 10px;border:1px solid rgba(255,251,248,0.25);background:rgba(255,251,248,0.05);}
+  .steps li::before{content:counter(step);position:absolute;left:14px;top:12px;width:34px;height:34px;background:var(--tan);color:var(--ink);font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;}
+  .steps li a{font-weight:800;}
+  .warn{border-left:4px solid var(--tan);background:rgba(219,195,167,0.12);padding:16px 20px;margin:18px 0;}
+  .warn strong.k{display:block;font-weight:800;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:var(--tan);margin-bottom:6px;}
+  .warn p{margin:0;}
+
+  /* Bannière d'annulation — même rouge (corail #E2725B) que les bannières de l'application */
+  .alerts .alert{background:linear-gradient(rgba(226,114,91,0.22),rgba(226,114,91,0.22)),var(--ink);color:var(--paper);border-bottom:1.5px solid #E2725B;text-align:center;padding:14px 20px;line-height:1.5;font-size:15px;}
+  .alerts .alert + .alert{border-top:0;}
+  .alerts .alert .k{display:block;font-weight:800;font-size:15px;letter-spacing:0.08em;text-transform:uppercase;color:#E2725B;margin-bottom:4px;}
+  .alerts .alert strong{font-weight:800;}
+
+  /* Sections */
+  main{padding:8px 0 40px;}
+  .index{font-weight:600;font-size:13px;color:var(--tan);letter-spacing:0.1em;text-transform:uppercase;margin:44px 0 6px;}
+  h2{font-weight:800;font-size:clamp(26px,5vw,34px);line-height:1;text-transform:uppercase;margin:0 0 18px;}
+  h3{font-weight:600;font-size:16px;letter-spacing:0.06em;text-transform:uppercase;margin:28px 0 6px;color:var(--sage);}
+  p{margin:0 0 14px;}
+  ul{margin:0 0 14px;padding-left:20px;}
+  li{margin-bottom:8px;}
+
+  /* Nouvelles */
+  .news{display:grid;gap:14px;margin-top:6px;}
+  .news-card{border:2px solid rgba(255,251,248,0.7);padding:20px 22px;background:rgba(255,251,248,0.05);}
+  .news-card.alert{background:var(--tan);color:var(--ink);border-color:var(--tan);}
+  .news-date{font-weight:800;font-size:13px;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px;}
+  .news-title{font-weight:800;font-size:24px;line-height:1.05;text-transform:uppercase;margin:0 0 10px;}
+  .news-card p{margin:0 0 10px;}
+  .news-card p:last-child{margin:0;}
+
+  /* Tarifs kimono */
+  .gi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:16px 0;}
+  .gi-item{border:1px solid rgba(255,251,248,0.25);padding:14px 16px;background:rgba(255,251,248,0.05);}
+  .gi-item .lbl{font-weight:600;font-size:12px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sage);}
+  .gi-item .val{font-weight:800;font-size:26px;line-height:1.1;}
+  .gi-item .sub{font-size:14px;line-height:1.35;margin-top:4px;}
+  .deadline{background:var(--deep);color:var(--paper);padding:16px 20px;margin:16px 0;border-left:4px solid var(--tan);}
+  .deadline strong{color:var(--tan);}
+
+  hr{border:0;border-top:1px dashed rgba(255,251,248,0.28);margin:36px 0 0;}
+
+  /* Contact */
+  .contact{background:rgba(0,0,0,0.28);border-top:1px solid rgba(255,251,248,0.12);padding:26px 0 36px;margin-top:20px;}
+  .contact .row{display:flex;gap:40px;flex-wrap:wrap;margin-top:8px;}
+  .contact .k{font-weight:600;font-size:12px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sage);}
+  .contact a{font-weight:800;font-size:20px;text-decoration:none;}
+  footer{background:rgba(0,0,0,0.4);color:var(--tan);text-align:center;font-weight:500;font-size:13px;letter-spacing:0.08em;padding:22px 20px;}
+
+  @media (max-width:520px){
+    body{font-size:16px;}
+    .gi-grid{grid-template-columns:1fr;}
+    .contact .row{gap:20px;}
+  }
+</style>
+</head>
+<body>
+
+<!-- Annulations : chaque bannière disparaît le lendemain de la date indiquée dans data-until (AAAA-MM-JJ) -->
+<div class="alerts" aria-live="polite">
+  <div class="alert" data-until="2026-10-03">
+    <span class="k">Cours annulé</span><strong>Samedi 3 octobre :</strong> le cours est annulé en raison de la compétition au centre Pierre-Charbonneau. Retour lundi 5 octobre.
+  </div>
+</div>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">K-OSS</div>
+    <div class="eyebrow">Cours d'enfants</div>
+    <h1>Infos aux <span>parents</span></h1>
+    <div class="updated">Mis à jour le 1er octobre 2026</div>
+  </div>
+</header>
+
+<nav class="topics" aria-label="Sujets">
+  <div class="wrap">
+    <a class="must-link" href="#obligatoire">À lire obligatoirement</a>
+    <a href="#mindbody">À faire avant le 15 octobre</a>
+    <a href="#gi">Le retour des cours en kimono</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<section id="obligatoire">
+  <div class="index">01 — À lire obligatoirement</div>
+  <h2>Informations importantes — cours d'enfants</h2>
+
+  <div class="must">
+    <span class="tag">À lire une seule fois</span>
+    <p>Cette page contient beaucoup d'informations, j'en conviens. Je vous prie de la lire à tête reposée, <strong>une seule fois</strong>.</p>
+    <p style="margin:0;">Les instructions pour confirmer que vous acceptez ces conditions se trouvent à la toute fin de cette section.</p>
+  </div>
+
+  <p style="margin-top:22px;">Chers parents, je tiens tout d'abord à vous remercier pour votre confiance.</p>
+  <p>Je débute en vous disant que vos enfants seront traités comme les miens lors de chacune de leurs visites. En revanche, afin de pouvoir leur accorder toute l'attention que chacun d'entre eux mérite en fonction de leurs besoins respectifs, j'aurai besoin de votre aide et de votre entière collaboration.</p>
+  <p>Voici donc un petit aide-mémoire pour nous aider à bien collaborer.</p>
+
+  <h3>Inscription et présence</h3>
+  <ul>
+    <li>Vous devez impérativement inscrire vos enfants sur l'<a href="https://kossmtl.ca/app/" target="_blank" rel="noopener">application de réservation K-OSS</a> avant chaque cours. Les enfants non-inscrits ne pourront pas participer au cours.</li>
+    <li>Si, 30 minutes avant le cours, il n'y a qu'un seul enfant d'inscrit, le cours sera annulé et vous en serez avisés. Si tel est le cas, soyez rassurés : votre abonnement sera prolongé d'une semaine.</li>
+  </ul>
+
+  <h3>Arrivée et vestiaire</h3>
+  <ul>
+    <li>Vous devez toujours utiliser la porte de devant. Elle sera débarrée 15 minutes avant le cours.</li>
+    <li>Dès votre arrivée, tout le monde doit enlever ses chaussures/bottes avant de quitter les tapis d'entrée. Rangez les chaussures/bottes sous les bancs.</li>
+    <li>Merci de passer au vestiaire à l'arrière pour déshabiller vos enfants et ranger leurs vêtements dans un casier.</li>
+    <li>Vous, parents, pouvez accrocher vos manteaux dans le vestiaire de l'entrée du café. Je répète : seulement les manteaux des parents qui restent dans la portion café pendant le cours doivent être accrochés dans le vestiaire du café.</li>
+    <li>Lors de votre départ, habillez vos enfants hors des tapis d'entrée svp, et quittez toujours par la porte du café même si la porte de côté est débarrée.</li>
+  </ul>
+
+  <h3>Nourriture</h3>
+  <p>Aucune nourriture n'est autorisée à l'intérieur de l'espace Jiu-Jitsu. Il est d'ailleurs préférable que vos enfants aient mangé avant le cours.</p>
+  <p>Exceptionnellement, si vous n'avez pas eu le temps de leur donner leur collation, vous pourrez le faire dans l'espace café. Exceptionnellement !</p>
+
+  <h3>Toilettes et hygiène</h3>
+  <p>Vos enfants doivent aussi aller aux toilettes avant de commencer le cours. J'insiste sur ce point et sur celui qui vient : je vous invite à aller aux toilettes avec eux afin de leur apprendre les règles d'hygiène de base (ou à vérifier après leur passage pour les plus grands).</p>
+  <p>Comme c'est ma fille et moi qui nettoyons les toilettes, nous vous demandons votre entière collaboration afin de les garder propres. Pas de pipi sur la toilette ni à côté. Si votre enfant fait un dégât, c'est à vous de l'encourager à ramasser derrière lui. Votre enfant doit aussi se laver les mains avant de quitter la salle de bain. Le papier à main doit être jeté dans la poubelle, pas à côté et surtout jamais dans les toilettes.</p>
+  <p>Comme je disais au début, vos enfants seront traités comme les miens, et je n'ai jamais nettoyé la salle de bain derrière ceux-ci. Ils ont appris très tôt à ramasser leurs dégâts et ils ont réussi. Comme mes enfants ne sont ni plus ni moins intelligents que les vôtres, je suis confiante que vous pourrez leur apprendre à laisser nos toilettes propres.</p>
+  <p>Merci de faire un suivi avec eux de façon sporadique sur la propreté des toilettes.</p>
+
+  <h3>Présence des parents pendant le cours</h3>
+  <ul>
+    <li>Vous êtes fortement encouragés à quitter pendant le cours, du moins jusqu'à ce que j'aie réussi à établir une relation de confiance avec votre (vos) enfant(s). Il est plus facile pour moi d'interagir avec eux sans la présence des parents — je peux ainsi voir les réels défis auxquels nous serons confrontés dans l'avenir. Sachez que vos enfants sont toujours plus autonomes et plus matures lorsque vous êtes absents. Lorsque nous aurons établi une routine qui fonctionne, je vous en informerai et vous pourrez rester dans la section café. Merci de garder l'espace café propre et de ramasser avant de quitter.</li>
+    <li>Vous ne pouvez par contre pas rester avec d'autres enfants en bas âge, ceci pourrait perturber le cours.</li>
+    <li>Je vous demande d'ailleurs de ne pas déranger le cours et de ne pas intervenir pendant celui-ci. Si mes méthodes d'enseignement ou d'intervention ne vous conviennent pas, nous en parlerons en privé à la fin du cours, lorsque tout le monde aura quitté.</li>
+    <li>J'aimerais aussi que, lorsque je m'adresse à votre enfant, vous ne lui parliez pas en même temps. Essayons, ensemble, de ne pas le submerger d'informations.</li>
+  </ul>
+
+  <h3>Communication</h3>
+  <p>Je tiens à vous assurer que j'ai pleinement confiance en ma capacité à garder le contrôle de ma classe sans votre aide. Par contre, soyez rassurés : vous serez toujours informés sporadiquement de la progression de vos enfants. Je vous aviserai de la façon dont ils se comportent en classe et vous serez aussi informés des méthodes que j'utilise avec eux afin de les aider à vivre une expérience de Jiu-Jitsu positive. Et si jamais j'ai besoin que nous travaillions ensemble sur des sujets en particulier, je vous en ferai part. N'ayez crainte, toute situation qui mérite votre attention vous sera communiquée. Pour le reste, partez la conscience tranquille, je m'en occupe.</p>
+  <p>Ceci étant dit, n'hésitez jamais, vous aussi, à me fournir toute information que vous jugez pertinente au sujet de vos enfants.</p>
+  <p>J'en profite pour vous dire que ma porte est toujours ouverte en cas de besoin. Vous faites désormais partie de la grande famille K-OSS, et notre communauté se soutient mutuellement.</p>
+  <p>N'hésitez pas à m'écrire ou à venir me voir pour toute question ou commentaire.</p>
+
+  <h3>Informations pour les uniformes (GI)</h3>
+  <p>Vous devez vous procurer un kimono (GI) pour votre enfant. Les dates, les tarifs, la consigne et la location sont dans la section « <a href="#gi">Le retour des cours en kimono</a> » plus bas.</p>
+
+  <h3>Informations sur les types de cours</h3>
+  <p>Deux types de cours sont affichés sur l'horaire : Skills et Essentials.</p>
+  <p>Essentials couvre les concepts de base de façon large et simple, pour bien comprendre les fondations du Jiu-Jitsu. Skills, c'est plus pointu : on prend un seul mouvement ou une seule position et on le travaille en profondeur. Les classes de Skills contiennent donc plus d'indications et de contraintes au niveau des jeux et des objectifs attendus, c'est pourquoi il est réservé en priorité aux enfants de plus de 8 ans d'âge et de plus de 6 mois d'expérience de Jiu-Jitsu.</p>
+  <p>Les enfants de plus de 8 ans d'âge et de plus de 6 mois d'expérience de Jiu-Jitsu peuvent donc participer à tous les cours. Les enfants pour qui ces critères ne sont pas encore atteints sont encouragés à venir les mercredis et samedis au cours d'Essentials. Ceci étant dit, si votre enfant a moins de 8 ans, vous devez communiquer avec moi. Je vous indiquerai s'il ou elle peut participer au cours de Skills du lundi. Je peux faire des exceptions en fonction du niveau de jiu-jitsu et du niveau de compréhension de chaque enfant.</p>
+
+  <h3>Informations pour les cahiers de progression</h3>
+  <p>Vous devez acheter un cahier de progression à votre enfant. Le prix du cahier est de 25 $. Ce prix inclut les ceintures lors de leur graduation et les autocollants qui seront remis à vos enfants tout au long de leur progression.</p>
+
+  <div class="must must-end">
+    <span class="tag">Dernière étape</span>
+    <p><strong>Pour que votre enfant puisse participer aux cours, vous devez m'envoyer un courriel indiquant que vous acceptez ces conditions.</strong> Dans ce courriel, merci d'inscrire :</p>
+    <ul>
+      <li>votre <strong>nom complet</strong>;</li>
+      <li>le <strong>nom complet</strong> de votre enfant (ou de chacun de vos enfants).</li>
+    </ul>
+    <a class="btn-accept" href="mailto:kossmtl@gmail.com?subject=J%27accepte%20les%20conditions%20%E2%80%94%20cours%20d%27enfants&body=Bonjour%20Am%C3%A9lie%2C%0A%0AJ%27ai%20lu%20les%20informations%20pour%20les%20cours%20d%27enfants%20et%20j%27accepte%20les%20conditions.%0A%0AMon%20nom%20complet%20%3A%20%0ANom%20complet%20de%20mon%20enfant%20%28ou%20de%20mes%20enfants%29%20%3A%20%0A%0AMerci%21">J'accepte les conditions — envoyer le courriel</a>
+    <p style="margin:12px 0 0;font-size:14px;">Ou écrivez-moi directement à <a href="mailto:kossmtl@gmail.com" data-field-href="courriel" data-field-href-type="mailto" data-field="courriel">kossmtl@gmail.com</a>.</p>
+  </div>
+</section>
+
+<hr>
+
+<section id="mindbody">
+  <div class="index">02 — À faire avant le 15 octobre</div>
+  <h2>Transfert de votre abonnement MINDBODY vers la nouvelle plateforme</h2>
+
+  <div class="deadline">
+    <strong>Important :</strong> sous peu, Mindbody ne sera plus utilisé pour réserver vos cours chez K-OSS. Nous passons à une nouvelle plateforme, et il est essentiel que vous <strong>transfériez votre compte avant la mi-octobre</strong> pour ne pas perdre votre abonnement.
+  </div>
+
+  <p>Voici comment faire, c'est simple :</p>
+
+  <ol class="steps">
+    <li>Créez-vous un nouveau compte sur notre nouvelle application : <a href="https://kossmtl.ca/app/" target="_blank" rel="noopener">https://kossmtl.ca/app/</a></li>
+    <li>Une fois votre compte créé, dans l'application, cliquez sur l'onglet « Bug et suggestions » en haut à droite et envoyez-moi un message disant : <strong>« Je me suis créé un compte, merci de transférer mon abonnement. »</strong></li>
+    <li>Prévoyez 24 h pour que le transfert de votre abonnement soit complété.</li>
+  </ol>
+
+  <a class="btn-accept" href="https://kossmtl.ca/app/" target="_blank" rel="noopener">Créer mon compte sur la nouvelle application</a>
+
+  <p style="margin-top:22px;">Après le transfert, vous devrez réserver vos cours et gérer vos abonnements directement sur la nouvelle plateforme. Votre compte K-OSS sur Mindbody sera ensuite désactivé.</p>
+
+  <div class="warn">
+    <strong class="k">Un point important</strong>
+    <p>Si, à la date de fermeture de K-OSS sur Mindbody (mi-octobre), vous n'avez pas transféré votre abonnement, il me sera malheureusement impossible de le récupérer par la suite. C'est une limitation de Mindbody sur laquelle je n'ai aucun contrôle.</p>
+  </div>
+
+  <p>Je compte donc sur votre collaboration pour effectuer ce transfert le plus tôt possible. N'hésitez pas à me contacter si vous avez des questions.</p>
+  <p>Merci beaucoup !</p>
+</section>
+
+<hr>
+
+<section id="gi">
+  <div class="index">03 — Le retour des cours en kimono</div>
+  <h2>Le retour des cours en kimono</h2>
+
+  <div class="news" style="margin-bottom:18px;">
+    <div class="news-card">
+      <div class="news-date">Lundi 5 octobre</div>
+      <div class="news-title">Retour des cours — avec kimono</div>
+      <p>Nous serons de retour lundi le 5 octobre. Les cours avec kimono (GI) reprendront à partir de cette date. Vous devez vous procurer un kimono pour votre enfant.</p>
+    </div>
+  </div>
+
+  <div class="deadline">
+    <strong>Vous avez jusqu'au 31 octobre</strong> pour vous procurer un kimono. D'ici là, les cours seront <strong>GI et NOGI</strong> (avec et sans kimono).
+  </div>
+
+  <p>J'ai des kimonos neufs et usagés à vendre, et je peux aussi vous en procurer un si vous préférez.</p>
+
+  <div class="gi-grid">
+    <div class="gi-item"><div class="lbl">Neuf</div><div class="val">≈ 100 $</div></div>
+    <div class="gi-item"><div class="lbl">Usagé</div><div class="val">≈ 60 $</div></div>
+    <div class="gi-item"><div class="lbl">Consigne</div><div class="sub">Rapportez un kimono usagé en bon état : crédit sur l'achat d'un autre kimono.</div></div>
+    <div class="gi-item"><div class="lbl">Location</div><div class="val">5 $</div><div class="sub">par cours</div></div>
+  </div>
+
+</section>
+
+</main>
+
+<section class="contact">
+  <div class="wrap">
+    <div class="index" style="margin-top:0">Des questions ?</div>
+    <div class="row">
+      <div><div class="k">Courriel</div><a href="mailto:kossmtl@gmail.com" data-field-href="courriel" data-field-href-type="mailto" data-field="courriel">kossmtl@gmail.com</a></div>
+      <div><div class="k">Téléphone</div><a href="tel:4388699187" data-field-href="telephone" data-field-href-type="tel" data-field="telephone">438-869-9187</a></div>
+    </div>
+  </div>
+</section>
+
+<footer>K-OSS Jiu-Jitsu · Villeray, Montréal</footer>
+
+<script src="../site-data.js"></script>
+<script>
+  /* Retire les bannières dont la date (data-until) est passée — selon l'heure de Montréal. */
+  (function(){
+    try{
+      var today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Toronto',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      document.querySelectorAll('.alerts [data-until]').forEach(function(el){
+        if(today>el.getAttribute('data-until')) el.parentNode.removeChild(el);
+      });
+    }catch(e){}
+  })();
+</script>
+</body>
+</html>
