@@ -4660,11 +4660,15 @@
     const c = getEffectiveClass(cRaw, dateIso);
     if(c.cancelled){
       if(c.hideFromSchedule) return '';
+      // S50 : la note « pour les étudiants » de la date sert de RAISON de l'annulation — elle est
+      // maintenant affichée sous « Annulé » (avant, elle n'apparaissait que sur les cours non annulés).
+      const reason = c.publicNote ? `<div style="margin-top:8px;background:rgba(226,114,91,0.12);border:1px solid rgba(226,114,91,0.5);border-radius:6px;padding:8px 10px;color:var(--chalk);font-size:12.5px;line-height:1.45;white-space:pre-wrap;">${escapeHtml(c.publicNote)}</div>` : '';
       return `
-        <div class="class-tile" style="opacity:.55;border-left-color:var(--border);">
-          <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">· ${categoryLabel(c.category)}</span></div>
+        <div class="class-tile" style="${reason ? 'border-left-color:var(--coral);' : 'opacity:.55;border-left-color:var(--border);'}">
+          <div class="class-time"${reason ? ' style="opacity:.7;"' : ''}>${c.time} <span style="color:var(--chalk);font-weight:700;">· ${categoryLabel(c.category)}</span></div>
           <div class="class-name" style="text-decoration:line-through;color:var(--chalk-dim);">${escapeHtml(c.name)}</div>
-          <div class="class-spots" style="color:var(--coral);">Annulé</div>
+          <div class="class-spots" style="color:var(--coral);${reason ? 'font-weight:600;' : ''}">Annulé</div>
+          ${reason}
         </div>
       `;
     }
@@ -6944,6 +6948,7 @@
             <h3>${escapeHtml(c.name)}</h3>
             <p class="muted">${formatFullClassDateTime(dateIso, c.time, c.durationMinutes)}</p>
             <p style="color:var(--coral);font-size:13px;">Ce cours est annulé pour cette date.</p>
+            ${c.publicNote ? `<p style="background:rgba(226,114,91,0.12);border:1px solid rgba(226,114,91,0.5);border-radius:8px;padding:9px 11px;color:var(--chalk);font-size:12.5px;line-height:1.45;white-space:pre-wrap;">${escapeHtml(c.publicNote)}</p>` : ''}
             <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
           </div>
         `;
@@ -7718,9 +7723,12 @@
           <label style="margin-top:10px;">Note sur ce cours</label>
           <textarea id="att-class-note" rows="2" placeholder="Note pour les gestionnaires...">${escapeHtml((()=>{ const cn0 = state.data.classNotes.find(n=>n.classId===classId && n.dateIso===dateIso); return (cn0 && !cn0.archived) ? (cn0.note||'') : ''; })())}</textarea>
           <div class="btn-row"><button class="btn btn-secondary" data-action="save-class-note" data-class="${classId}" data-date="${dateIso}">Enregistrer la note du cours</button></div>
+          ${(cancelledByRule || (ov&&ov.cancelled)) ? `
+          <label style="margin-top:14px;">Raison de l’annulation (${dateIso})</label>
+          <p class="muted" style="font-size:11px;margin-top:-2px;">Les étudiants la voient sous « Annulé » dans l’horaire, seulement pour cette date.</p>` : `
           <label style="margin-top:14px;">Note pour les étudiants (${dateIso})</label>
-          <p class="muted" style="font-size:11px;margin-top:-2px;">Visible dans la fenêtre de réservation, seulement pour cette date.</p>
-          <textarea id="ov-note" rows="2" placeholder="Ex. Ouvert aux nouveaux étudiants">${escapeHtml(ov&&ov.note?ov.note:'')}</textarea>
+          <p class="muted" style="font-size:11px;margin-top:-2px;">Visible dans la fenêtre de réservation, seulement pour cette date.</p>`}
+          <textarea id="ov-note" rows="2" placeholder="${(cancelledByRule || (ov&&ov.cancelled)) ? 'Ex. Le coach est malade ce soir. On se retrouve jeudi !' : 'Ex. Ouvert aux nouveaux étudiants'}">${escapeHtml(ov&&ov.note?ov.note:'')}</textarea>
           <div class="btn-row">
             <button class="btn btn-primary" data-action="save-class-public-note" data-class="${classId}" data-date="${dateIso}">Enregistrer la note</button>
             ${ov && ov.note ? `<button class="btn btn-secondary" data-action="clear-class-public-note" data-class="${classId}" data-date="${dateIso}">Retirer la note</button>` : ''}
