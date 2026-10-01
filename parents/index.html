@@ -8,147 +8,74 @@
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/icons/favicon-32x32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-<meta name="color-scheme" content="dark">
 <style>
-  @font-face{font-family:'Aestetico';src:url('../fonts/aestetico-800.otf') format('opentype');font-weight:800;font-display:swap;}
-  @font-face{font-family:'Aestetico';src:url('../fonts/aestetico-600.otf') format('opentype');font-weight:600;font-display:swap;}
-  @font-face{font-family:'Aestetico';src:url('../fonts/aestetico-500.otf') format('opentype');font-weight:500;font-display:swap;}
-  @font-face{font-family:'Aestetico';src:url('../fonts/aestetico-400.otf') format('opentype');font-weight:400;font-display:swap;}
-  :root{
-    --paper:#FFFBF8; --paper-2:#E9E6D5; --tan:#DBC3A7; --sage:#AEBA8F; --deep:#384639; --ink:#28292E;
-  }
-  *{box-sizing:border-box;}
-  html{scroll-behavior:smooth;}
-  body{margin:0;background-color:var(--ink);background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.96  0 0 0 0 0.9  0 0 0 0.2 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");color:var(--paper);font-family:'Aestetico',sans-serif;font-weight:400;line-height:1.6;font-size:17px;-webkit-font-smoothing:antialiased;}
-  a{color:inherit;}
-  .wrap{max-width:760px;margin:0 auto;padding:0 20px;}
+@font-face{font-family:'Aestetico';src:url('../fonts/aestetico-800.otf') format('opentype');font-weight:800;font-display:swap;}
+@font-face{font-family:'Aestetico';src:url('../fonts/aestetico-600.otf') format('opentype');font-weight:600;font-display:swap;}
+@font-face{font-family:'Aestetico';src:url('../fonts/aestetico-500.otf') format('opentype');font-weight:500;font-display:swap;}
+@font-face{font-family:'Aestetico';src:url('../fonts/aestetico-400.otf') format('opentype');font-weight:400;font-display:swap;}
+*{box-sizing:border-box;margin:0;padding:0;} html{scroll-behavior:smooth;}
+body{font-family:'Aestetico',sans-serif;font-weight:400;line-height:1.65;font-size:16px;-webkit-font-smoothing:antialiased;background:#FBFAF7;color:#222;}
+a{color:inherit;}
+.inner{max-width:760px;margin:0 auto;padding:0 24px;}
 
-  /* En-tête */
-  .top{background:var(--deep);color:var(--paper);padding:22px 0 40px;}
-  .brand{font-weight:800;font-size:22px;letter-spacing:0.02em;}
-  .eyebrow{font-weight:500;font-size:13px;color:var(--sage);letter-spacing:0.15em;text-transform:uppercase;margin:44px 0 14px;}
-  h1{font-weight:800;font-size:clamp(40px,9vw,72px);line-height:0.9;text-transform:uppercase;margin:0;}
-  h1 span{color:var(--tan);}
-  .updated{margin-top:18px;font-weight:500;font-size:13px;color:var(--tan);letter-spacing:0.05em;}
+/* Bannières d'annulation — cadre corail, fond rouge sourd comme dans l'app */
+.alerts{background:#25262B;padding:14px 16px 4px;}
+.alerts:not(:has(.alert)){display:none;}
+.alerts .alert{max-width:880px;margin:0 auto 10px;border:3px solid #E2725B;background:linear-gradient(rgba(226,114,91,.22),rgba(226,114,91,.22)),#28292E;color:#FFFBF8;text-align:center;padding:14px 22px;line-height:1.5;font-size:15px;}
+.alerts .alert .k{display:block;font-weight:800;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:#E2725B;margin-bottom:4px;}
+.alerts .alert strong{font-weight:800;}
 
-  /* Navigation par sujets */
-  .topics{position:sticky;top:0;z-index:5;background:var(--paper-2);border-bottom:2px solid var(--ink);}
-  .topics .wrap{display:flex;gap:8px;overflow-x:auto;padding:12px 20px;scrollbar-width:none;}
-  .topics .wrap::-webkit-scrollbar{display:none;}
-  .topics a{flex:none;text-decoration:none;font-weight:600;font-size:13px;letter-spacing:0.06em;text-transform:uppercase;border:1.5px solid var(--ink);color:var(--ink);padding:8px 14px;white-space:nowrap;}
-  
-  .topics a:hover{background:var(--deep);color:var(--paper);border-color:var(--deep);}
-  @media (min-width:700px){.topics .wrap{max-width:900px;justify-content:center;}.topics a{font-size:12px;padding:8px 12px;}}
-  section[id]{scroll-margin-top:70px;}
+.top{padding:34px 0 8px;} .top header{display:flex;justify-content:space-between;align-items:baseline;} .logo{font-weight:800;font-size:18px;} .top header span{font-size:13px;color:#777;}
+h1{font-weight:500;font-size:40px;line-height:1.12;margin:56px 0 10px;letter-spacing:-.015em;} .sub{color:#777;font-size:15px;padding-bottom:46px;}
 
+.band{scroll-margin-top:0;}
+.band summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:22px;padding:30px 24px;max-width:760px;margin:0 auto;} summary::-webkit-details-marker{display:none;}
+.n{font-size:13px;width:26px;opacity:.6;} .t{font-size:22px;font-weight:500;flex:1;line-height:1.3;}
+.chev{width:9px;height:9px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin-right:6px;} details[open] .chev{transform:rotate(-135deg);}
+.body{max-width:760px;margin:0 auto;padding:0 24px 50px 72px;}
+h3{font-size:15px;font-weight:600;margin:26px 0 6px;} p{margin-bottom:14px;} ul{padding-left:18px;margin-bottom:14px;} li{margin-bottom:8px;} .steps{padding-left:20px;margin-bottom:22px;} .steps li{margin-bottom:10px;}
 
-  /* À lire obligatoirement */
-  .must{border:2px solid var(--tan);background:rgba(219,195,167,0.12);padding:22px 24px;margin:6px 0 10px;}
-  .must .tag{display:inline-block;background:var(--tan);color:var(--ink);font-weight:800;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;padding:5px 10px;margin-bottom:12px;}
-  .must p{margin:0 0 12px;}
-  .must ul{margin:0 0 14px;}
-  .btn-accept{display:inline-block;background:var(--tan);color:var(--ink);font-weight:800;font-size:14px;letter-spacing:0.06em;text-transform:uppercase;text-decoration:none;padding:14px 22px;margin-top:4px;}
-  .btn-accept:hover{background:var(--sage);}
-  .must-end{margin-top:30px;}
-  .topics a.must-link{background:var(--tan);}
+.pale{background:#FBFAF7;color:#222;border-top:1px solid #E4DFD5;} .pale p,.pale li{color:#444;}
+.dark{background:#25262B;color:#E9E6D5;} .dark p,.dark li{color:#cfccbd;} .dark h3,.dark .t{color:#FFFBF8;}
 
-  /* Étapes numérotées */
-  .steps{list-style:none;counter-reset:step;padding:0;margin:16px 0 18px;}
-  .steps li{counter-increment:step;position:relative;padding:14px 16px 14px 62px;margin:0 0 10px;border:1px solid rgba(255,251,248,0.25);background:rgba(255,251,248,0.05);}
-  .steps li::before{content:counter(step);position:absolute;left:14px;top:12px;width:34px;height:34px;background:var(--tan);color:var(--ink);font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;}
-  .steps li a{font-weight:800;}
-  .warn{border-left:4px solid var(--tan);background:rgba(219,195,167,0.12);padding:16px 20px;margin:18px 0;}
-  .warn strong.k{display:block;font-weight:800;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:var(--tan);margin-bottom:6px;}
-  .warn p{margin:0;}
+.note{padding:16px 20px;margin:0 0 22px;font-size:15.5px;border-left:4px solid;} .note b{font-weight:800;}
+.pale .note.peach{background:#F6EBDD;border-color:#D4B28C;color:#4a3d2b;} .pale .note.sage{background:#E9EEDD;border-color:#8FA06F;color:#33402a;}
+.dark .note.peach{background:rgba(219,195,167,.13);border-color:#DBC3A7;color:#EADFCB;} .dark .note.sage{background:rgba(174,186,143,.15);border-color:#AEBA8F;color:#DDE5CC;}
+.dark .note b{color:#FFFBF8;}
 
-  /* Bannière d'annulation — même rouge (corail #E2725B) que les bannières de l'application */
-  .alerts .alert{background:linear-gradient(rgba(226,114,91,0.22),rgba(226,114,91,0.22)),var(--ink);color:var(--paper);border-bottom:1.5px solid #E2725B;text-align:center;padding:14px 20px;line-height:1.5;font-size:15px;}
-  .alerts .alert + .alert{border-top:0;}
-  .alerts .alert .k{display:block;font-weight:800;font-size:15px;letter-spacing:0.08em;text-transform:uppercase;color:#E2725B;margin-bottom:4px;}
-  .alerts .alert strong{font-weight:800;}
+.bigbtn{display:inline-flex;align-items:center;gap:12px;padding:17px 28px;font-weight:800;font-size:15.5px;letter-spacing:.02em;text-decoration:none;box-shadow:0 3px 0 rgba(0,0,0,.28);transition:transform .12s,box-shadow .12s;}
+.bigbtn:hover{transform:translateY(-1px);box-shadow:0 4px 0 rgba(0,0,0,.32);} .bigbtn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.3);}
+.bigbtn i{font-style:normal;font-size:20px;line-height:1;}
+.pale .bigbtn{background:#384639;color:#fff;} .dark .bigbtn{background:#DBC3A7;color:#25262B;}
+.action{margin-top:32px;padding:26px;display:flex;gap:26px;align-items:center;justify-content:space-between;flex-wrap:wrap;border:2px solid;}
+.dark .action{border-color:#DBC3A7;background:rgba(219,195,167,.07);} .pale .action{border-color:#384639;background:#F0F3EA;}
+.action .atext{flex:1;min-width:260px;} .step{display:inline-block;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;} .dark .step{color:#DBC3A7;} .pale .step{color:#384639;} .action p{margin:0;font-size:15.5px;} .dark .action b{color:#FFFBF8;}
 
-  /* Sections */
-  main{padding:8px 0 40px;}
-  .index{font-weight:600;font-size:13px;color:var(--tan);letter-spacing:0.1em;text-transform:uppercase;margin:44px 0 6px;}
-  h2{font-weight:800;font-size:clamp(26px,5vw,34px);line-height:1;text-transform:uppercase;margin:0 0 18px;}
-  h3{font-weight:600;font-size:16px;letter-spacing:0.06em;text-transform:uppercase;margin:28px 0 6px;color:var(--sage);}
-  p{margin:0 0 14px;}
-  ul{margin:0 0 14px;padding-left:20px;}
-  li{margin-bottom:8px;}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:6px;padding-top:18px;border-top:1px solid;} dt{font-size:12px;text-transform:uppercase;letter-spacing:.08em;opacity:.65;} dd{font-weight:500;font-size:20px;line-height:1.3;} .facts div:last-child dd{font-size:14px;}
+.dark .facts{border-color:#44454c;} .dark .facts dd{color:#FFFBF8;} .pale .facts{border-color:#DAD6CC;}
 
-  /* Nouvelles */
-  .news{display:grid;gap:14px;margin-top:6px;}
-  .news-card{border:2px solid rgba(255,251,248,0.7);padding:20px 22px;background:rgba(255,251,248,0.05);}
-  .news-card.alert{background:var(--tan);color:var(--ink);border-color:var(--tan);}
-  .news-date{font-weight:800;font-size:13px;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px;}
-  .news-title{font-weight:800;font-size:24px;line-height:1.05;text-transform:uppercase;margin:0 0 10px;}
-  .news-card p{margin:0 0 10px;}
-  .news-card p:last-child{margin:0;}
-
-  /* Tarifs kimono */
-  .gi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:16px 0;}
-  .gi-item{border:1px solid rgba(255,251,248,0.25);padding:14px 16px;background:rgba(255,251,248,0.05);}
-  .gi-item .lbl{font-weight:600;font-size:12px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sage);}
-  .gi-item .val{font-weight:800;font-size:26px;line-height:1.1;}
-  .gi-item .sub{font-size:14px;line-height:1.35;margin-top:4px;}
-  .deadline{background:var(--deep);color:var(--paper);padding:16px 20px;margin:16px 0;border-left:4px solid var(--tan);}
-  .deadline strong{color:var(--tan);}
-
-  hr{border:0;border-top:1px dashed rgba(255,251,248,0.28);margin:36px 0 0;}
-
-  /* Contact */
-  .contact{background:rgba(0,0,0,0.28);border-top:1px solid rgba(255,251,248,0.12);padding:26px 0 36px;margin-top:20px;}
-  .contact .row{display:flex;gap:40px;flex-wrap:wrap;margin-top:8px;}
-  .contact .k{font-weight:600;font-size:12px;letter-spacing:0.1em;text-transform:uppercase;color:var(--sage);}
-  .contact a{font-weight:800;font-size:20px;text-decoration:none;}
-  footer{background:rgba(0,0,0,0.4);color:var(--tan);text-align:center;font-weight:500;font-size:13px;letter-spacing:0.08em;padding:22px 20px;}
-
-  @media (max-width:520px){
-    body{font-size:16px;}
-    .gi-grid{grid-template-columns:1fr;}
-    .contact .row{gap:20px;}
-  }
+footer{background:#FBFAF7;border-top:1px solid #E4DFD5;padding:34px 0 60px;font-size:13.5px;color:#777;} footer .inner{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;} footer a{text-decoration:none;}
+@media (max-width:600px){h1{font-size:32px;} .body{padding:0 20px 40px 20px;} .band summary{gap:14px;padding:24px 20px;} .facts{grid-template-columns:1fr 1fr;} .bigbtn{width:100%;justify-content:space-between;} .t{font-size:19px;} .alerts{padding:12px 12px 2px;}}
 </style>
 </head>
 <body>
 
-<!-- Annulations : chaque bannière disparaît le lendemain de la date indiquée dans data-until (AAAA-MM-JJ) -->
+<!-- Annulations : les bannières des cours d'enfants annulés dans l'app s'ajoutent ici automatiquement (voir le script en bas). Cette bannière manuelle sert de secours : elle disparaît le lendemain de data-until, ou dès que l'app annonce la même date (data-date). -->
 <div class="alerts" aria-live="polite">
-  <div class="alert" data-until="2026-10-03">
+  <div class="alert" data-until="2026-10-03" data-date="2026-10-03">
     <span class="k">Cours annulé</span><strong>Samedi 3 octobre :</strong> le cours est annulé en raison de la compétition au centre Pierre-Charbonneau. Retour lundi 5 octobre.
   </div>
 </div>
 
-<header class="top">
-  <div class="wrap">
-    <div class="brand">K-OSS</div>
-    <div class="eyebrow">Cours d'enfants</div>
-    <h1>Infos aux <span>parents</span></h1>
-    <div class="updated">Mis à jour le 1er octobre 2026</div>
-  </div>
-</header>
+<div class="top"><div class="inner">
+  <header><div class="logo">K-OSS</div><span>Cours d'enfants</span></header>
+  <h1>Informations pour les parents</h1>
+  <div class="sub">Mis à jour le 1er octobre 2026</div>
+</div></div>
 
-<nav class="topics" aria-label="Sujets">
-  <div class="wrap">
-    <a class="must-link" href="#obligatoire">À lire obligatoirement</a>
-    <a href="#mindbody">À faire avant le 15 octobre</a>
-    <a href="#gi">Le retour des cours en kimono</a>
-  </div>
-</nav>
-
-<main class="wrap">
-
-<section id="obligatoire">
-  <div class="index">01 — À lire obligatoirement</div>
-  <h2>Informations importantes — cours d'enfants</h2>
-
-  <div class="must">
-    <span class="tag">À lire une seule fois</span>
-    <p>Cette page contient beaucoup d'informations, j'en conviens. Je vous prie de la lire à tête reposée, <strong>une seule fois</strong>.</p>
-    <p style="margin:0;">Les instructions pour confirmer que vous acceptez ces conditions se trouvent à la toute fin de cette section.</p>
-  </div>
-
-  <p style="margin-top:22px;">Chers parents, je tiens tout d'abord à vous remercier pour votre confiance.</p>
+<section class="band dark" id="obligatoire"><details open><summary><span class="n">01</span><span class="t">À lire obligatoirement</span><span class="chev"></span></summary><div class="body">
+<div class="note peach"><b>À lire une seule fois.</b> Cette page contient beaucoup d'informations, j'en conviens. Je vous prie de la lire à tête reposée, <b>une seule fois</b>. Les instructions pour confirmer que vous acceptez ces conditions se trouvent à la toute fin de cette section.</div>
+<p>Chers parents, je tiens tout d'abord à vous remercier pour votre confiance.</p>
   <p>Je débute en vous disant que vos enfants seront traités comme les miens lors de chacune de leurs visites. En revanche, afin de pouvoir leur accorder toute l'attention que chacun d'entre eux mérite en fonction de leurs besoins respectifs, j'aurai besoin de votre aide et de votre entière collaboration.</p>
   <p>Voici donc un petit aide-mémoire pour nous aider à bien collaborer.</p>
 
@@ -202,91 +129,29 @@
   <h3>Informations pour les cahiers de progression</h3>
   <p>Vous devez acheter un cahier de progression à votre enfant. Le prix du cahier est de 25 $. Ce prix inclut les ceintures lors de leur graduation et les autocollants qui seront remis à vos enfants tout au long de leur progression.</p>
 
-  <div class="must must-end">
-    <span class="tag">Dernière étape</span>
-    <p><strong>Pour que votre enfant puisse participer aux cours, vous devez m'envoyer un courriel indiquant que vous acceptez ces conditions.</strong> Dans ce courriel, merci d'inscrire :</p>
-    <ul>
-      <li>votre <strong>nom complet</strong>;</li>
-      <li>le <strong>nom complet</strong> de votre enfant (ou de chacun de vos enfants).</li>
-    </ul>
-    <a class="btn-accept" href="mailto:kossmtl@gmail.com?subject=J%27accepte%20les%20conditions%20%E2%80%94%20cours%20d%27enfants&body=Bonjour%20Am%C3%A9lie%2C%0A%0AJ%27ai%20lu%20les%20informations%20pour%20les%20cours%20d%27enfants%20et%20j%27accepte%20les%20conditions.%0A%0AMon%20nom%20complet%20%3A%20%0ANom%20complet%20de%20mon%20enfant%20%28ou%20de%20mes%20enfants%29%20%3A%20%0A%0AMerci%21">J'accepte les conditions — envoyer le courriel</a>
-    <p style="margin:12px 0 0;font-size:14px;">Ou écrivez-moi directement à <a href="mailto:kossmtl@gmail.com" data-field-href="courriel" data-field-href-type="mailto" data-field="courriel">kossmtl@gmail.com</a>.</p>
-  </div>
-</section>
+<div class="action"><div class="atext"><span class="step">Dernière étape</span><p><b>Pour que votre enfant puisse participer aux cours, vous devez m'envoyer un courriel indiquant que vous acceptez ces conditions.</b> Dans ce courriel, merci d'inscrire votre <b>nom complet</b> et le <b>nom complet</b> de votre enfant (ou de chacun de vos enfants).</p></div><a class="bigbtn" href="mailto:kossmtl@gmail.com?subject=J%27accepte%20les%20conditions%20%E2%80%94%20cours%20d%27enfants&body=Bonjour%20Am%C3%A9lie%2C%0A%0AJ%27ai%20lu%20les%20informations%20pour%20les%20cours%20d%27enfants%20et%20j%27accepte%20les%20conditions.%0A%0AMon%20nom%20complet%20%3A%20%0ANom%20complet%20de%20mon%20enfant%20%28ou%20de%20mes%20enfants%29%20%3A%20%0A%0AMerci%21">J'accepte les conditions <i>→</i></a></div>
+<p style="margin:16px 0 0;font-size:14px;">Ou écrivez-moi directement à <a href="mailto:kossmtl@gmail.com" data-field-href="courriel" data-field-href-type="mailto" data-field="courriel">kossmtl@gmail.com</a>.</p>
+</div></details></section>
+<section class="band pale" id="mindbody"><details><summary><span class="n">02</span><span class="t">Avant le 15 octobre : transfert de votre abonnement MINDBODY</span><span class="chev"></span></summary><div class="body">
+<p>Sous peu, Mindbody ne sera plus utilisé pour réserver vos cours chez K-OSS. Nous passons à une nouvelle plateforme, et il est essentiel que vous <b>transfériez votre compte avant la mi-octobre</b> pour ne pas perdre votre abonnement.</p>
+<p>Voici comment faire, c'est simple :</p>
+<ol class="steps"><li>Créez-vous un nouveau compte sur notre nouvelle application : <a href="https://kossmtl.ca/app/" target="_blank" rel="noopener">https://kossmtl.ca/app/</a></li>
+<li>Une fois votre compte créé, dans l'application, cliquez sur l'onglet « Bug et suggestions » en haut à droite et envoyez-moi un message disant : <b>« Je me suis créé un compte, merci de transférer mon abonnement. »</b></li>
+<li>Prévoyez 24 h pour que le transfert de votre abonnement soit complété.</li></ol>
+<a class="bigbtn" href="https://kossmtl.ca/app/" target="_blank" rel="noopener">Créer mon compte sur la nouvelle application <i>→</i></a>
+<p style="margin-top:26px;">Après le transfert, vous devrez réserver vos cours et gérer vos abonnements directement sur la nouvelle plateforme. Votre compte K-OSS sur Mindbody sera ensuite désactivé.</p>
+<div class="note peach"><b>Un point important.</b> Si, à la date de fermeture de K-OSS sur Mindbody (mi-octobre), vous n'avez pas transféré votre abonnement, il me sera malheureusement impossible de le récupérer par la suite. C'est une limitation de Mindbody sur laquelle je n'ai aucun contrôle.</div>
+<p>Je compte donc sur votre collaboration pour effectuer ce transfert le plus tôt possible. N'hésitez pas à me contacter si vous avez des questions.</p>
+<p>Merci beaucoup !</p>
+</div></details></section>
+<section class="band dark" id="gi"><details><summary><span class="n">03</span><span class="t">Le retour des cours en kimono</span><span class="chev"></span></summary><div class="body">
+<p>Nous serons de retour lundi le 5 octobre. Les cours avec kimono (GI) reprendront à partir de cette date. Vous devez vous procurer un kimono pour votre enfant.</p>
+<div class="note sage"><b>Vous avez jusqu'au 31 octobre</b> pour vous procurer un kimono. D'ici là, les cours seront GI et NOGI (avec et sans kimono).</div>
+<p>J'ai des kimonos neufs et usagés à vendre, et je peux aussi vous en procurer un si vous préférez.</p>
+<dl class="facts"><div><dt>Neuf</dt><dd>≈ 100 $</dd></div><div><dt>Usagé</dt><dd>≈ 60 $</dd></div><div><dt>Location</dt><dd>5 $ / cours</dd></div><div><dt>Consigne</dt><dd>Crédit sur l'achat d'un autre kimono si vous rapportez un usagé en bon état</dd></div></dl>
+</div></details></section>
 
-<hr>
-
-<section id="mindbody">
-  <div class="index">02 — À faire avant le 15 octobre</div>
-  <h2>Transfert de votre abonnement MINDBODY vers la nouvelle plateforme</h2>
-
-  <div class="deadline">
-    <strong>Important :</strong> sous peu, Mindbody ne sera plus utilisé pour réserver vos cours chez K-OSS. Nous passons à une nouvelle plateforme, et il est essentiel que vous <strong>transfériez votre compte avant la mi-octobre</strong> pour ne pas perdre votre abonnement.
-  </div>
-
-  <p>Voici comment faire, c'est simple :</p>
-
-  <ol class="steps">
-    <li>Créez-vous un nouveau compte sur notre nouvelle application : <a href="https://kossmtl.ca/app/" target="_blank" rel="noopener">https://kossmtl.ca/app/</a></li>
-    <li>Une fois votre compte créé, dans l'application, cliquez sur l'onglet « Bug et suggestions » en haut à droite et envoyez-moi un message disant : <strong>« Je me suis créé un compte, merci de transférer mon abonnement. »</strong></li>
-    <li>Prévoyez 24 h pour que le transfert de votre abonnement soit complété.</li>
-  </ol>
-
-  <a class="btn-accept" href="https://kossmtl.ca/app/" target="_blank" rel="noopener">Créer mon compte sur la nouvelle application</a>
-
-  <p style="margin-top:22px;">Après le transfert, vous devrez réserver vos cours et gérer vos abonnements directement sur la nouvelle plateforme. Votre compte K-OSS sur Mindbody sera ensuite désactivé.</p>
-
-  <div class="warn">
-    <strong class="k">Un point important</strong>
-    <p>Si, à la date de fermeture de K-OSS sur Mindbody (mi-octobre), vous n'avez pas transféré votre abonnement, il me sera malheureusement impossible de le récupérer par la suite. C'est une limitation de Mindbody sur laquelle je n'ai aucun contrôle.</p>
-  </div>
-
-  <p>Je compte donc sur votre collaboration pour effectuer ce transfert le plus tôt possible. N'hésitez pas à me contacter si vous avez des questions.</p>
-  <p>Merci beaucoup !</p>
-</section>
-
-<hr>
-
-<section id="gi">
-  <div class="index">03 — Le retour des cours en kimono</div>
-  <h2>Le retour des cours en kimono</h2>
-
-  <div class="news" style="margin-bottom:18px;">
-    <div class="news-card">
-      <div class="news-date">Lundi 5 octobre</div>
-      <div class="news-title">Retour des cours — avec kimono</div>
-      <p>Nous serons de retour lundi le 5 octobre. Les cours avec kimono (GI) reprendront à partir de cette date. Vous devez vous procurer un kimono pour votre enfant.</p>
-    </div>
-  </div>
-
-  <div class="deadline">
-    <strong>Vous avez jusqu'au 31 octobre</strong> pour vous procurer un kimono. D'ici là, les cours seront <strong>GI et NOGI</strong> (avec et sans kimono).
-  </div>
-
-  <p>J'ai des kimonos neufs et usagés à vendre, et je peux aussi vous en procurer un si vous préférez.</p>
-
-  <div class="gi-grid">
-    <div class="gi-item"><div class="lbl">Neuf</div><div class="val">≈ 100 $</div></div>
-    <div class="gi-item"><div class="lbl">Usagé</div><div class="val">≈ 60 $</div></div>
-    <div class="gi-item"><div class="lbl">Consigne</div><div class="sub">Rapportez un kimono usagé en bon état : crédit sur l'achat d'un autre kimono.</div></div>
-    <div class="gi-item"><div class="lbl">Location</div><div class="val">5 $</div><div class="sub">par cours</div></div>
-  </div>
-
-</section>
-
-</main>
-
-<section class="contact">
-  <div class="wrap">
-    <div class="index" style="margin-top:0">Des questions ?</div>
-    <div class="row">
-      <div><div class="k">Courriel</div><a href="mailto:kossmtl@gmail.com" data-field-href="courriel" data-field-href-type="mailto" data-field="courriel">kossmtl@gmail.com</a></div>
-      <div><div class="k">Téléphone</div><a href="tel:4388699187" data-field-href="telephone" data-field-href-type="tel" data-field="telephone">438-869-9187</a></div>
-    </div>
-  </div>
-</section>
-
-<footer>K-OSS Jiu-Jitsu · Villeray, Montréal</footer>
+<footer><div class="inner"><span>K-OSS Jiu-Jitsu · Villeray, Montréal</span><span><a href="mailto:kossmtl@gmail.com" data-field-href="courriel" data-field-href-type="mailto" data-field="courriel">kossmtl@gmail.com</a> · <a href="tel:4388699187" data-field-href="telephone" data-field-href-type="tel" data-field="telephone">438-869-9187</a></span></div></footer>
 
 <script src="../site-data.js"></script>
 <script>
@@ -298,6 +163,90 @@
         if(today>el.getAttribute('data-until')) el.parentNode.removeChild(el);
       });
     }catch(e){}
+  })();
+</script>
+<script>
+  /* Bannières automatiques : cours d'enfants annulés dans l'app K-OSS (+ raison d'annulation).
+     Lit la fonction publique koss_cancellations_public() (voir koss_cancellations_public.sql).
+     En cas d'échec, rien ne change : la bannière manuelle reste en place. */
+  (function(){
+    var URL='https://kwifgwyyiqinhiebmyqy.supabase.co/rest/v1/rpc/koss_cancellations_public';
+    var KEY='sb_publishable_bDuifvFbk4Y_C7_iTqDHsQ_YU6iFfEP';
+    var MAX_BANNERS=4, LOOKAHEAD_DAYS=14;
+    var box=document.querySelector('.alerts');
+    if(!box || !window.fetch) return;
+
+    function addDays(iso,n){ var d=new Date(iso+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
+    function dow(iso){ return (new Date(iso+'T12:00:00Z').getUTCDay()+6)%7; } /* 0 = lundi ... 6 = dimanche, comme dans l'app */
+    function fmtDate(iso){
+      var t=new Intl.DateTimeFormat('fr-CA',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(iso+'T12:00:00Z'));
+      return t.charAt(0).toUpperCase()+t.slice(1);
+    }
+    function fmtTime(t){
+      var m=/^(\d{1,2}):(\d{2})/.exec(t||''); if(!m) return '';
+      var h=parseInt(m[1],10); return m[2]==='00' ? h+' h' : h+' h '+m[2];
+    }
+    function el(tag,cls,text){ var e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+
+    fetch(URL,{method:'POST',headers:{'apikey':KEY,'Content-Type':'application/json'},body:'{}'})
+      .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
+      .then(function(d){
+        var today=d.today, classes={}, notes={}, byDate={};
+        (d.classes||[]).forEach(function(c){ classes[c.id]=c; });
+        function mark(date,classId){ if(!classes[classId]||date<today) return; (byDate[date]=byDate[date]||{})[classId]=true; }
+
+        (d.overrides||[]).forEach(function(o){
+          if(o.note) notes[o.classId+'|'+o.dateIso]=String(o.note).trim();
+          if(o.cancelled) mark(o.dateIso,o.classId);
+        });
+        (d.rules||[]).forEach(function(r){
+          var c=classes[r.classId]; if(!c) return;
+          for(var i=0;i<=LOOKAHEAD_DAYS;i++){
+            var date=addDays(today,i);
+            if(date>=r.fromDateIso && dow(date)===c.dayOfWeek) mark(date,r.classId);
+          }
+        });
+
+        var dates=Object.keys(byDate).sort().slice(0,MAX_BANNERS);
+        if(!dates.length) return;
+
+        /* retire les bannières manuelles dont la date est déjà annoncée par l'app */
+        Array.prototype.slice.call(box.querySelectorAll('[data-date]')).forEach(function(m){
+          if(dates.indexOf(m.getAttribute('data-date'))!==-1) m.parentNode.removeChild(m);
+        });
+
+        var first=box.firstChild;
+        dates.forEach(function(date){
+          var ids=Object.keys(byDate[date]).sort(function(a,b){ return (classes[a].time||'').localeCompare(classes[b].time||''); });
+          var names=ids.map(function(id){ var c=classes[id], t=fmtTime(c.time); return c.name+(t?' ('+t+')':''); });
+          var many=ids.length>1;
+
+          var a=el('div','alert');
+          a.setAttribute('data-live','1');
+          a.appendChild(el('span','k',many?'Cours annulés':'Cours annulé'));
+          a.appendChild(el('strong',null,fmtDate(date)+' : '));
+          a.appendChild(document.createTextNode((many?'les cours ':'le cours ')+names.join(' et ')+(many?' sont annulés.':' est annulé.')));
+
+          var reasons=ids.map(function(id){ return notes[id+'|'+date]||''; });
+          var uniq=reasons.filter(function(r,i){ return r && reasons.indexOf(r)===i; });
+          if(uniq.length===1 && reasons.every(function(r){ return r===uniq[0]; })){
+            a.appendChild(document.createTextNode(' Raison : '+uniq[0]));
+          } else if(uniq.length){
+            ids.forEach(function(id,i){ if(reasons[i]) a.appendChild(document.createTextNode(' '+classes[id].name+' — '+reasons[i])); });
+          }
+          box.insertBefore(a,first);
+        });
+      })
+      .catch(function(){ /* silencieux : la bannière manuelle reste affichée */ });
+  })();
+</script>
+<script>
+  /* Ouvre la section visée par un lien interne (menu, liens « voir plus bas », etc.). */
+  (function(){
+    function openFor(id){ var s=id&&document.getElementById(id); var d=s&&s.querySelector('details'); if(d) d.open=true; }
+    window.addEventListener('hashchange',function(){ openFor(location.hash.slice(1)); });
+    openFor(location.hash.slice(1));
+    document.addEventListener('click',function(e){ var a=e.target.closest&&e.target.closest('a[href^="#"]'); if(a) openFor(a.getAttribute('href').slice(1)); });
   })();
 </script>
 </body>
