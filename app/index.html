@@ -1256,6 +1256,7 @@
     if(!state.data.classes) state.data.classes = [];
     if(!state.data.classOverrides) state.data.classOverrides = [];
     if(!state.data.classCancelRules) state.data.classCancelRules = [];
+    if(!state.data.profileLinks) state.data.profileLinks = [];
     if(!state.data.bookings) state.data.bookings = [];
     if(!state.data.managers) state.data.managers = [];
     if(!state.data.bugReports) state.data.bugReports = [];
@@ -1438,6 +1439,7 @@
     if(!state.data.classNotes) state.data.classNotes = [];
     if(!state.data.classOverrides) state.data.classOverrides = [];
     if(!state.data.classCancelRules) state.data.classCancelRules = [];
+    if(!state.data.profileLinks) state.data.profileLinks = [];
     if(!state.data.notebookEntries) state.data.notebookEntries = [];
     if(!state.data.sharedItems) state.data.sharedItems = [];
     if(!state.data.notebookSettings) state.data.notebookSettings = {};
@@ -8075,6 +8077,8 @@
             ${unpaidAttendanceHtml(parentAcct.email, fm.id)}
             ${studentVisitsHtml(parentAcct.email, fm.id, !!(m.payload && m.payload.showVisits))}
 
+            ${childLinkSectionHtml(parentAcct, fm)}
+
             <label style="margin-top:14px;">Date de fête</label>
             <input id="cd-birthday" type="date" value="${fm.birthday||''}">
             <label style="margin-top:8px;">Ceinture</label>
@@ -9298,6 +9302,51 @@
   }
   // Pour les rapports : petite mention "(enfant de X)" quand la ligne concerne un enfant,
   // afin de distinguer les profils enfants des comptes parents dans les tableaux.
+  // ---- Enfant partagé entre deux comptes parents (profileLinks) ----
+  // Un lien = { id, canonical:{email,profileId}, linked:{email,profileId} }.
+  // Les abonnements/réservations vivent TOUJOURS sous la fiche « principale » (canonical) ;
+  // le serveur (koss_load_all / koss_sync_all) les présente aussi sous la fiche liée.
+  function sameProfile(a, email, profileId){
+    return !!a && String(a.email||'').toLowerCase()===String(email||'').toLowerCase() && (a.profileId||null)===(profileId||null);
+  }
+  function childLinksFor(email, profileId){
+    return (state.data.profileLinks||[]).filter(l=> sameProfile(l.canonical,email,profileId) || sameProfile(l.linked,email,profileId));
+  }
+  function childLinkLabel(ref){
+    const acct = findStudentAccount(ref.email);
+    const fm = acct ? (acct.familyMembers||[]).find(f=>f.id===ref.profileId) : null;
+    return (fm ? fm.name : 'Enfant') + ' (parent : ' + (acct ? acct.name : ref.email) + ')';
+  }
+  function childLinkSectionHtml(parentAcct, fm){
+    const links = childLinksFor(parentAcct.email, fm.id);
+    let inner = '';
+    if(links.length){
+      inner = links.map(l=>{
+        const isMain = sameProfile(l.canonical, parentAcct.email, fm.id);
+        const other = isMain ? l.linked : l.canonical;
+        return `<p style="font-size:13px;margin:0 0 6px;color:var(--chalk);">${isMain ? 'Fiche principale — aussi accessible par' : 'Fiche liée à la fiche principale de'} <strong>${escapeHtml(childLinkLabel(other))}</strong></p>
+          <div class="btn-row" style="margin:0 0 6px;"><button class="small-btn" data-action="unlink-child-profile" data-link-id="${escapeHtml(l.id)}">Délier</button></div>`;
+      }).join('') + `<p class="muted" style="font-size:11px;margin:4px 0 0;">Les abonnements et réservations sont enregistrés une seule fois, sous la fiche principale ; les deux parents les voient et peuvent réserver.</p>`;
+    } else {
+      const linkedAlready = (state.data.profileLinks||[]);
+      const options = [];
+      visibleStudentAccounts().forEach(a=>{
+        if(a.email.toLowerCase()===parentAcct.email.toLowerCase()) return;
+        (a.familyMembers||[]).forEach(f=>{
+          const taken = linkedAlready.some(l=> sameProfile(l.canonical,a.email,f.id) || sameProfile(l.linked,a.email,f.id));
+          if(!taken) options.push({v:a.email+'|'+f.id, label:f.name+' — parent : '+a.name});
+        });
+      });
+      options.sort((x,y)=>x.label.localeCompare(y.label,'fr',{sensitivity:'base'}));
+      inner = options.length ? `
+        <p class="muted" style="font-size:12px;margin:0 0 6px;">Le même enfant a une fiche chez l'autre parent ? Choisis-la : les deux comptes partageront les abonnements, passes et réservations. Ceux de l'autre fiche seront déplacés ici.</p>
+        <select id="cd-link-target"><option value="">— Choisir l'autre fiche —</option>${options.map(o=>`<option value="${escapeHtml(o.v)}">${escapeHtml(o.label)}</option>`).join('')}</select>
+        <div class="btn-row"><button class="btn btn-secondary" data-action="link-child-profile" data-parent-email="${escapeHtml(parentAcct.email)}" data-member-id="${escapeHtml(fm.id)}">Lier à cet autre parent</button></div>`
+        : `<p class="muted" style="font-size:12px;margin:0;">Aucune autre fiche enfant disponible. L'autre parent doit d'abord créer le profil de l'enfant dans son compte.</p>`;
+    }
+    return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;">
+      <p style="font-size:13px;margin:0 0 8px;color:var(--chalk);">👨‍👩‍👧 <strong>Lié à un autre parent</strong></p>${inner}</div>`;
+  }
   function childOfNoteHtml(email, profileId){
     if(!profileId || !email) return '';
     const acct = findStudentAccount(email);
@@ -12776,6 +12825,50 @@
       await persist();
       render();
       showToast('Fiche enfant mise à jour.');
+    }
+    else if(action==='link-child-profile'){
+      const parentEmail = e.currentTarget.dataset.parentEmail;
+      const memberId = e.currentTarget.dataset.memberId;
+      const sel = document.getElementById('cd-link-target');
+      const val = sel ? sel.value : '';
+      if(!val){ showToast('Choisis d’abord l’autre fiche.'); return; }
+      const sep = val.lastIndexOf('|');
+      const otherEmail = val.slice(0,sep), otherPid = val.slice(sep+1);
+      const acctA = findStudentAccount(parentEmail);
+      const fmA = acctA ? (acctA.familyMembers||[]).find(f=>f.id===memberId) : null;
+      const acctB = findStudentAccount(otherEmail);
+      const fmB = acctB ? (acctB.familyMembers||[]).find(f=>f.id===otherPid) : null;
+      if(!acctA || !fmA || !acctB || !fmB){ showToast('Fiche introuvable.'); return; }
+      if(!state.data.profileLinks) state.data.profileLinks = [];
+      if(childLinksFor(parentEmail, memberId).length || childLinksFor(otherEmail, otherPid).length){ showToast('Une de ces fiches est déjà liée.'); return; }
+      // Fusion : tout ce qui appartenait à la fiche de l'autre parent passe sous la fiche principale.
+      let moved = 0;
+      state.data.memberships.forEach(mm=>{
+        if(sameProfile({email:mm.studentEmail, profileId:mm.profileId}, otherEmail, otherPid)){
+          mm.studentEmail = acctA.email; mm.profileId = memberId; mm.studentName = fmA.name; moved++;
+        }
+      });
+      state.data.bookings.forEach(bk=>{
+        if(sameProfile({email:bk.studentEmail, profileId:bk.profileId}, otherEmail, otherPid)){
+          bk.studentEmail = acctA.email; bk.profileId = memberId; bk.studentName = fmA.name; moved++;
+        }
+      });
+      state.data.profileLinks.push({
+        id: uid(),
+        canonical: {email: acctA.email, profileId: memberId},
+        linked: {email: acctB.email, profileId: otherPid},
+        createdAt: Date.now()
+      });
+      await persist();
+      render();
+      showToast('Fiches liées' + (moved ? ' — '+moved+' élément(s) déplacé(s) vers la fiche principale.' : '.'));
+    }
+    else if(action==='unlink-child-profile'){
+      const linkId = e.currentTarget.dataset.linkId;
+      state.data.profileLinks = (state.data.profileLinks||[]).filter(l=>l.id!==linkId);
+      await persist();
+      render();
+      showToast('Fiches déliées. Les abonnements restent sur la fiche principale.');
     }
     else if(action==='save-child-notes'){
       const parentEmail = e.currentTarget.dataset.parentEmail;
