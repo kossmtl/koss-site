@@ -2240,17 +2240,40 @@
   function isoDate(d){ return d.toISOString().slice(0,10); }
   function formatDayNum(d){ return d.getDate(); }
 
+  // Un programme dont TOUTES les séances (tous ses cours, toutes ses dates) sont annulées
+  // (annulation individuelle ou « cette classe et toutes les suivantes ») n'est plus proposé.
+  function isProgramFullyCancelled(startDate, endDate, programClasses){
+    let sessions = 0;
+    for(const c of programClasses){
+      let d = new Date(startDate+'T12:00:00');
+      const end = new Date(endDate+'T12:00:00');
+      while(d <= end){
+        if((d.getDay()+6)%7 === c.dayOfWeek){
+          sessions++;
+          const iso = d.toISOString().slice(0,10);
+          const eff = getEffectiveClass(c, iso);
+          if(!(eff && eff.cancelled)) return false;
+        }
+        d.setDate(d.getDate()+1);
+      }
+    }
+    return sessions > 0;
+  }
   function getNextIntroProgram(){
     const introClasses = state.data.classes.filter(c=>c.category==='intro_bjj' && c.startDate && c.endDate);
     if(!introClasses.length) return null;
     const programs = new Map();
     introClasses.forEach(c=>{
       const key = c.startDate+'|'+c.endDate;
-      if(!programs.has(key)) programs.set(key, {startDate:c.startDate, endDate:c.endDate});
+      if(!programs.has(key)) programs.set(key, {startDate:c.startDate, endDate:c.endDate, classes:[]});
+      programs.get(key).classes.push(c);
     });
-    const list = Array.from(programs.values()).sort((a,b)=>a.startDate.localeCompare(b.startDate));
+    const list = Array.from(programs.values())
+      .filter(p=>!isProgramFullyCancelled(p.startDate, p.endDate, p.classes))
+      .sort((a,b)=>a.startDate.localeCompare(b.startDate));
     const today = todayIso();
-    return list.find(p=>p.startDate >= today) || list[list.length-1] || null;
+    const found = list.find(p=>p.startDate >= today) || list[list.length-1] || null;
+    return found ? {startDate:found.startDate, endDate:found.endDate} : null;
   }
 
   function formatShortDate(dateIso){
