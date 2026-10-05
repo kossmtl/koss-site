@@ -2272,7 +2272,8 @@
       .filter(p=>!isProgramFullyCancelled(p.startDate, p.endDate, p.classes))
       .sort((a,b)=>a.startDate.localeCompare(b.startDate));
     const today = todayIso();
-    const found = list.find(p=>p.startDate >= today) || list[list.length-1] || null;
+    // « Prochain » = un programme qui commence APRÈS aujourd'hui (celui déjà commencé n'est plus à venir).
+    const found = list.find(p=>p.startDate > today) || list[list.length-1] || null;
     return found ? {startDate:found.startDate, endDate:found.endDate} : null;
   }
 
