@@ -6028,7 +6028,7 @@
             <div class="bug-card tint-${bi%4}">
               <div class="bug-card-head" data-action="toggle-admin-bug-expand" data-id="${b.id}">
                 <div style="flex:1;min-width:0;">
-                  <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(b.reporter||'')} — <strong style="color:${st.color};">${st.label}</strong></p>
+                  <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">${new Date(b.createdAt).toLocaleString('fr-CA')} — ${bugReporterHtml(b)} — <strong style="color:${st.color};">${st.label}</strong></p>
                   <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(b.text)}${msgCount ? `<span class="bug-card-badge">${msgCount}</span>` : ''}</p>
                 </div>
                 <button type="button" class="bug-card-arrow${isOpen?' open':''}">▾</button>
@@ -6038,7 +6038,7 @@
                 ${b.screenshot ? `<img src="${b.screenshot}" data-action="view-bug-image" data-src="${b.screenshot}" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:8px;cursor:zoom-in;" title="Cliquer pour agrandir">` : ''}
                 ${bugThreadMessages(b).map(msg=>`
                   <div style="background:${msg.from==='admin'?'var(--paper-alt,rgba(0,0,0,.03))':'rgba(147,180,143,0.14)'};border-radius:6px;padding:8px;margin-bottom:8px;">
-                    <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">${msg.from==='admin' ? 'Ta réponse' : escapeHtml(b.reporter||'Élève')}${msg.at ? ' — '+new Date(msg.at).toLocaleString('fr-CA') : ''}</p>
+                    <p style="font-size:11px;color:var(--chalk-dim);margin:0 0 4px;">${msg.from==='admin' ? 'Ta réponse' : bugReporterHtml(b,'Élève')}${msg.at ? ' — '+new Date(msg.at).toLocaleString('fr-CA') : ''}</p>
                     <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(msg.text)}</p>
                   </div>
                 `).join('')}
@@ -6559,7 +6559,7 @@
           ${allArchived.length ? `<button class="btn btn-primary" data-action="download-bug-archive-csv" style="margin-bottom:10px;">Télécharger l’archive (CSV)</button>` : ''}
           ${archived.length ? archived.map(b=>`
             <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
-              <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">Signalé le ${new Date(b.createdAt).toLocaleString('fr-CA')} — ${escapeHtml(b.reporter||'')}</p>
+              <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">Signalé le ${new Date(b.createdAt).toLocaleString('fr-CA')} — ${bugReporterHtml(b)}</p>
               <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">Réglé le ${new Date(b.resolvedAt).toLocaleString('fr-CA')}</p>
               <p style="font-size:13px;white-space:pre-wrap;margin:0 0 8px;">${escapeHtml(b.text)}</p>
               ${b.screenshot ? `<img src="${b.screenshot}" data-action="view-bug-image" data-src="${b.screenshot}" style="max-width:100%;max-height:220px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:8px;cursor:zoom-in;" title="Cliquer pour agrandir">` : ''}
@@ -9310,6 +9310,19 @@
       return `<span data-action="open-child-detail" data-parent-email="${escapeHtml(email)}" data-member-id="${escapeHtml(profileId)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">${safeName}</span>`;
     }
     return `<span data-action="open-student-detail" data-email="${escapeHtml(email)}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">${safeName}</span>`;
+  }
+  // Signalements (bugs/suggestions) : le courriel de l'élève connecté·e devient un lien vers sa fiche.
+  // stopPropagation : le lien est dans une carte cliquable (déplier/replier) — on ne veut pas la basculer.
+  function bugReporterHtml(b, fallback){
+    const label = (b && b.reporter) || fallback || '';
+    const key = (b && b.reporterKey) || '';
+    if(key.indexOf('student:')===0){
+      const email = key.slice('student:'.length);
+      if(email){
+        return `<span data-action="open-student-detail" data-email="${escapeHtml(email)}" onclick="event.stopPropagation()" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" title="Ouvrir la fiche">${escapeHtml(label||email)}</span>`;
+      }
+    }
+    return escapeHtml(label);
   }
   function notePreview(str, max){
     max = max || 48;
