@@ -3248,7 +3248,8 @@
           if(keepPng){
             // Un PNG n'a pas de curseur de "qualité" comme le JPEG — seule la réduction
             // de taille permet de faire baisser le poids si besoin.
-            const pngMaxBytes = Math.max(maxBytes, 350000);
+            // opts.pngMaxChars : plafond plus serré demandé par l'appelant (autocollants, 6 oct. 2026).
+            const pngMaxBytes = opts.pngMaxChars || Math.max(maxBytes, 350000);
             const sizes = [maxSize, Math.round(maxSize*0.75), Math.round(maxSize*0.6), Math.round(maxSize*0.45), Math.round(maxSize*0.32)];
             let result = null;
             for(const size of sizes){
@@ -3259,7 +3260,18 @@
               canvas.width = w; canvas.height = h;
               const ctx = canvas.getContext('2d');
               ctx.drawImage(img, 0, 0, w, h); // canvas neuf = déjà transparent, pas de fond à effacer
-              const dataUrl = canvas.toDataURL('image/png');
+              // 6 oct. 2026 (réduction de l'egress Supabase) : un autocollant en PNG pesait de 190 000 à
+              // 335 000 caractères et est retéléchargé à chaque chargement des données. En WebP (qui garde
+              // la transparence), le même autocollant fait environ 5 à 10 fois moins. Safari ne sait pas
+              // ENCODER en WebP (toDataURL renvoie alors un PNG) : on le détecte et on garde le PNG.
+              let dataUrl = null;
+              if(opts.preferWebp){
+                try{
+                  const w = canvas.toDataURL('image/webp', 0.85);
+                  if(/^data:image\/webp/i.test(w)) dataUrl = w;
+                }catch(e){}
+              }
+              if(!dataUrl) dataUrl = canvas.toDataURL('image/png');
               result = dataUrl;
               if(dataUrl.length <= pngMaxBytes) break;
             }
@@ -9245,10 +9257,11 @@
           const f = ev.target.files[0];
           if(!f) return;
           try{
-            // 480px (au lieu de 200px) : un autocollant peut être agrandi jusqu'à 240px CSS
-            // sur la page du carnet, donc ~480px de vrais pixels sur un écran retina — 200px
-            // source devenait flou une fois affiché à cette taille.
-            pendingStickerImage = await resizeImageFile(f, 480, null, {keepTransparency:true});
+            // 360px (6 oct. 2026 ; avant : 480px en PNG) : un autocollant peut être agrandi jusqu'à
+            // 240px CSS dans le carnet. En WebP (transparence conservée) ce format reste net et pèse
+            // environ 5 à 10 fois moins ; sur Safari (pas d'encodage WebP), retour au PNG avec un plafond
+            // de poids serré (pngMaxChars) pour que la base reste légère.
+            pendingStickerImage = await resizeImageFile(f, 360, null, {keepTransparency:true, preferWebp:true, pngMaxChars:120000});
             showToast('Image prête à être enregistrée avec l’autocollant.');
           }catch(err){
             showToast('Impossible de traiter cette image.');
