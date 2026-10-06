@@ -3733,6 +3733,17 @@
       .filter(s=>s.recipientType==='coach' && s.recipientManagerId===managerId && s.status==='archived')
       .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   }
+  // Une note reçue par un·e coach peut être transférée dans le fil de messages de l'élève qui
+  // l'a envoyée — SEULEMENT si elle n'est pas anonyme (l'anonymat ne doit jamais être levé ici)
+  // et si le compte expéditeur existe encore. Les autocollants n'ont pas de texte : exclus.
+  function canTransferItemToMessages(it){
+    return !!(it && it.kind==='text' && !it.anonymous && it.senderOwnerKey && (it.text||'').trim()
+      && findStudentAccount(parseOwnerKey(it.senderOwnerKey).email));
+  }
+  function transferToMessagesBtnHtml(it){
+    return canTransferItemToMessages(it)
+      ? `<button class="small-btn" data-action="transfer-shared-to-messages" data-id="${it.id}">✉️ Transférer en messages</button>` : '';
+  }
   function pendingModerationSharedItems(){
     return state.data.sharedItems.filter(s=>s.anonymous && s.status==='pending_review');
   }
@@ -6194,6 +6205,7 @@
                 ${sharedContentPreviewHtml(it)}
                 <div class="btn-row" style="margin-top:8px;">
                   <button class="small-btn" data-action="admin-claim-shared-item" data-id="${it.id}">📓 Placer dans mon carnet</button>
+                  ${transferToMessagesBtnHtml(it)}
                   <button class="small-btn" data-action="archive-shared-item" data-id="${it.id}">Marquer comme lu</button>
                 </div>
               </div>
@@ -6219,6 +6231,7 @@
                     ${sharedContentPreviewHtml(it)}
                     <div class="btn-row" style="margin-top:8px;">
                       <button class="small-btn" data-action="admin-claim-shared-item" data-id="${it.id}">📓 Placer dans mon carnet</button>
+                      ${transferToMessagesBtnHtml(it)}
                       <button class="small-btn" data-action="confirm-delete-archived-shared-item" data-id="${it.id}" style="color:var(--coral);">Supprimer définitivement</button>
                     </div>
                   </div>
@@ -6613,7 +6626,7 @@
             ${mtMsgs.length ? mtMsgs.map(msg=>{
               const mine = mtViewerIsAdmin ? msg.from==='admin' : msg.from==='student';
               return `<div style="align-self:${mine?'flex-end':'flex-start'};max-width:82%;background:${mine?'rgba(147,180,143,0.20)':'var(--paper-alt,rgba(0,0,0,.03))'};border-radius:8px;padding:8px 10px;">
-                <p style="font-size:10px;color:var(--chalk-dim);margin:0 0 3px;">${msg.from==='admin' ? 'Coach' : escapeHtml(mtLabel)}${msg.at ? ' — '+new Date(msg.at).toLocaleString('fr-CA') : ''}</p>
+                <p style="font-size:10px;color:var(--chalk-dim);margin:0 0 3px;">${msg.from==='admin' ? 'Coach' : escapeHtml(msg.senderName || mtLabel)}${msg.fromNote ? ' · 📝 note transférée' : ''}${msg.at ? ' — '+new Date(msg.at).toLocaleString('fr-CA') : ''}</p>
                 <p style="font-size:13px;white-space:pre-wrap;margin:0;">${escapeHtml(msg.text)}</p>
               </div>`;
             }).join('') : `<p class="muted" style="color:var(--chalk-dim);font-size:13px;">Aucun message pour l'instant.</p>`}
@@ -10580,6 +10593,35 @@
       await persist();
       render();
       showToast('Transféré dans les notes (Avis) de ' + (target.name||acct.name) + '.');
+    }
+    else if(action==='transfer-shared-to-messages'){
+      // Demande d'Amélie (6 oct) : déplacer une note reçue dans la conversation "messages" avec
+      // l'élève qui l'a envoyée. Refusé si la note est anonyme. Le message garde la date
+      // d'origine de la note, est ajouté comme message de l'élève, puis la note est archivée
+      // (elle "se déplace" : plus dans les notes reçues). Aucun courriel de notification.
+      const item = state.data.sharedItems.find(s=>s.id===id);
+      if(!item){ showToast('Note introuvable.'); return; }
+      if(!canTransferItemToMessages(item)){ showToast('Cette note ne peut pas être transférée (anonyme ou expéditeur introuvable).'); return; }
+      const {email, profileId} = parseOwnerKey(item.senderOwnerKey);
+      const acct = findStudentAccount(email);
+      if(!state.data.messageThreads) state.data.messageThreads = [];
+      let thread = findMessageThread(email);
+      const mgr = currentManager();
+      if(!thread){
+        thread = {id: uid(), studentEmail: email, lastAdminMgrId: mgr?mgr.id:null, messages:[], createdAt: Date.now()};
+        state.data.messageThreads.push(thread);
+      }
+      if(!thread.messages) thread.messages = [];
+      const msg = {id: uid(), from:'student', text:(item.text||'').trim(), at: item.createdAt || Date.now(), fromNote:true};
+      if(profileId){ msg.senderName = getProfileName(acct, profileId); }
+      thread.messages.push(msg);
+      thread.updatedAt = Date.now();
+      item.status = 'archived';
+      await persist();
+      setLocalMsgSeenAdmin(thread.id, Date.now());
+      state.modal = {type:'message-thread', payload:{email}};
+      render();
+      showToast('Note transférée dans les messages de ' + (acct.name||email) + '.');
     }
     else if(action==='archive-shared-item'){
       const item = state.data.sharedItems.find(s=>s.id===id);
