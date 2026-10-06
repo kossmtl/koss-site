@@ -905,6 +905,7 @@
       // à koss_sync_all, qui ne le connaît pas. Lu via inactivityRows().
       window.__kossInactivity = Array.isArray(data.inactivity) ? data.inactivity : [];
       delete data.inactivity;
+      delete data._deleted; // champ technique d'envoi (suppressions explicites), jamais une donnée de l'app
       return { value: JSON.stringify(data) };
     },
     async set(key, value){
@@ -1708,6 +1709,65 @@
     studentAccounts: x => x && x.email ? x.email.toLowerCase() : null,
   };
 
+  // ---- Suppressions EXPLICITES (6 oct. 2026) -------------------------------------------
+  // Avant : la sauvegarde d'une gestionnaire envoyait « tout ce qui reste » et le serveur supprimait
+  // toute ligne absente de cette liste — donc une réservation faite par un parent PENDANT que la page
+  // admin (ouverte sur un autre appareil, ou périmée) sauvegardait était supprimée à tort.
+  // Maintenant : la page envoie en plus la liste des identifiants QU'ELLE A ELLE-MÊME supprimés
+  // (champ _deleted), et le serveur ne supprime que ceux-là (voir koss_sync_all).
+  const SYNC_TABLE_KEYS = ['classes','bookings','membershipPlans','memberships','studentAccounts','managers','stickers','stickerGrants','notebooks','notebookEntries','sharedItems','bugReports','bugReportsArchive','classNotes','consents','messageThreads'];
+  function syncKeyOf(key, x){
+    if(!x || typeof x !== 'object') return null;
+    if(key === 'studentAccounts') return x.email ? String(x.email).toLowerCase() : null;
+    return x.id != null ? String(x.id) : null;
+  }
+  function syncIdsOf(data, key){
+    const out = new Set();
+    (data && Array.isArray(data[key]) ? data[key] : []).forEach(x=>{ const k = syncKeyOf(key, x); if(k != null) out.add(k); });
+    return out;
+  }
+  // Suppressions faites ici mais pas encore envoyées au serveur (ex. un rafraîchissement a eu lieu
+  // entre la suppression et la sauvegarde et a fait avancer la « base » de comparaison).
+  const pendingDeletes = {};
+  function noteLocalDeletions(base, local){
+    if(!base || !local) return;
+    SYNC_TABLE_KEYS.forEach(key=>{
+      const l = syncIdsOf(local, key);
+      syncIdsOf(base, key).forEach(id=>{
+        if(!l.has(id)) (pendingDeletes[key] = pendingDeletes[key] || new Set()).add(id);
+      });
+    });
+  }
+  // Une suppression mémorisée l'emporte sur la fusion : si un rafraîchissement a fait avancer la base,
+  // la fusion verrait la ligne comme « ajoutée ailleurs » et la remettrait. On la retire donc de l'envoi,
+  // sauf si la personne l'a recréée entre-temps (même identifiant/courriel présent dans l'état local).
+  function applyPendingDeletes(toWrite, local){
+    Object.keys(pendingDeletes).forEach(key=>{
+      const localIds = syncIdsOf(local, key);
+      const set = pendingDeletes[key];
+      Array.from(set).forEach(id=>{ if(localIds.has(id)) set.delete(id); });
+      if(set.size && Array.isArray(toWrite[key])){
+        toWrite[key] = toWrite[key].filter(x=> !set.has(syncKeyOf(key, x)));
+      }
+    });
+  }
+  // Identifiants à supprimer côté serveur : ceux que CETTE page a retirés de sa propre copie
+  // (présents dans la base de comparaison, absents de l'état local) — jamais ceux qu'elle ne connaît pas.
+  function collectDeletions(base, local, toWrite){
+    const out = {};
+    SYNC_TABLE_KEYS.forEach(key=>{
+      const keep = syncIdsOf(toWrite, key);
+      const ids = new Set();
+      if(base){
+        const l = syncIdsOf(local, key);
+        syncIdsOf(base, key).forEach(id=>{ if(!l.has(id) && !keep.has(id)) ids.add(id); });
+      }
+      if(pendingDeletes[key]) pendingDeletes[key].forEach(id=>{ if(!keep.has(id)) ids.add(id); });
+      if(ids.size) out[key] = Array.from(ids);
+    });
+    return out;
+  }
+
   function mergeAppData(base, local, remote){
     base = base || {}; local = local || {}; remote = remote || {};
     const keys = new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(remote)]);
@@ -1735,15 +1795,21 @@
 
   async function persistNow(){
     let toWrite = state.data;
+    let deleted = {};
     try{
       const res = await storageBackend.get(STORAGE_KEY, true);
       const remote = JSON.parse(res.value);
       const base = state.lastSyncedData || remote;
-      toWrite = mergeAppData(base, state.data, remote);
+      const localNow = state.data;
+      toWrite = mergeAppData(base, localNow, remote);
+      applyPendingDeletes(toWrite, localNow);
+      deleted = collectDeletions(base, localNow, toWrite);
     }catch(mergeErr){
       // Pas de copie serveur lisible (ex: tout premier enregistrement) : on écrit tel quel.
+      // Même dans ce cas, on ne peut plus supprimer côté serveur que ce que CETTE page a elle-même retiré.
+      try{ deleted = collectDeletions(state.lastSyncedData, state.data, state.data); }catch(e2){ deleted = {}; }
     }
-    const payload = JSON.stringify(toWrite);
+    const payload = JSON.stringify(Object.keys(deleted).length ? Object.assign({}, toWrite, {_deleted: deleted}) : toWrite);
     if(payload.length > APP_STORAGE_CAP){
       console.error('Erreur de sauvegarde: payload trop volumineux', payload.length);
       // CORRECTIF (22 sept) : cette fonction retournait `false` en cas d'échec, mais la
@@ -1762,6 +1828,7 @@
     }
     try{
       await storageBackend.set(STORAGE_KEY, payload, true);
+      Object.keys(pendingDeletes).forEach(k=>{ delete pendingDeletes[k]; });
       state.data = toWrite;
       state.lastSyncedData = deepClone(toWrite);
       return true;
@@ -1832,6 +1899,7 @@
       const res = await storageBackend.get(STORAGE_KEY, true);
       const remote = JSON.parse(res.value);
       const base = baseSnapshot || remote;
+      noteLocalDeletions(base, state.data);
       const merged = mergeAppData(base, state.data, remote);
       const changed = JSON.stringify(merged) !== JSON.stringify(state.data);
       state.data = merged;
@@ -1879,6 +1947,7 @@
   function applySharedRemoteData(remoteData){
     if(state.modal || !remoteData) return;
     const base = state.lastSyncedData || remoteData;
+    noteLocalDeletions(base, state.data);
     const merged = mergeAppData(base, state.data, remoteData);
     const changed = JSON.stringify(merged) !== JSON.stringify(state.data);
     state.data = merged;
