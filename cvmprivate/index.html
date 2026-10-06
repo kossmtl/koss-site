@@ -813,7 +813,7 @@
           ${leftTabs.map(p=>`<div class="nb-tab ${p===activePage?'active':''}" data-action="goto-notebook-page" data-page="${p}">${p}</div>`).join('')}
         </div>
         <div class="notebook-canvas notebook-page ${styleClass}" style="--nb-page-color:${activeNotebook.pageColor};" id="nb-canvas">
-          ${pageEntries.filter(n=>n.kind!=='text'&&n.kind!=='sticker').map(n=>{
+          ${pageEntries.filter(n=>n.kind!=='text'&&n.kind!=='sticker'&&n.kind!=='image').map(n=>{
             const pSize = n.size||150; const pScale = pSize/150;
             return `
             <div class="postit postit-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;transform:rotate(${n.rotation||0}deg);background:${n.color};width:${pSize}px;min-height:${Math.round(110*pScale)}px;">
