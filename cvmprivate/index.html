@@ -940,7 +940,7 @@
           <input id="acc-name" placeholder="Nom de la personne">
           <label>Code (donne-le à la personne)</label>
           <input id="acc-code" placeholder="Ex. 8K2M9Q">
-          <div class="btn-row"><button class="btn btn-primary" data-action="create-account">Créer le compte</button></div>
+          <div class="btn-row"><button class="btn btn-primary" data-action="create-account">Créer le compte</button><button class="btn btn-secondary" data-action="generate-code" data-target="acc-code">🎲 Générer un code</button></div>
         </div>
         <div class="card">
           <h3>Comptes existants (${md.accounts.length})</h3>
@@ -950,6 +950,7 @@
               <span>
                 <button class="small-btn" data-action="open-sticker-grant-picker" data-name="${escapeHtml(a.name)}">🎁 Autocollant</button>
                 <button class="small-btn" data-action="open-send-note-form" data-name="${escapeHtml(a.name)}">✉️ Note</button>
+                <button class="small-btn" data-action="open-edit-account" data-name="${escapeHtml(a.name)}">✏️ Modifier</button>
                 <button class="small-btn" data-action="delete-account" data-name="${escapeHtml(a.name)}">Supprimer</button>
               </span>
             </div>
@@ -1483,6 +1484,25 @@
             <button class="btn btn-primary" data-action="submit-new-notebook">Créer</button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
+        </div>
+      `;
+    } else if(m.type==='edit-account'){
+      const nm = m.payload.name;
+      html = `
+        <div class="modal" style="max-width:420px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Modifier le compte</h3>
+          <p class="muted" style="font-size:12px;">Le carnet, les autocollants et les messages de la personne sont conservés.</p>
+          <label>Nom</label>
+          <input id="ea-name" value="${escapeHtml(nm)}">
+          <label style="margin-top:10px;">Nouveau code <span class="muted" style="font-size:11px;">(laisse vide pour ne pas le changer)</span></label>
+          <input id="ea-code" placeholder="Ex. 8K2M9Q" autocomplete="off">
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="save-account-edit" data-name="${escapeHtml(nm)}">Enregistrer</button>
+            <button class="btn btn-secondary" data-action="generate-code" data-target="ea-code">🎲 Générer un code</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+          <p class="muted" style="font-size:11px;margin-top:10px;">Si la personne est déjà connectée, elle devra se reconnecter avec son nouveau nom ou son nouveau code.</p>
         </div>
       `;
     } else if(m.type==='download-notebook'){
@@ -2383,6 +2403,34 @@
         state.managerData = fresh; render();
         showToast('Compte créé.');
       } else showToast((res&&res.error)||'Erreur.');
+      return;
+    }
+    if(action==='generate-code'){
+      const el = document.getElementById(e.currentTarget.dataset.target);
+      if(el){
+        const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans 0/O ni 1/I pour éviter les confusions
+        const r = new Uint32Array(6); crypto.getRandomValues(r);
+        el.value = Array.from(r).map(v=>A[v % A.length]).join('');
+        el.focus();
+      }
+      return;
+    }
+    if(action==='open-edit-account'){
+      state.modal = {type:'edit-account', payload:{name: e.currentTarget.dataset.name}}; render(); return;
+    }
+    if(action==='save-account-edit'){
+      const oldName = e.currentTarget.dataset.name;
+      const newName = document.getElementById('ea-name').value.trim();
+      const newCode = document.getElementById('ea-code').value.trim();
+      if(!newName){ markInvalid('ea-name'); return; }
+      if(newName===oldName && !newCode){ showToast('Rien à modifier.'); return; }
+      const res = await rpcManagerAction(state.managerCode, 'update_account', {name: oldName, newName, newCode: newCode||null});
+      if(res && res.ok){
+        const fresh = await rpcManagerLoad(state.managerCode);
+        if(fresh) state.managerData = fresh;
+        state.modal = null; render();
+        showToast(newCode ? 'Compte modifié (nouveau code enregistré).' : 'Compte modifié.');
+      } else showToast((res&&res.error)||'Erreur : modification impossible.');
       return;
     }
     if(action==='delete-account'){
