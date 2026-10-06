@@ -977,6 +977,13 @@
     } else if(state.managerTab==='parametres'){
       body = `
         <div class="card">
+          <h3>Mon nom</h3>
+          <p class="muted" style="font-size:12px;">Ce nom est affiché comme expéditeur (« De : ... ») sur les notes que tu envoies aux étudiants. Laisse vide pour afficher « Prof ».</p>
+          <label>Nom affiché</label>
+          <input id="mgr-name" value="${escapeHtml(md.meta.managerName||'')}" placeholder="Ex. Amélie Montreuil">
+          <div class="btn-row"><button class="btn btn-primary" data-action="save-manager-name">Enregistrer</button></div>
+        </div>
+        <div class="card">
           <h3>Changer le code gestionnaire</h3>
           <label>Nouveau code</label>
           <input id="new-mgr-code" placeholder="Nouveau code gestionnaire">
@@ -2573,6 +2580,13 @@
       md.meta.bugReports = (md.meta.bugReports||[]).filter(b=>b.id!==id);
       await persistManagerMeta();
       render(); return;
+    }
+    if(action==='save-manager-name'){
+      const nm = document.getElementById('mgr-name').value.trim();
+      state.managerData.meta.managerName = nm;
+      await persistManagerMeta();
+      showToast(nm ? 'Nom enregistré : tes notes seront signées « '+nm+' ».' : 'Nom retiré : tes notes seront signées « Prof ».');
+      return;
     }
     if(action==='change-manager-code'){
       const newCode = document.getElementById('new-mgr-code').value.trim();
