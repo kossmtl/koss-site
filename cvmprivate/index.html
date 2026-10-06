@@ -183,6 +183,7 @@
   .sticker-free{position:absolute; cursor:grab; touch-action:none;}
   .sticker-free.dragging{cursor:grabbing; opacity:0.85; z-index:5;}
   .sticker-free img{display:block; border-radius:6px;}
+  .capture-free img{border-radius:3px; box-shadow:0 1px 6px rgba(0,0,0,0.25); max-width:none; user-select:none; -webkit-user-drag:none;}
   .textnote-free.selected, .sticker-free.selected, .postit-free.selected{
     outline:2px dashed var(--coral); outline-offset:6px;
   }
@@ -532,6 +533,7 @@
     return base;
   }
   function sharedContentPreviewHtml(c){
+    if(c.kind === 'image'){ return `<img src="${c.image}" style="max-width:200px;max-height:140px;border-radius:4px;display:block;"><div class="muted" style="font-size:11px;margin-top:4px;">Capture d’écran</div>`; }
     if(c.kind === 'sticker'){
       const sticker = (state.data ? state.data.stickers : (state.managerData ? state.managerData.meta.stickers : [])||[]).find(s=>s.id===c.stickerId);
       return sticker ? `<img src="${sticker.image}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;"><div class="muted" style="font-size:11px;margin-top:4px;">${escapeHtml(sticker.name)}</div>` : '<p class="muted">Autocollant introuvable.</p>';
@@ -874,6 +876,19 @@
               </div>` : ''}
             </div>
           `;}).join('')}
+          ${pageEntries.filter(n=>n.kind==='image').map(n=>`
+            <div class="sticker-free capture-free ${n.id===state.notebookSelectedEntry?'selected':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;transform:rotate(${n.rotation||0}deg);width:${n.size||320}px;">
+              <img src="${n.image}" style="width:${n.size||320}px;" draggable="false" alt="Capture d’écran">
+              ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
+                <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
+                <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
+              ` : ''}
+              ${state.notebookEditMode ? `
+              <div class="textnote-toolbar">
+                <button data-action="delete-entry" data-id="${n.id}">Retirer</button>
+              </div>` : ''}
+            </div>
+          `).join('')}
           <div class="btn-row" style="position:absolute;bottom:10px;right:10px;">
             <button class="btn btn-primary" data-action="new-postit">+ Post-it</button>
             <button class="btn btn-secondary" data-action="new-textnote">+ Note</button>
@@ -1775,9 +1790,10 @@
         const cx = rect.left+rect.width/2, cy = rect.top+rect.height/2;
         const startDist = Math.max(20, Math.hypot(point.clientX-cx, point.clientY-cy));
         const entry = state.data.entries.find(n=>n.id===id);
-        const startSize = isSticker ? (entry.size||60) : isPostit ? (entry.size||150) : (entry.fontSize||16);
-        const minSize = isSticker ? 24 : isPostit ? 100 : 10;
-        const maxSize = isSticker ? 240 : isPostit ? 400 : 60;
+        const isCapture = wrap.classList.contains('capture-free');
+        const startSize = isCapture ? (entry.size||320) : isSticker ? (entry.size||60) : isPostit ? (entry.size||150) : (entry.fontSize||16);
+        const minSize = isCapture ? 80 : isSticker ? 24 : isPostit ? 100 : 10;
+        const maxSize = isCapture ? 1100 : isSticker ? 240 : isPostit ? 400 : 60;
         let pendingSize = startSize;
         function onMove(mv){
           const p = mv.touches ? mv.touches[0] : mv;
@@ -2639,7 +2655,8 @@
           if(n.kind==='sticker'){
             const st = (state.data.stickers||[]).find(s=>s.id===n.stickerId);
             if(st){ it.image = st.image||null; it.imageName = st.name||'Autocollant'; }
-          } else if(n.photo){ it.image = n.photo; }
+          } else if(n.kind==='image'){ it.image = n.image||null; }
+          else if(n.photo){ it.image = n.photo; }
           return it;
         })
       }));
@@ -2659,6 +2676,7 @@
         p.items.forEach(it=>{
           const head = [it.category, it.date].filter(Boolean).join(' · ');
           if(it.kind==='sticker') out += '\n[Autocollant : ' + it.imageName + ']' + (head?' ('+head+')':'') + '\n';
+          else if(it.kind==='image') out += '\n[Capture d’écran' + (head?' ('+head+')':'') + ' — voir les formats HTML, PDF ou Word]\n';
           else {
             out += '\n' + (head ? '['+head+']\n' : '') + it.text + '\n';
             if(it.image) out += '[Photo jointe — voir les formats HTML, PDF ou Word]\n';
@@ -2682,6 +2700,7 @@
           const head = [it.category, it.date].filter(Boolean).join(' · ');
           body += '<div class="item">' + (head?'<div class="meta">'+e(head)+'</div>':'');
           if(it.kind==='sticker') body += (it.image?'<img class="stk" src="'+e(it.image)+'" alt="">':'') + '<div>' + e(it.imageName) + '</div>';
+          else if(it.kind==='image') body += (it.image?'<img class="ph" src="'+e(it.image)+'" alt="Capture d’écran">':'');
           else {
             body += '<div class="txt">' + e(it.text) + '</div>';
             if(it.image) body += '<img class="ph" src="' + e(it.image) + '" alt="">';
@@ -2778,6 +2797,9 @@
             const img = imageFor(myIdx);
             if(img) body += imgXml(img, 90);
             body += nbxPara(it.imageName || 'Autocollant');
+          } else if(it.kind==='image'){
+            const img = it.image ? imageFor(myIdx) : null;
+            if(img) body += imgXml(img, 520);
           } else {
             body += nbxPara(it.text);
             const img = it.image ? imageFor(myIdx) : null;
@@ -2864,6 +2886,53 @@
   setInterval(()=>{ refreshInbox(false); }, INBOX_REFRESH_MS);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refreshInbox(false); });
   window.addEventListener('focus', ()=>{ refreshInbox(false); });
+
+  // ===== Coller une capture d'écran (Ctrl+V) directement sur la page du carnet =====
+  async function compressPastedImage(file){
+    const url = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+    const img = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; });
+    const attempts = [[1400,0.85],[1100,0.78],[800,0.7]]; // on réduit encore si l'image reste trop lourde
+    let out = null;
+    for(const [maxDim, q] of attempts){
+      let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+      if(w > maxDim || h > maxDim){ const k = maxDim/Math.max(w,h); w = Math.round(w*k); h = Math.round(h*k); }
+      const c = document.createElement('canvas'); c.width = Math.max(1,w); c.height = Math.max(1,h);
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.drawImage(img,0,0,c.width,c.height);
+      out = {data: c.toDataURL('image/jpeg', q), w: c.width, h: c.height};
+      if(out.data.length <= 650000) break;
+    }
+    return out;
+  }
+  async function pasteImageToPage(file){
+    const nb = getOrCreateActiveNotebook();
+    const img = await compressPastedImage(file);
+    if(!img) return;
+    const cv = document.getElementById('nb-canvas');
+    const cw = (cv && cv.clientWidth) || 600, ch = (cv && cv.clientHeight) || 400;
+    const size = Math.max(120, Math.round(Math.min(img.w, cw*0.55, 520)));
+    const hPx = size * img.h / img.w;
+    const maxX = Math.max(0, 100 - (size/cw*100) - 2), maxY = Math.max(0, 100 - (hPx/ch*100) - 2);
+    const entry = {id:uid(), notebookId:nb.id, kind:'image', page:state.notebookActivePage||1,
+      x: Math.min(4 + Math.round(Math.random()*18), maxX), y: Math.min(4 + Math.round(Math.random()*18), maxY),
+      size, rotation:0, image: img.data, category:'', text:'', createdAt: Date.now()};
+    state.data.entries.push(entry);
+    state.notebookSelectedEntry = entry.id;
+    await persist();
+    render();
+    showToast(state.notebookEditMode ? 'Capture collée sur la page.' : 'Capture collée. Clique sur « Modifier le carnet » pour la déplacer ou l’agrandir.');
+  }
+  document.addEventListener('paste', (ev)=>{
+    if(state.view!=='notebook' || !state.notebookOpened || !state.data || state.modal) return;
+    const t = ev.target;
+    if(t && (t.tagName==='INPUT' || t.tagName==='TEXTAREA' || t.tagName==='SELECT' || t.isContentEditable)) return; // on colle du texte dans un champ : ne rien faire
+    const items = (ev.clipboardData && ev.clipboardData.items) ? Array.from(ev.clipboardData.items) : [];
+    const it = items.find(x=>x.kind==='file' && /^image\//.test(x.type));
+    if(!it) return;
+    const file = it.getAsFile();
+    if(!file) return;
+    ev.preventDefault();
+    pasteImageToPage(file).catch(err=>{ console.error(err); showToast('Impossible de coller cette image.'); });
+  });
 
   // ---------- Démarrage ----------
   async function init(){
