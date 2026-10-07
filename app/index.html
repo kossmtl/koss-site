@@ -4496,6 +4496,38 @@
   // ---------- render ----------
   function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content; }
 
+  // ── Pile de popups (demande d'Amélie, 7 oct) ───────────────────────────────────────────────
+  // Logique unique pour TOUS les popups : quand un popup en ouvre un autre, le précédent est
+  // mémorisé ; quand le nouveau se ferme (Confirmer, Annuler, ✕), on revient au popup d'avant au
+  // lieu de tout fermer. Implémenté dans le setter de state.modal pour ne pas toucher aux ~190
+  // endroits qui assignent state.modal. Garde-fous : même type = simple remplacement (pas de
+  // pile) ; rouvrir un type déjà dans la pile = retour en arrière ; changement de vue
+  // (déconnexion, etc.) = pile vidée.
+  const modalStack = [];
+  let _modalCur = state.modal || null;
+  Object.defineProperty(state, 'modal', {
+    configurable: true, enumerable: true,
+    get(){ return _modalCur; },
+    set(v){
+      const prev = _modalCur;
+      if(modalStack.length && modalStack[modalStack.length-1].view !== state.view) modalStack.length = 0;
+      if(v){
+        if(prev && v.type !== prev.type){
+          const types = modalStack.map(x=>x.modal.type);
+          const idx = types.lastIndexOf(v.type);
+          if(idx >= 0) modalStack.length = idx;                    // retour vers un popup déjà empilé
+          else if(prev.type !== 'view-image') modalStack.push({modal:prev, view:state.view});
+        }
+        _modalCur = v;
+      } else if(modalStack.length){
+        _modalCur = modalStack.pop().modal;                         // fermeture → popup précédent
+        queueMicrotask(()=>{ if(state.modal){ closeModalDom(); renderModal(); } });
+      } else {
+        _modalCur = null;
+      }
+    }
+  });
+
   function render(){
     const app = document.getElementById('app');
     if(!state.data){
