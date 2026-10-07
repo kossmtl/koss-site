@@ -8443,6 +8443,11 @@
             ${unpaidAttendanceHtml(email, null)}
             ${studentVisitsHtml(email, null, !!(m.payload && m.payload.showVisits))}
 
+            <label style="display:flex;gap:10px;align-items:flex-start;margin-top:14px;cursor:pointer;background:var(--bg-tile);border:1px solid ${acct.isChildAccount?'var(--amber)':'var(--border)'};border-radius:8px;padding:10px 12px;">
+              <input type="checkbox" style="width:auto;margin-top:2px;" data-action="toggle-child-account" data-email="${escapeHtml(email)}" ${acct.isChildAccount?'checked':''}>
+              <span style="font-size:13px;line-height:1.4;"><strong style="color:var(--chalk);">👶 Ceci est un compte enfant</strong><br><span style="color:var(--chalk-dim);font-size:12px;">Cet·te élève a son propre compte (ex. 14 ans) : il·elle peut réserver les cours enfants <em>et</em> adultes directement, sans passer par un compte parent.</span></span>
+            </label>
+
             <label style="margin-top:14px;">Date de fête</label>
             <input id="sd-birthday" type="date" value="${acct.birthday||''}">
             <div class="btn-row"><button class="btn btn-secondary" data-action="save-student-birthday" data-email="${escapeHtml(email)}">Enregistrer</button></div>
@@ -11777,7 +11782,7 @@
         const profileSelect = document.getElementById('b-profile');
         const profileId = profileSelect ? (profileSelect.value || null) : null;
         const cForCheck = state.data.classes.find(cl=>cl.id===classId);
-        if(cForCheck && cForCheck.category === 'enfants' && !profileId){
+        if(cForCheck && cForCheck.category === 'enfants' && !profileId && !sessAcct.isChildAccount){
           showToast("Impossible de réserver un cours d'enfant à partir du compte parent — ajoutez un enfant à votre compte et réservez au nom de l'enfant.");
           return;
         }
@@ -11812,7 +11817,7 @@
         await saveSessionToStorage(existing.email);
         try{ await storageBackend.set('my_profile', JSON.stringify({name:existing.name,email}), false); }catch(e){}
         const cForCheckExisting = state.data.classes.find(cl=>cl.id===classId);
-        if(cForCheckExisting && cForCheckExisting.category === 'enfants'){
+        if(cForCheckExisting && cForCheckExisting.category === 'enfants' && !existing.isChildAccount){
           // Cours réservé aux enfants : jamais de réservation automatique au nom du parent
           // qui vient de se connecter — on réaffiche le popin pour qu'il/elle choisisse un
           // enfant via "Réserver pour" (ou tombe sur l'avertissement habituel via submit-booking
@@ -13704,6 +13709,21 @@
     else if(action==='clear-grant-recipient'){
       state.modal.payload = Object.assign({}, state.modal.payload, {prefillName:'', prefillEmail:'', prefillProfileId:null});
       render();
+    }
+    else if(action==='toggle-child-account'){
+      // Demande d'Amélie (7 oct) : un·e ado (ex. 14 ans) avec son PROPRE compte doit pouvoir
+      // réserver les cours enfants ET adultes directement. Simple indicateur sur le compte
+      // (acct.isChildAccount) — la règle « cours enfants = réservation via un profil enfant du
+      // parent » est levée pour ces comptes (voir submit-booking). L'accès financier reste
+      // régi par les abonnements (catégories couvertes).
+      const email = e.currentTarget.dataset.email;
+      const on = e.currentTarget.checked;
+      const acct = findStudentAccount(email);
+      if(!acct) return;
+      acct.isChildAccount = on;
+      await persist();
+      render();
+      showToast(on ? 'Compte enfant activé : cours enfants et adultes accessibles.' : 'Compte enfant désactivé.');
     }
     else if(action==='save-student-birthday'){
       const email = e.currentTarget.dataset.email;
