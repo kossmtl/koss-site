@@ -409,6 +409,44 @@
   }
   .modal h3{font-family:var(--font-d);margin:0 0 4px;font-size:18px;color:var(--chalk);}
   .modal .muted{color:var(--chalk-dim);font-size:13px;margin-bottom:14px;}
+
+  /* Centre de messages (7 oct) */
+  .modal.mc-modal{max-width:1240px;width:96vw;height:86vh;max-height:86vh;padding:0;display:grid;grid-template-columns:210px 350px 1fr;overflow:hidden;position:relative;}
+  .mc-close{position:absolute;top:10px;right:14px;z-index:3;}
+  .mc-side{background:var(--bg-tile);border-right:1px solid var(--border);padding:16px 10px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;}
+  .mc-nav{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;border:0;background:transparent;color:var(--chalk);font:500 13px var(--font-b);cursor:pointer;text-align:left;width:100%;}
+  .mc-nav:hover{background:var(--bg-panel);} .mc-nav.on{background:var(--amber);color:#28292E;font-weight:700;}
+  .mc-badge{font-size:11px;background:var(--coral);color:#fff;border-radius:10px;padding:1px 7px;font-weight:700;} .mc-nav.on .mc-badge{background:#28292E;}
+  .mc-sep{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--chalk-dim);padding:14px 10px 4px;}
+  .mc-fl{display:flex;align-items:center;padding:6px 10px;border-radius:8px;cursor:pointer;font:13px var(--font-b);border:0;background:transparent;color:var(--chalk);width:100%;text-align:left;}
+  .mc-fl:hover{background:var(--bg-panel);} .mc-fl.on{outline:1px solid var(--amber);}
+  .mc-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;}
+  .mc-list{border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;}
+  .mc-lh{padding:14px;border-bottom:1px solid var(--border);}
+  .mc-bulk{display:flex;gap:6px;margin-top:8px;align-items:center;font-size:12px;color:var(--chalk-dim);flex-wrap:wrap;}
+  .mc-items{overflow-y:auto;flex:1;}
+  .mc-item{display:grid;grid-template-columns:5px 20px 1fr auto;gap:10px;padding:12px 12px 12px 0;border-bottom:1px solid var(--border);cursor:pointer;align-items:start;}
+  .mc-item:hover{background:rgba(255,255,255,.03);} .mc-item.sel{background:var(--bg-tile);}
+  .mc-bar{align-self:stretch;border-radius:0 3px 3px 0;}
+  .mc-nm{font-weight:600;font-size:14px;display:flex;gap:6px;align-items:center;}
+  .mc-item.unread .mc-nm{font-weight:700;} .mc-item.unread .mc-nm:after{content:"";width:8px;height:8px;border-radius:50%;background:var(--cyan);}
+  .mc-pv{font-size:12.5px;color:var(--chalk-dim);margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .mc-tm{font-size:11px;color:var(--chalk-dim);white-space:nowrap;}
+  .mc-tag{font-size:10px;border-radius:5px;padding:1px 6px;margin-top:5px;display:inline-block;background:rgba(185,166,217,.18);color:var(--lilac);}
+  .mc-view{display:flex;flex-direction:column;min-height:0;}
+  .mc-vh{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 50px 14px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  .mc-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .mc-imp{display:flex;gap:4px;align-items:center;background:var(--bg-tile);border:1px solid var(--border);border-radius:9px;padding:4px 8px;}
+  .mc-imp span{font-size:11px;color:var(--chalk-dim);margin-right:4px;}
+  .mc-sw{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;} .mc-sw.on{border-color:#fff;}
+  .mc-msgs{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:10px;}
+  .mc-m{max-width:70%;padding:10px 13px;border-radius:10px;font-size:14px;white-space:pre-wrap;}
+  .mc-m small{display:block;font-size:10.5px;color:var(--chalk-dim);margin-bottom:3px;}
+  .mc-m.me{align-self:flex-end;background:rgba(147,180,143,.22);} .mc-m.st{align-self:flex-start;background:var(--bg-tile);}
+  .mc-m.note{border:1px dashed var(--lilac);}
+  .mc-cmp{padding:12px 20px 16px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:stretch;}
+  .mc-cmp textarea{flex:1;height:64px;resize:none;}
+  @media(max-width:900px){.modal.mc-modal{grid-template-columns:1fr;grid-template-rows:auto 40vh 1fr;height:92vh;max-height:92vh;overflow-y:auto;}.mc-side{flex-direction:row;flex-wrap:wrap;}.mc-sep,.mc-side p{display:none;}}
   .close-x{
     float:right;background:none;border:none;color:var(--chalk-dim);
     font-size:18px;cursor:pointer;
@@ -1181,6 +1219,7 @@
     shareRecipientType: 'coach',
     shareSearchQuery: '',
     shareSelectedRecipient: null,
+    mc: {box:'inbox', imp:null, q:'', sel:null, checked:{}}, // centre de messages (7 oct)
     msgPickerQuery: '', // S48 (25 sept) : recherche d'élève dans la modale "Message à un étudiant"
     msgPickerTried: false,
     lastSyncedData: null, // dernière copie connue comme identique au serveur, sert de base pour la fusion
@@ -4039,6 +4078,117 @@
       localStorage.setItem('koss_msg_seen_admin_v1', JSON.stringify(seen));
     }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
   }
+  // ── Centre de messages (gestionnaire) — demande d'Amélie, 7 oct ─────────────────────────────
+  // Champs ajoutés sur chaque fil (côté gestionnaire seulement, l'élève ne les voit jamais) :
+  //   coachBox   'inbox' (défaut) | 'archive' | 'trash'     boxAt  moment du classement
+  //   importance 'urgent' | 'important' | 'normal' (défaut) | 'bas'     trashedAt  pour la purge 30 j
+  // Un nouveau message de l'élève ramène automatiquement un fil archivé/supprimé dans la boîte.
+  const MC_IMP = {
+    urgent:{label:'Urgent', color:'#E2725B'}, important:{label:'Important', color:'#E8B84A'},
+    normal:{label:'Normal', color:'#93B48F'}, bas:{label:'Pas pressé', color:'#7d8087'}
+  };
+  function mcLastAt(t, from){
+    return (t.messages||[]).reduce((mx,x)=> (!from || x.from===from) ? Math.max(mx, x.at||0) : mx, 0);
+  }
+  function mcBox(t){
+    const b = t.coachBox || 'inbox';
+    if(b !== 'inbox' && mcLastAt(t,'student') > (t.boxAt||0)) return 'inbox';
+    return b;
+  }
+  function mcUnseen(t, seen){
+    const ls = mcLastAt(t,'student');
+    return ls > 0 && ls > ((seen||getLocalMsgSeenAdmin())[t.id]||0);
+  }
+  function mcThreadLabel(t){
+    const acct = findStudentAccount(t.studentEmail);
+    return acct ? acct.name : t.studentEmail;
+  }
+  function mcVisibleThreads(){
+    const mc = state.mc, seen = getLocalMsgSeenAdmin(), q = normalizeStr(mc.q||'');
+    return (state.data.messageThreads||[]).filter(t=>{
+      const b = mcBox(t);
+      if(mc.box==='unread'){ if(!(b==='inbox' && mcUnseen(t,seen))) return false; }
+      else if(mc.box==='notes'){ if(!(b==='inbox' && (t.messages||[]).some(m=>m.fromNote))) return false; }
+      else if(b !== mc.box) return false;
+      if(mc.imp && (t.importance||'normal') !== mc.imp) return false;
+      if(q && !normalizeStr(mcThreadLabel(t)+' '+t.studentEmail+' '+(t.messages||[]).map(m=>m.text||'').join(' ')).includes(q)) return false;
+      return true;
+    }).sort((a,b)=> mcLastAt(b)-mcLastAt(a));
+  }
+  function mcPurgeOldTrash(){
+    const limit = Date.now() - 30*24*3600*1000;
+    const before = (state.data.messageThreads||[]).length;
+    state.data.messageThreads = (state.data.messageThreads||[]).filter(t=> !(t.coachBox==='trash' && t.trashedAt && t.trashedAt < limit && mcBox(t)==='trash'));
+    return before !== state.data.messageThreads.length;
+  }
+  function messagesCenterHtml(){
+    const mc = state.mc, seen = getLocalMsgSeenAdmin();
+    const all = state.data.messageThreads||[];
+    const nUnread = all.filter(t=>mcBox(t)==='inbox' && mcUnseen(t,seen)).length;
+    const nNotes = all.filter(t=>mcBox(t)==='inbox' && (t.messages||[]).some(m=>m.fromNote)).length;
+    const nav = (k,label,badge)=>`<button class="mc-nav ${mc.box===k?'on':''}" data-action="mc-nav" data-box="${k}"><span>${label}</span>${badge?`<span class="mc-badge">${badge}</span>`:''}</button>`;
+    const list = mcVisibleThreads();
+    const sel = mc.sel ? findMessageThread(mc.sel) : null;
+    const titles = {inbox:'Boîte de réception', unread:'Non lus', notes:'Notes reçues', archive:'Archivés', trash:'Corbeille'};
+    const items = list.length ? list.map(t=>{
+      const last = (t.messages||[]).slice().sort((a,b)=>(b.at||0)-(a.at||0))[0];
+      const imp = MC_IMP[t.importance||'normal'];
+      const unseen = mcUnseen(t,seen);
+      const isSel = sel && sel.id===t.id;
+      const hasNote = (t.messages||[]).some(m=>m.fromNote);
+      return `<div class="mc-item ${unseen?'unread':''} ${isSel?'sel':''}" data-action="mc-select" data-email="${escapeHtml(t.studentEmail)}">
+        <div class="mc-bar" style="background:${imp.color}" title="${imp.label}"></div>
+        <input type="checkbox" data-action="mc-check" data-email="${escapeHtml(t.studentEmail)}" ${mc.checked[t.id]?'checked':''}>
+        <div style="min-width:0"><div class="mc-nm">${escapeHtml(mcThreadLabel(t))}</div>
+          <div class="mc-pv">${last ? (last.from==='admin'?'Vous : ':'')+escapeHtml((last.text||'').slice(0,120)) : ''}</div>
+          ${hasNote?'<span class="mc-tag">📝 note transférée</span>':''}</div>
+        <div class="mc-tm">${last&&last.at ? new Date(last.at).toLocaleDateString('fr-CA') : ''}</div>
+      </div>`;
+    }).join('') : '<p class="muted" style="padding:30px 14px;text-align:center;">Aucun message ici.</p>';
+
+    let view = '<p class="muted" style="margin:auto;text-align:center;">Choisissez une conversation à gauche.</p>';
+    if(sel){
+      const b = mcBox(sel), imp = sel.importance||'normal', label = mcThreadLabel(sel);
+      const msgs = (sel.messages||[]).slice().sort((a,c)=>(a.at||0)-(c.at||0));
+      view = `
+        <div class="mc-vh"><div><h3 style="font-size:20px;margin:0;">${escapeHtml(label)}</h3>
+          <div style="font-size:12px;color:var(--chalk-dim);">${b==='inbox'?'Conversation active':b==='archive'?'Archivée':'Dans la corbeille'} · ${escapeHtml(sel.studentEmail)}</div></div>
+          <div class="mc-acts">
+            <div class="mc-imp"><span>Importance</span>${Object.keys(MC_IMP).map(k=>`<button type="button" class="mc-sw ${imp===k?'on':''}" style="background:${MC_IMP[k].color}" title="${MC_IMP[k].label}" data-action="mc-set-imp" data-imp="${k}"></button>`).join('')}</div>
+            <button class="small-btn" data-action="mc-one" data-do="unread">Marquer non lu</button>
+            ${b==='inbox' ? `<button class="small-btn" data-action="mc-one" data-do="archive">📦 Archiver</button>` : `<button class="small-btn" data-action="mc-one" data-do="restore">↩ Remettre dans la boîte</button>`}
+            ${b==='trash' ? `<button class="small-btn" style="color:var(--coral);" data-action="mc-one" data-do="purge">Supprimer définitivement</button>` : `<button class="small-btn" style="color:var(--coral);" data-action="mc-one" data-do="trash">🗑 Supprimer</button>`}
+          </div></div>
+        <div class="mc-msgs">${msgs.length ? msgs.map(msg=>{
+          const mine = msg.from==='admin';
+          return `<div class="mc-m ${mine?'me':'st'} ${msg.fromNote?'note':''}"><small>${mine?'Coach':escapeHtml(msg.senderName||label)}${msg.fromNote?' · 📝 note transférée':''}${msg.at?' — '+new Date(msg.at).toLocaleString('fr-CA'):''}</small>${escapeHtml(msg.text)}</div>`;
+        }).join('') : '<p class="muted">Aucun message pour l’instant.</p>'}</div>
+        <div class="mc-cmp"><textarea id="msgthread-text" rows="3" placeholder="Écris ton message..."></textarea>
+          <button class="btn btn-primary" data-action="send-admin-message" data-email="${escapeHtml(sel.studentEmail)}">Envoyer</button></div>`;
+    }
+    return `
+      <div class="modal mc-modal">
+        <button class="close-x mc-close" data-action="close-modal">✕</button>
+        <div class="mc-side">
+          <h3 style="font-size:18px;padding:0 6px 10px;">✉️ Messages</h3>
+          <button class="btn btn-primary" style="width:100%;margin-bottom:8px;" data-action="mc-new">＋ Nouveau message</button>
+          ${nav('inbox','Boîte de réception',nUnread)}${nav('unread','Non lus',nUnread)}${nav('notes','Notes reçues',nNotes)}${nav('archive','Archivés')}${nav('trash','Corbeille')}
+          <div class="mc-sep">Filtrer par importance</div>
+          ${Object.keys(MC_IMP).map(k=>`<button class="mc-fl ${mc.imp===k?'on':''}" data-action="mc-imp-filter" data-imp="${k}"><span class="mc-dot" style="background:${MC_IMP[k].color}"></span>${MC_IMP[k].label}</button>`).join('')}
+          <p style="font-size:11px;color:var(--chalk-dim);padding:10px 6px;">La corbeille se vide automatiquement après 30 jours.</p>
+        </div>
+        <div class="mc-list">
+          <div class="mc-lh"><h3 style="font-size:16px;margin:0;">${titles[mc.box]}${mc.imp?' · '+MC_IMP[mc.imp].label:''}</h3>
+            <div style="display:flex;gap:6px;margin-top:8px;"><input id="mc-search" placeholder="🔍 Étudiant ou mot…" value="${escapeHtml(mc.q||'')}" style="flex:1;"><button class="small-btn" data-action="mc-search">Chercher</button></div>
+            <div class="mc-bulk"><label><input type="checkbox" data-action="mc-check-all"> Tout</label>
+              <button class="small-btn" data-action="mc-bulk" data-do="read">Marquer lu</button>
+              <button class="small-btn" data-action="mc-bulk" data-do="archive">📦 Archiver</button>
+              <button class="small-btn" style="color:var(--coral);" data-action="mc-bulk" data-do="trash">🗑 Supprimer</button></div></div>
+          <div class="mc-items">${items}</div>
+        </div>
+        <div class="mc-view">${view}</div>
+      </div>`;
+  }
   function hasUnseenMessagesForAdmin(){
     const seen = getLocalMsgSeenAdmin();
     return (state.data.messageThreads||[]).some(t=>{
@@ -4735,7 +4885,7 @@
           <div class="account-menu" style="right:0;left:auto;">
             <div class="account-menu-actions">
               <button data-action="goto-admin-notebook">📓 Mon carnet</button>
-              <button data-action="open-admin-message-picker">✉️ Message à un étudiant${hasUnseenMessagesForAdmin() ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--coral,#e63946);margin-left:6px;"></span>' : ''}</button>
+              <button data-action="open-admin-message-picker">✉️ Messages${hasUnseenMessagesForAdmin() ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--coral,#e63946);margin-left:6px;"></span>' : ''}</button>
               <button data-action="goto-manager-account">Gérer mon compte</button>
               <button data-action="admin-logout">Me déconnecter</button>
             </div>
@@ -6588,6 +6738,21 @@
           </div>
         `;
       }
+    } else if(m.type === 'messages-center'){
+      html = messagesCenterHtml();
+    } else if(m.type === 'confirm-purge-thread'){
+      const pt = findMessageThread(m.payload.email);
+      html = `
+        <div class="modal" style="max-width:380px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Supprimer définitivement ?</h3>
+          <p class="muted">Toute la conversation avec <strong style="color:var(--chalk);">${escapeHtml(pt ? mcThreadLabel(pt) : m.payload.email)}</strong> sera effacée, y compris du côté de l’étudiant. Cette action est irréversible.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" style="background:var(--coral);border-color:var(--coral);color:#fff;" data-action="mc-purge-confirm" data-email="${escapeHtml(m.payload.email)}">Supprimer</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
     } else if(m.type === 'admin-message-picker'){
       // S48 (25 sept, pt. 24) : modale ouverte depuis le menu du compte gestionnaire (en haut à
       // droite) → "✉️ Message à un étudiant" — choisir une conversation en cours, ou chercher un
@@ -12371,13 +12536,81 @@
         throw err;
       }
     }
+    else if(action==='mc-nav'){ state.mc.box = e.currentTarget.dataset.box; state.mc.sel = null; state.mc.checked = {}; render(); }
+    else if(action==='mc-imp-filter'){ const k = e.currentTarget.dataset.imp; state.mc.imp = state.mc.imp===k ? null : k; render(); }
+    else if(action==='mc-search'){ const el = document.getElementById('mc-search'); state.mc.q = el ? el.value.trim() : ''; render(); }
+    else if(action==='mc-new'){
+      state.msgPickerQuery = ''; state.msgPickerTried = false;
+      state.modal = {type:'admin-message-picker'}; render();
+    }
+    else if(action==='mc-select'){
+      if(e.target && e.target.tagName==='INPUT') return;           // la case à cocher a son propre action
+      const email = e.currentTarget.dataset.email;
+      const t = findMessageThread(email);
+      state.mc.sel = email;
+      if(t) setLocalMsgSeenAdmin(t.id, Date.now());
+      render();
+    }
+    else if(action==='mc-check'){
+      e.stopPropagation();
+      const t = findMessageThread(e.currentTarget.dataset.email);
+      if(t){ if(state.mc.checked[t.id]) delete state.mc.checked[t.id]; else state.mc.checked[t.id] = true; }
+    }
+    else if(action==='mc-check-all'){
+      const on = e.currentTarget.checked;
+      state.mc.checked = {};
+      if(on) mcVisibleThreads().forEach(t=>{ state.mc.checked[t.id] = true; });
+      render();
+    }
+    else if(action==='mc-bulk'){
+      const what = e.currentTarget.dataset.do;
+      const ids = Object.keys(state.mc.checked);
+      if(!ids.length){ showToast('Cochez d’abord des conversations.'); return; }
+      (state.data.messageThreads||[]).forEach(t=>{
+        if(!state.mc.checked[t.id]) return;
+        if(what==='read') setLocalMsgSeenAdmin(t.id, Date.now());
+        else { t.coachBox = what==='archive' ? 'archive' : 'trash'; t.boxAt = Date.now(); if(what==='trash') t.trashedAt = Date.now(); }
+      });
+      state.mc.checked = {}; state.mc.sel = null;
+      if(what!=='read') await persist();
+      render();
+      showToast(what==='read' ? 'Marqué comme lu.' : what==='archive' ? 'Archivé.' : 'Déplacé dans la corbeille.');
+    }
+    else if(action==='mc-set-imp'){
+      const t = state.mc.sel ? findMessageThread(state.mc.sel) : null;
+      if(!t) return;
+      t.importance = e.currentTarget.dataset.imp;
+      await persist(); render();
+    }
+    else if(action==='mc-one'){
+      const t = state.mc.sel ? findMessageThread(state.mc.sel) : null;
+      if(!t) return;
+      const what = e.currentTarget.dataset.do;
+      if(what==='unread'){ setLocalMsgSeenAdmin(t.id, 0); render(); return; }
+      if(what==='purge'){ state.modal = {type:'confirm-purge-thread', payload:{email:t.studentEmail}}; render(); return; }
+      if(what==='restore'){ t.coachBox = 'inbox'; t.boxAt = Date.now(); delete t.trashedAt; }
+      else { t.coachBox = what==='archive' ? 'archive' : 'trash'; t.boxAt = Date.now(); if(what==='trash') t.trashedAt = Date.now(); }
+      state.mc.sel = null;
+      await persist(); render();
+      showToast(what==='restore' ? 'Remis dans la boîte de réception.' : what==='archive' ? 'Archivé.' : 'Déplacé dans la corbeille.');
+    }
+    else if(action==='mc-purge-confirm'){
+      const email = e.currentTarget.dataset.email;
+      const t = findMessageThread(email);
+      if(t) state.data.messageThreads = state.data.messageThreads.filter(x=>x.id!==t.id);
+      if(state.mc.sel===email) state.mc.sel = null;
+      await persist();
+      state.modal = null; closeModalDom(); render();
+      showToast('Conversation supprimée définitivement.');
+    }
     else if(action==='open-admin-message-picker'){
       // S48 (25 sept, pt. 24) : "✉️ Message à un étudiant", ouvert depuis le menu du compte
       // gestionnaire (en haut à droite) — PAS le carnet, un fil de conversation dédié.
-      state.msgPickerQuery = '';
-      state.msgPickerTried = false;
       state.managerMenuOpen = false;
-      state.modal = {type:'admin-message-picker'};
+      if(!state.mc) state.mc = {box:'inbox', imp:null, q:'', sel:null, checked:{}};
+      state.mc.checked = {}; state.mc.sel = null; state.mc.q = '';
+      if(mcPurgeOldTrash()) await persist();
+      state.modal = {type:'messages-center'};
       render();
     }
     else if(action==='msg-picker-search-submit'){
@@ -12423,6 +12656,7 @@
           thread = {id: uid(), studentEmail: email, lastAdminMgrId: mgr?mgr.id:null, messages:[], createdAt: Date.now()};
           state.data.messageThreads.push(thread);
         }
+        if(thread.coachBox && thread.coachBox!=='inbox'){ thread.coachBox = 'inbox'; thread.boxAt = Date.now(); delete thread.trashedAt; }
         thread.lastAdminMgrId = mgr ? mgr.id : thread.lastAdminMgrId;
         thread.messages.push({id: uid(), from:'admin', text, at: Date.now()});
         thread.updatedAt = Date.now();
@@ -14260,6 +14494,9 @@
   // listeners s'empileraient). e.target reste utilisable même détaché du DOM live après un
   // render() déclenché par le même clic : la chaîne de parenté du sous-arbre détaché est
   // préservée, donc .closest() fonctionne toujours normalement.
+  document.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter' && e.target && e.target.id==='mc-search'){ e.preventDefault(); const b = document.querySelector('[data-action="mc-search"]'); if(b) b.click(); }
+  });
   document.addEventListener('click', (e)=>{
     let changed = false;
     if((state.accountMenuOpen || state.managerMenuOpen || state.headerMembershipMenuOpen) && !e.target.closest('.account-corner')){
