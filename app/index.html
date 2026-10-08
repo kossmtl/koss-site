@@ -1841,7 +1841,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-08-passes-visites';
+  const APP_BUILD = '2026-10-08-passes-visites-2';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -3961,12 +3961,17 @@
     const st = visitStats(email, profileId, _visitIdxCache.idx);
     return `<span style="color:var(--chalk);">Ce mois-ci : <strong>${st.month}</strong> · Total : <strong>${st.total}</strong></span> · `;
   }
-  function visitsBlockHtml(email, profileId){
+  function visitsBlockHtml(email, profileId, open){
     const st = visitStats(email, profileId);
     const o = visitAdjustOwner(email, profileId);
     const cell = (l,n)=>`<div style="background:var(--bg-tile);border:1px solid var(--border);border-radius:8px;padding:6px 8px;text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--chalk);">${n}</div><div style="font-size:10px;color:var(--chalk-dim);">${l}</div></div>`;
     return `
       <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:8px;">
+        <button type="button" data-action="toggle-visits-block" style="width:100%;display:flex;justify-content:space-between;align-items:center;background:none;border:none;color:var(--chalk);padding:0;cursor:pointer;font-size:14px;text-align:left;">
+          <span><span style="display:inline-block;width:16px;">${open?'▲':'▼'}</span> Visites — total : <strong style="color:var(--amber);">${st.total}</strong> <span style="font-size:11px;color:var(--chalk-dim);">· ce mois-ci : ${st.month}</span></span>
+        </button>
+        ${open ? '' : '<span style="display:none;"></span>'}
+        <div style="${open?'':'display:none;'}margin-top:8px;">
         <div style="font-size:12px;color:var(--chalk-dim);margin-bottom:6px;">Visites enregistrées sur la plateforme${o && o.clientSince ? ' · client depuis le '+fmtScheduledDate(o.clientSince) : ''}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px;">${st.windows.map(w=>cell(w.label,w.n)).join('')}</div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:13px;flex-wrap:wrap;">
@@ -3974,6 +3979,7 @@
           <button class="small-btn" data-action="open-add-visits" data-email="${escapeHtml(email)}" data-profile="${profileId||''}">+ Ajouter des visites</button>
         </div>
         <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:14px;">Total des visites depuis l’inscription : <strong style="font-size:20px;color:var(--amber);">${st.total}</strong> <span style="font-size:11px;color:var(--chalk-dim);">(${st.platform} plateforme + ${st.added} ajoutées)</span></div>
+        </div>
       </div>`;
   }
   function clientSinceFieldHtml(idPrefix, value){
@@ -8628,7 +8634,7 @@
             <label style="margin-top:14px;">Statistiques (visible seulement par vous)</label>
             <p style="font-size:13px;">Première visite : ${firstVisit} · Dernière visite : ${lastVisit}<br>
             Annulations : ${cancelCount}</p>
-            ${visitsBlockHtml(parentAcct.email, fm.id)}
+            ${visitsBlockHtml(parentAcct.email, fm.id, !!(m.payload && m.payload.showVisitBlock))}
 
             ${(()=>{
               const notes = fm.notes || {};
@@ -8719,7 +8725,7 @@
             <p style="font-size:13px;">Inscrit depuis : ${acct.createdAt ? isoDate(new Date(acct.createdAt)) : '—'}<br>
             Première visite : ${firstVisit} · Dernière visite : ${lastVisit}<br>
             Annulations : ${cancelCount}</p>
-            ${visitsBlockHtml(email, null)}
+            ${visitsBlockHtml(email, null, !!(m.payload && m.payload.showVisitBlock))}
 
             <label style="margin-top:14px;">Notes privées (visible seulement par vous)</label>
             <label style="margin-top:8px;font-size:12px;">Couleur de ceinture</label>
@@ -13821,6 +13827,10 @@
     else if(action==='remove-visit-adjust'){
       const o = visitAdjustOwner(e.currentTarget.dataset.email, e.currentTarget.dataset.profile||null);
       if(o){ o.visitAdjustments = (o.visitAdjustments||[]).filter(a=>a.id!==e.currentTarget.dataset.adj); await persist(); render(); showToast('Ajout retiré.'); }
+    }
+    else if(action==='toggle-visits-block'){
+      if(state.modal && state.modal.payload) state.modal.payload.showVisitBlock = !state.modal.payload.showVisitBlock;
+      render();
     }
     else if(action==='toggle-modal-visits'){
       if(state.modal && state.modal.payload) state.modal.payload.showVisits = !state.modal.payload.showVisits;
