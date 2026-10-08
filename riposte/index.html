@@ -20,63 +20,60 @@
 @font-face{font-family:'Aestetico';src:url('/fonts/aestetico-500.otf') format('opentype');font-weight:500;font-display:swap}
 @font-face{font-family:'Aestetico';src:url('/fonts/aestetico-800.otf') format('opentype');font-weight:800;font-display:swap}
 *{box-sizing:border-box}
-html,body{margin:0;background:#0b0c0f}
-body{color:#fff;font-family:'Aestetico',system-ui,sans-serif;font-weight:400;font-size:20px;line-height:30px;-webkit-font-smoothing:antialiased}
-.bgfix{position:fixed;top:0;left:50%;width:min(960px,100%);height:100vh;transform:translateX(-50%);z-index:0;pointer-events:none;
-  background:#0c0d11 url(/photos/riposte-bg.jpg) top center/100% auto no-repeat}
-.col{position:relative;z-index:1;max-width:960px;margin:0 auto;padding-bottom:180px}
-header{text-align:center;padding:165px 20px 0}
-h1{font-weight:500;font-size:64px;line-height:64px;margin:0}
-.dot{display:block;width:16px;height:16px;border-radius:50%;background:#fff;margin:31px auto 20px}
-.date{font-weight:500;font-size:64px;line-height:64px;margin:0}
-.text{max-width:610px;margin:0 auto;padding:98px 20px 0;text-shadow:0 0 6px rgba(0,0,0,.9),0 0 2px rgba(0,0,0,.8)}
-.text.cont{padding-top:0}
-.text p{margin:0 0 30px}
-.text ul{margin:0 0 60px;padding-left:38px}
-.info p{margin:0}
-.info u{font-weight:500;text-underline-offset:3px}
-.tel{font-weight:800;color:#fff;text-decoration:none}
-@media(max-width:700px){body{font-size:18px;line-height:27px}h1,.date{font-size:48px;line-height:52px}header{padding-top:90px}.text{padding-top:60px}}
+html,body{margin:0;background:#0e0f11}
+body{color:#fff;font-family:'Aestetico',system-ui,sans-serif;font-weight:400;font-size:17px;line-height:1.4em;-webkit-font-smoothing:antialiased;letter-spacing:-.013em}
+/* Fond de page fixe (comme Wix) : image à sa taille native, centrée en haut */
+.page-bg{position:fixed;inset:0;z-index:0;background:#0e0f11 url(/photos/riposte-bg.jpg) center top/768px 1920px no-repeat}
+/* Section : voile sombre 68 % sur toute la largeur */
+.sect{position:relative;z-index:1;min-height:1181px;background:rgba(14,15,17,.68);overflow:hidden}
+.in{width:980px;max-width:100%;margin:0 auto;position:relative}
+h1{margin:0;padding-top:148px;height:278px;font-weight:500;font-size:50px;line-height:.8em;text-align:center;color:#fff}
+.body{position:absolute;top:348px;left:257px;width:466px;padding-bottom:120px}
+.body p,.body ul{margin:0}
+.body ul{padding-left:30px}
+.body li p{display:list-item}
+.body b{font-weight:600}
+.body li p{margin:0}
+@media(max-width:980px){
+  .body{position:relative;top:auto;left:auto;margin:70px auto 0;width:min(466px,calc(100% - 40px))}
+  h1{height:auto;padding-bottom:0}
+}
+@media(max-width:700px){.page-bg{background-size:min(768px,100%) auto}}
 </style>
 </head>
 <body>
-<div class="bgfix" aria-hidden="true"></div>
-<div class="col">
-  <header>
-    <h1>Riposte</h1>
-    <span class="dot" aria-hidden="true"></span>
-    <p class="date">25 Mai 15h</p>
-  </header>
-
-  <main>
-  <div class="text">
-    <p>Peu importe le travail que l'on fait et l'endroit où l'on se trouve, on sait que certaines situations peuvent vite déraper… On a donc pensé que c'était le temps de se donner les moyens de savoir comment éviter le pire.</p>
-
-    <p>Cet atelier, c'est un espace sécuritaire pour apprendre à mieux lire les signes, réagir sans paniquer, et surtout, se donner des outils concrets pour garder le contrôle quand ça compte.<br>
-    On n'est pas ici pour te transformer en ninja (même si on aimerait bien ça !) mais pour te donner des bases simples, accessibles, et surtout adaptées à nos réalités afin que tu puisses te défendre en cas de besoin.</p>
-
-    <p style="margin:0">Le plan :</p>
-    <ul>
-      <li>Reconnaître une situation qui devient risquée</li>
-      <li>Adopter des postures qui envoient un message clair</li>
-      <li>Acquérir des réflexes de base (même si t'as zéro expérience)</li>
-      <li>Réagir vite, avec ce que t'as sous la main</li>
-      <li>Partager entre nous des stratégies qui fonctionnent</li>
-    </ul>
-
-    <p>Pas besoin d'être en forme ou d'avoir déjà fait ça, viens comme t'es, avec ton vécu, ton corps, ta tête. On apprend ensemble, sans jugement, dans le respect.</p>
-
-    <div class="info">
-      <p><u>Où :</u> À la maison, chez K-OSS (1871 Bélanger)</p>
-      <p><u>Quand :</u> le 25 mai à 15h</p>
-      <p><u>Pour qui :</u> Pour toute personne qui s'identifie comme travailleuse ou travailleur du sexe, peu importe ton genre ou ton expérience.</p>
+<div class="page-bg" aria-hidden="true"></div>
+<main class="sect">
+  <div class="in">
+    <h1>Riposte<br>•<br>25 Mai 15h</h1>
+    <div class="body">
+<p>Peu importe le travail que l’on fait et l’endroit où l’on se trouve, on sait que certaines situations peuvent vite déraper... On a donc pensé que c’était le temps de se donner les moyens de savoir comment éviter le pire.</p>
+<p>&nbsp;</p>
+<p>Cet atelier, c’est un espace sécuritaire pour apprendre à mieux lire les signes, réagir sans paniquer, et surtout, se donner des outils concrets pour garder le contrôle quand ça compte.</p>
+<p>On n’est pas ici pour te transformer en ninja (même si on aimerait bien ça !) mais pour te donner des bases simples, accessibles, et surtout adaptées à nos réalités afin que tu puisses te défendre en cas de besoin.</p>
+<p>&nbsp;</p>
+<p>Le plan :</p>
+<ul>
+<li><p>Reconnaître une situation qui devient risquée</p></li>
+<li><p>Adopter des postures qui envoient un message clair</p></li>
+<li><p>Acquérir des réflexes de base (même si t’as zéro expérience)</p></li>
+<li><p>Réagir vite, avec ce que t’as sous la main</p></li>
+<li><p>Partager entre nous des stratégies qui fonctionnent</p></li>
+</ul>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p>Pas besoin d’être en forme ou d’avoir déjà fait ça, viens comme t’es, avec ton vécu, ton corps, ta tête. On apprend ensemble, sans jugement, dans le respect.</p>
+<p>&nbsp;</p>
+<p><u><b>Où :</b></u> À la maison, chez K-OSS (1871 Bélanger)<br>
+<u><b>Quand :</b></u> le 25 mai à 15h<br>
+<u><b>Pour qui :</b></u> Pour toute personne qui s’identifie comme travailleuse ou travailleur du sexe, peu importe ton genre ou ton expérience.</p>
+<p><br>
+C’est gratuit. Pas de police. Pas de bullshit. Juste nous.</p>
+<p>&nbsp;</p>
+<p>Apelle Amélie pour t’inscrire, c’est gratuit et confidentiel</p>
+<p><b><a href="tel:4388699187" style="color:inherit;text-decoration:none">438-869-9187</a></b></p>
     </div>
-
-    <p style="margin-top:30px">C'est gratuit. Pas de police. Pas de bullshit. Juste nous.</p>
-      <p>Apelle Amélie pour t'inscrire, c'est gratuit et confidentiel<br>
-      <a class="tel" href="tel:4388699187">438-869-9187</a></p>
   </div>
-  </main>
-</div>
+</main>
 </body>
 </html>
