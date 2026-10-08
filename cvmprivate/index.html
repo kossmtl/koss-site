@@ -183,6 +183,10 @@
   .sticker-free{position:absolute; cursor:grab; touch-action:none;}
   .sticker-free.dragging{cursor:grabbing; opacity:0.85; z-index:5;}
   .sticker-free img{display:block; border-radius:6px;}
+  .from-tag{display:block; width:max-content; max-width:100%; margin-top:6px; padding:2px 9px; border-radius:12px;
+    background:rgba(255,255,255,0.9); border:1px solid var(--border); color:#4a453d; font:600 11px/1.4 var(--font-ui, system-ui, sans-serif);
+    font-style:normal; letter-spacing:0; text-align:left; user-select:none;}
+  #app.mgr-nb [data-action="open-share"]{display:none !important;}
   .capture-free img{border-radius:3px; box-shadow:0 1px 6px rgba(0,0,0,0.25); max-width:none; user-select:none; -webkit-user-drag:none;}
   .textnote-free.selected, .sticker-free.selected, .postit-free.selected{
     outline:2px dashed var(--coral); outline-offset:6px;
@@ -554,6 +558,11 @@
       clearTimeout(saveTimer);
       saveTimer = setTimeout(async ()=>{
         if(!state.session || !state.data){ resolve(false); return; }
+        if(state.session.isManager){
+          const r = await rpcManagerAction(state.managerCode, 'save_my_notebook', notebookBlobFromData());
+          if(!(r && r.ok)) showToast('Erreur de sauvegarde de ton carnet.');
+          resolve(!!(r && r.ok)); return;
+        }
         const ok = await rpcSave(state.session.name, state.session.code, notebookBlobFromData());
         resolve(ok);
       }, 400);
@@ -570,6 +579,7 @@
     closeModalDom();
     const app = document.getElementById('app');
     app.classList.toggle('wide', state.view==='notebook');
+    app.classList.toggle('mgr-nb', state.view==='notebook' && !!(state.session && state.session.isManager));
     app.innerHTML = renderView();
     attachHandlers(app);
     if(state.modal) renderModal();
@@ -631,6 +641,14 @@
     return (state.data.receivedItems||[]).length + (state.data.stickerGrants||[]).length;
   }
   function bottomActionsHtml(){
+    if(state.session && state.session.isManager){
+      return `
+      <div class="bottom-actions">
+        <span class="save-note">Mon carnet — sauvegarde automatique</span>
+        <button class="small-btn" data-action="open-download-notebook">⬇ Télécharger</button>
+        <button class="small-btn" data-action="back-to-manager">← Espace gestionnaire</button>
+      </div>`;
+    }
     const n = inboxTotalCount();
     return `
       <div class="bottom-actions">
@@ -781,6 +799,7 @@
                 <div class="postit-cat">${escapeHtml(n.category)}</div>
                 <div class="postit-text">${escapeHtml(n.text)}</div>
                 ${n.photo ? `<img src="${n.photo}">` : ''}
+                ${fromTagHtml(n)}
                 <div class="postit-actions">
                   <button data-action="goto-notebook-page" data-page="${n.page||1}">Page ${n.page||1}</button>
                   <button data-action="edit-entry" data-id="${n.id}">Modifier</button>
@@ -820,6 +839,7 @@
               <div class="postit-cat" style="font-size:${(10*pScale).toFixed(1)}px;">${escapeHtml(n.category)}</div>
               <div class="postit-text" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="font-size:${(15*pScale).toFixed(1)}px;">${escapeHtml(n.text)}</div>
               ${n.photo ? `<img src="${n.photo}">` : ''}
+              ${fromTagHtml(n)}
               ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
                 <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
                 <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
@@ -846,7 +866,7 @@
             const boxCss = n.boxWidth ? `display:block;width:${n.boxWidth}px;` : (wide?'display:block;width:100%;':'');
             return `
             <div class="textnote-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;translate:${tx} 0;transform:rotate(${n.rotation||0}deg);text-align:${hAlign};${n.boxWidth?`width:${n.boxWidth}px;max-width:${n.boxWidth}px;`:''}font-family:${textnoteFontCss(n.fontFamily)};font-size:${n.fontSize||16}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};">
-              <span class="textnote-content" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="${boxCss}">${escapeHtml(n.text)}</span>
+              <span class="textnote-content" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="${boxCss}">${escapeHtml(n.text)}</span>${fromTagHtml(n)}
               ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
                 <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
                 <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
@@ -1010,7 +1030,7 @@
     return `
       <div class="top-bar">
         <h1>Espace gestionnaire</h1>
-        <button class="small-btn" data-action="manager-logout">Me déconnecter</button>
+        <span><button class="small-btn" data-action="open-my-notebook">📓 Mon carnet</button> <button class="small-btn" data-action="manager-logout">Me déconnecter</button></span>
       </div>
       <div class="tabs">${tabsHtml}</div>
       ${body}
@@ -1071,6 +1091,11 @@
     `;
   }
 
+  // Petite étiquette « De : nom » affichée sous une note qui vient de quelqu'un d'autre.
+  function fromTagHtml(n){
+    return (n && n.senderName && !n.anonymous) ? `<span class="from-tag">✉ De : ${escapeHtml(n.senderName)}</span>` : '';
+  }
+
   // Ligne « De : nom · date » pour les notes reçues. Les notes envoyées en mode anonyme restent anonymes.
   function senderLineHtml(it){
     const who = it.anonymous ? 'Anonyme' : (it.senderName || 'inconnu');
@@ -1110,7 +1135,7 @@
             <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
               ${senderLineHtml(it)}
               ${sharedContentPreviewHtml(it)}
-              <div class="btn-row" style="margin-top:8px;"><button class="small-btn" data-action="archive-shared-item" data-id="${it.id}">Marquer comme lu</button></div>
+              <div class="btn-row" style="margin-top:8px;"><button class="small-btn" data-action="send-to-my-notebook" data-id="${it.id}">📓 Placer dans mon carnet</button><button class="small-btn" data-action="archive-shared-item" data-id="${it.id}">Marquer comme lu</button></div>
             </div>
           `).join('')}
         </div>
@@ -1242,7 +1267,7 @@
         </div>
       `;
     } else if(m.type==='sticker-picker'){
-      const studioStickers = (state.data.stickers||[]).filter(s=>s.availableToAll || (s.assignedNames||[]).some(n=>n.toLowerCase()===state.session.name.toLowerCase()));
+      const studioStickers = (state.data.stickers||[]).filter(s=>state.session.isManager || s.availableToAll || (s.assignedNames||[]).some(n=>n.toLowerCase()===state.session.name.toLowerCase()));
       const gifted = (state.data.stickerGrants||[]).map(g=>{
         const s = state.data.stickers.find(x=>x.id===g.stickerId);
         return s ? Object.assign({}, s, {grantId:g.id, grantMessage:g.message||''}) : null;
@@ -1306,8 +1331,8 @@
           <h3>📥 Reçu</h3>
           ${items.map(it=>`
             <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+              ${senderLineHtml(it)}
               ${sharedContentPreviewHtml(it)}
-              ${it.senderName && !it.anonymous ? `<p class="muted" style="font-size:11px;margin:4px 0 0;">De : ${escapeHtml(it.senderName)}</p>` : ''}
               <div class="btn-row" style="margin-top:8px;">
                 <button class="small-btn" data-action="claim-shared-item" data-id="${it.id}">Placer sur la page</button>
                 <button class="small-btn" data-action="delete-shared-item" data-id="${it.id}" style="color:var(--coral);">Supprimer</button>
@@ -2272,7 +2297,8 @@
         size: item.kind==='sticker' ? 60 : undefined, rotation: 0,
         fontSize: item.kind==='text' ? 16 : undefined, createdAt: Date.now(), shareId: item.id,
       });
-      delete entry.anonymous; delete entry.recipientType; delete entry.recipientName; delete entry.senderName; delete entry.status; delete entry.decidedAt; delete entry.inappropriate;
+      delete entry.anonymous; delete entry.recipientType; delete entry.recipientName; delete entry.status; delete entry.decidedAt; delete entry.inappropriate;
+      if(item.anonymous) delete entry.senderName; // une note anonyme reste anonyme
       state.data.entries.push(entry);
       await rpcPersonAction(state.session.name, state.session.code, 'claim_shared_item', {id});
       state.data.receivedItems = (state.data.receivedItems||[]).filter(it=>it.id!==id);
@@ -2605,6 +2631,42 @@
       await persistManagerMeta();
       render(); return;
     }
+    if(action==='open-my-notebook'){
+      showToast('Ouverture de ton carnet...');
+      if(!(await loadMyNotebookIntoState())) return;
+      state.view = 'notebook'; render();
+      return;
+    }
+    if(action==='back-to-manager'){
+      await persist();
+      state.session = null; state.data = null; state.modal = null;
+      state.view = 'manager'; render();
+      return;
+    }
+    if(action==='send-to-my-notebook'){
+      const item = (state.managerData.meta.sharedItems||[]).find(x=>x.id===id);
+      if(!item){ showToast('Note introuvable.'); return; }
+      showToast('Ajout à ton carnet...');
+      if(!(await loadMyNotebookIntoState())) return;
+      const nb = getOrCreateActiveNotebook();
+      const entry = Object.assign({}, item, {
+        id: uid(), notebookId: nb.id, page: 1,
+        x: 10+Math.round(Math.random()*40), y: 10+Math.round(Math.random()*40),
+        size: item.kind==='sticker' ? 60 : undefined, rotation: 0,
+        fontSize: item.kind==='text' ? 16 : undefined, createdAt: Date.now(), shareId: item.id,
+      });
+      delete entry.anonymous; delete entry.recipientType; delete entry.recipientName; delete entry.status; delete entry.decidedAt; delete entry.inappropriate;
+      if(item.anonymous) delete entry.senderName;
+      state.data.entries.push(entry);
+      const ok = await persist();
+      state.session = null; state.data = null; // on reste dans l'espace gestionnaire
+      if(!ok){ showToast('Erreur : la note n’a pas été ajoutée.'); return; }
+      const r = await rpcManagerAction(state.managerCode, 'archive_shared_item', {id});
+      if(r && r.ok){ item.status = 'archived'; }
+      render();
+      showToast('✓ Note ajoutée à ton carnet (page 1).');
+      return;
+    }
     if(action==='save-manager-name'){
       const nm = document.getElementById('mgr-name').value.trim();
       state.managerData.meta.managerName = nm;
@@ -2634,11 +2696,24 @@
       receivedItems: res.receivedItems || [],
       stickerGrants: res.stickerGrants || [],
     };
+    // notes déjà placées avant cette mise à jour : le serveur nous redonne qui les a envoyées
+    const cs = res.claimedSenders || {};
+    state.data.entries.forEach(e=>{ if(e.shareId && !e.senderName && cs[e.shareId]) e.senderName = cs[e.shareId]; });
     state.notebookOpened = false;
     state.notebookActivePage = 1;
     state.notebookEditMode = false;
     state.notebookSelectedEntry = null;
     state.notebookFilterCategory = null;
+  }
+
+  // ===== Mon carnet (espace gestionnaire) =====
+  // Le carnet de la prof est enregistré sur le serveur (ligne réservée), protégé par le code gestionnaire.
+  async function loadMyNotebookIntoState(){
+    const res = await rpcManagerAction(state.managerCode, 'load_my_notebook', {});
+    if(!res || !res.ok){ showToast('Ton carnet est introuvable. Le SQL du serveur est-il à jour ?'); return false; }
+    applyLoadResult({notebook: res.notebook || {}, stickers: (state.managerData.meta.stickers||[]), receivedItems: [], stickerGrants: []});
+    state.session = {name: (state.managerData.meta.managerName || '').trim() || 'Prof', code: '', isManager: true};
+    return true;
   }
 
   // ===== Téléchargement du carnet (PDF / Word / HTML / Texte) =====
@@ -2872,7 +2947,7 @@
     });
   }
   async function refreshInbox(force){
-    if(inboxRefreshing || !state.session || !state.data || state.view!=='notebook') return;
+    if(inboxRefreshing || !state.session || state.session.isManager || !state.data || state.view!=='notebook') return;
     if(document.hidden) return;
     if(!force && Date.now() - inboxLastRefresh < INBOX_REFRESH_MIN_GAP) return;
     inboxRefreshing = true;
