@@ -1071,6 +1071,13 @@
     `;
   }
 
+  // Ligne « De : nom · date » pour les notes reçues. Les notes envoyées en mode anonyme restent anonymes.
+  function senderLineHtml(it){
+    const who = it.anonymous ? 'Anonyme' : (it.senderName || 'inconnu');
+    const when = it.createdAt ? ' · ' + new Date(it.createdAt).toLocaleDateString('fr-CA', {day:'numeric', month:'short', year:'numeric'}) : '';
+    return `<p style="font-size:12px;color:var(--chalk-dim);margin:0 0 6px;">De : <strong style="color:var(--chalk);">${escapeHtml(who)}</strong>${when}</p>`;
+  }
+
   function managerNotesModerationHtml(){
     const pending = pendingModerationItems();
     const flagged = flaggedInappropriateItems();
@@ -1101,6 +1108,7 @@
           <h3>Notes reçues (${inbox.length})</h3>
           ${inbox.map(it=>`
             <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;">
+              ${senderLineHtml(it)}
               ${sharedContentPreviewHtml(it)}
               <div class="btn-row" style="margin-top:8px;"><button class="small-btn" data-action="archive-shared-item" data-id="${it.id}">Marquer comme lu</button></div>
             </div>
@@ -1136,10 +1144,10 @@
             return `
             <div style="border:1px solid var(--border);border-radius:8px;padding:${isOpen?'10px':'6px 10px'};margin-bottom:8px;">
               <button type="button" data-action="toggle-archived-note" data-id="${it.id}" style="width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px;background:transparent;border:none;padding:0;cursor:pointer;text-align:left;">
-                <span style="font-size:12px;color:var(--chalk-dim);">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-CA'):''} — ${snippet}</span>
+                <span style="font-size:12px;color:var(--chalk-dim);">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-CA'):''} — <strong>${escapeHtml(it.anonymous ? 'Anonyme' : (it.senderName||'inconnu'))}</strong> — ${snippet}</span>
                 <span style="font-family:var(--font-d);font-size:12px;">${isOpen?'▲':'▼'}</span>
               </button>
-              ${isOpen ? `<div style="margin-top:10px;">${sharedContentPreviewHtml(it)}<div class="btn-row" style="margin-top:8px;"><button class="small-btn" data-action="delete-shared-item-admin" data-id="${it.id}" style="color:var(--coral);">Supprimer définitivement</button></div></div>` : ''}
+              ${isOpen ? `<div style="margin-top:10px;">${senderLineHtml(it)}${sharedContentPreviewHtml(it)}<div class="btn-row" style="margin-top:8px;"><button class="small-btn" data-action="delete-shared-item-admin" data-id="${it.id}" style="color:var(--coral);">Supprimer définitivement</button></div></div>` : ''}
             </div>
           `;}).join('')}
         </div>
