@@ -4213,12 +4213,24 @@
   //   🟡 jaune  : a déjà eu un mode de paiement actif (abonnement OU passes/drop-in), mais
   //               plus rien d'actif maintenant (expiré/annulé/épuisé)
   //   ⚪ blanc  : n'a jamais rien acheté
+  // Paiement sur place (demande d'Amélie, 8 oct) : « Confirmer — il paiera sur place » active
+  // l'abonnement tout de suite (la personne a sa place, son nom apparaît dans les participants)
+  // mais marque m.payOnSite = true tant que m.payOnSitePaidAt n'est pas rempli. Pendant ce temps :
+  // nom en ROUge + « À payer sur place », et la vente n'est pas comptée dans le revenu.
+  function membershipOwesOnSite(m){
+    return !!(m && m.payOnSite && !m.payOnSitePaidAt && m.status!=='annulee');
+  }
+  function owedOnSiteMembershipsFor(email, profileId){
+    const key = (email||'').toLowerCase(), pid = profileId || null;
+    return state.data.memberships.filter(x=>x.studentEmail && x.studentEmail.toLowerCase()===key && (x.profileId||null)===pid && membershipOwesOnSite(x));
+  }
   function studentStatusColor(email, profileId){
     if(!email) return null;
     const key = email.toLowerCase();
     const pid = profileId || null;
     const ms = state.data.memberships.filter(x=>x.studentEmail && x.studentEmail.toLowerCase()===key && (x.profileId||null)===pid);
     if(!ms.length) return null;
+    if(ms.some(membershipOwesOnSite)) return '#E2725B';
     if(ms.some(x=>x.status==='attente_paiement' || hasDueInstallment(x))) return '#E8973F';
     if(ms.some(x=>x.type==='illimite' && membershipDisplayStatus(x)==='active')) return 'var(--sage)';
     if(ms.some(x=>x.type==='credits' && membershipDisplayStatus(x)==='active')) return '#B08FCE';
@@ -4311,6 +4323,9 @@
       // Réutilise 'refuse-membership' (déjà utilisée pour refuser un paiement "déclaré" par
       // un élève) : même sémantique, status → 'annulee'.
       extra += ` <button class="small-btn" data-action="refuse-membership" data-id="${m.id}">Annuler</button>`;
+    }
+    if(membershipOwesOnSite(m)){
+      extra = ` <button class="small-btn" style="background:var(--coral);border-color:var(--coral);color:#fff;" data-action="open-onsite-paid" data-id="${m.id}">💵 Marquer payé</button>` + extra;
     }
     if(ds==='active'){
       extra += ` <button class="small-btn" data-action="revoke-membership" data-id="${m.id}">Révoquer</button>`;
@@ -5922,7 +5937,7 @@
     const monthStart = new Date(nowForRevenue.getFullYear(), nowForRevenue.getMonth(), 1);
     const monthLabel = nowForRevenue.toLocaleDateString('fr-CA', {month:'long', year:'numeric'});
     const monthSales = state.data.memberships.filter(m=>
-      !m.grantedFree && m.status!=='attente_paiement' && m.status!=='annulee' && new Date(m.createdAt) >= monthStart
+      !m.grantedFree && m.status!=='attente_paiement' && m.status!=='annulee' && !membershipOwesOnSite(m) && new Date(m.createdAt) >= monthStart
     );
     // S48 (25 sept, demande d'Amélie) : un paiement comptant/Interac confirmé pour une présence
     // sans abonnement (voir submit-mark-attendance-paid) est une vente réelle mais ne crée jamais
@@ -6045,8 +6060,9 @@
         <td>${studentLinkHtml(m.studentName, m.studentEmail, m.profileId)}<br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(m.studentEmail)}</span></td>
         <td>${escapeHtml(m.planName)}</td>
         <td>
-          <button class="small-btn" style="background:var(--sage);border-color:var(--sage);color:var(--ink);" data-action="open-confirm-membership-amount" data-id="${m.id}">Confirmer</button>
-          <button class="small-btn" data-action="refuse-membership" data-id="${m.id}">Refuser</button>
+          <button class="small-btn" style="background:var(--sage);border-color:var(--sage);color:var(--ink);font-weight:700;" data-action="confirm-membership-pay-later" data-id="${m.id}" title="Il a sa place tout de suite, son nom sera en rouge jusqu'à ce que vous le marquiez payé">✓ Confirmer — paiera sur place</button>
+          <button class="small-btn" data-action="open-confirm-membership-amount" data-id="${m.id}">✓ Confirmer — déjà payé</button>
+          <button class="small-btn" data-action="refuse-membership" data-id="${m.id}">✕ Refuser</button>
         </td>
       </tr>
     `).join('');
@@ -6338,6 +6354,21 @@
         ${toConfirmMemberships.length ? `<table><tr><th>Étudiant</th><th>Formule</th><th></th></tr>${confirmRows}</table>`
           : '<p class="muted" style="color:var(--chalk-dim);">Rien en attente pour le moment.</p>'}
       `)}
+
+      ${(()=>{
+        const owedOnSite = state.data.memberships.filter(membershipOwesOnSite).sort((x,y)=>(x.payOnSiteAt||0)-(y.payOnSiteAt||0));
+        return owedOnSite.length ? adminCard('owed-on-site', `💵 À encaisser sur place (${owedOnSite.length})`, `
+          <p class="muted" style="color:var(--chalk-dim);">Confirmés « paiera sur place » — ils ont leur place et apparaissent en rouge dans les participants jusqu’à ce que vous les marquiez payés.</p>
+          <table><tr><th>Étudiant</th><th>Formule</th><th>Montant</th><th></th></tr>
+            ${owedOnSite.map(mm=>`<tr>
+              <td style="color:var(--coral);font-weight:700;">${studentLinkHtml(mm.studentName, mm.studentEmail, mm.profileId)}</td>
+              <td>${escapeHtml(mm.planName)}</td>
+              <td>${escapeHtml(mm.planPrice||'—')}</td>
+              <td><button class="small-btn" style="background:var(--coral);border-color:var(--coral);color:#fff;" data-action="open-onsite-paid" data-id="${mm.id}">💵 Marquer payé</button></td>
+            </tr>`).join('')}
+          </table>
+        `, 'var(--coral)', 'var(--coral)') : '';
+      })()}
 
       ${overdueInstallments.length ? adminCard('overdue-installments', `⚠️ Versements en retard (${overdueInstallments.length})`, `
         <table><tr><th>Étudiant</th><th>Formule</th><th>Versement</th><th>Montant</th><th></th></tr>
@@ -7876,7 +7907,7 @@
       const monthStartSD = new Date(nowSD.getFullYear(), nowSD.getMonth(), 1);
       const monthLabelSD = nowSD.toLocaleDateString('fr-CA', {month:'long', year:'numeric'});
       const salesSD = state.data.memberships.filter(mm=>
-        !mm.grantedFree && mm.status!=='attente_paiement' && mm.status!=='annulee' && new Date(mm.createdAt) >= monthStartSD
+        !mm.grantedFree && mm.status!=='attente_paiement' && mm.status!=='annulee' && !membershipOwesOnSite(mm) && new Date(mm.createdAt) >= monthStartSD
       ).sort((a,b)=>b.createdAt-a.createdAt);
       // S48 (25 sept, demande d'Amélie) : les présences sans abonnement payées comptant/Interac
       // (voir submit-mark-attendance-paid) sont maintenant incluses ici aussi — même total que le
@@ -7990,8 +8021,11 @@
       const participantRows = participants.length ? participants.map(b=>`
         <li style="flex-direction:column;align-items:stretch;gap:6px;">
           <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
-            <span style="${b.noMembership?'color:var(--coral);':''}">${studentLinkHtml(b.studentName, b.studentEmail, b.profileId)}${b.noMembership ? ' <span style="font-size:11px;">(sans abonnement)</span>' : ''}</span>
-            <button class="small-btn" data-action="cancel-booking" data-id="${b.id}">Retirer</button>
+            ${(()=>{
+              const owed = owedOnSiteMembershipsFor(b.studentEmail, b.profileId)[0];
+              return `<span style="${(b.noMembership||owed)?'color:var(--coral);':''}${owed?'font-weight:700;':''}">${studentLinkHtml(b.studentName, b.studentEmail, b.profileId)}${b.noMembership ? ' <span style="font-size:11px;">(sans abonnement)</span>' : ''}${owed ? ' <span style="font-size:11px;background:var(--coral);color:#fff;border-radius:5px;padding:1px 7px;margin-left:4px;">💵 À payer sur place</span>' : ''}</span>
+            <span style="display:flex;gap:6px;">${owed ? `<button class="small-btn" style="border-color:var(--coral);color:var(--coral);" data-action="open-onsite-paid" data-id="${owed.id}">Marquer payé</button>` : ''}<button class="small-btn" data-action="cancel-booking" data-id="${b.id}">Retirer</button></span>`;
+            })()}
           </div>
           <div style="display:flex;gap:6px;width:100%;">
             <input id="att-note-${b.id}" value="${escapeHtml(b.attendanceNoteArchived ? '' : (b.attendanceNote||''))}" placeholder="Note rapide sur cet étudiant..." style="flex:1;font-size:12px;padding:5px 8px;">
@@ -8268,6 +8302,27 @@
             <p class="muted" style="color:var(--chalk-dim);font-size:11px;">Par défaut, le prix affiché de la formule (${escapeHtml(mb.planPrice || (plan?plan.price:'') || '—')}). Modifiez ce montant si un rabais a été accordé ou si le paiement réel diffère (ex. paiement comptant partiel) — le rapport de ventes utilisera ce montant.</p>
             <div class="btn-row">
               <button class="btn btn-primary" data-action="submit-confirm-membership-amount" data-id="${id}">Confirmer le paiement</button>
+              <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+            </div>
+          </div>
+        `;
+      }
+    } else if(m.type === 'confirm-onsite-paid'){
+      const mb = state.data.memberships.find(mm=>mm.id===m.payload.id);
+      if(!mb){
+        html = `<div class="modal"><button class="close-x" data-action="close-modal">✕</button><h3>Abonnement introuvable</h3></div>`;
+      } else {
+        const plan = state.data.membershipPlans.find(p=>p.id===mb.planId);
+        const defaultAmount = parsePriceAmount(mb.planPrice || (plan?plan.price:'') || '');
+        html = `
+          <div class="modal">
+            <button class="close-x" data-action="close-modal">✕</button>
+            <h3>Paiement reçu sur place</h3>
+            <p class="muted">${studentLinkHtml(mb.studentName, mb.studentEmail, mb.profileId)} — ${escapeHtml(mb.planName)}</p>
+            <label>Montant réellement payé ($)</label>
+            <input type="number" step="0.01" min="0" id="onsite-paid-amount" value="${defaultAmount}">
+            <div class="btn-row">
+              <button class="btn btn-primary" data-action="submit-onsite-paid" data-id="${mb.id}">Confirmer le paiement</button>
               <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
             </div>
           </div>
@@ -11371,7 +11426,7 @@
       const category = document.getElementById('sr-category').value;
       const from = document.getElementById('sr-from').value || '0000-01-01';
       const to = document.getElementById('sr-to').value || '9999-12-31';
-      const sold = state.data.memberships.filter(m=> m.status!=='attente_paiement' && m.status!=='annulee');
+      const sold = state.data.memberships.filter(m=> m.status!=='attente_paiement' && m.status!=='annulee' && !membershipOwesOnSite(m));
       const inRange = sold.filter(m=>{
         const d = isoDate(new Date(m.createdAt));
         return d>=from && d<=to;
@@ -12833,6 +12888,39 @@
         try{ sb.functions.invoke('koss-send-invoice', {body:{membershipId: m.id}}); }
         catch(err){ console.error('Échec envoi courriel de confirmation d’abonnement:', err); }
       }
+    }
+    else if(action==='confirm-membership-pay-later'){
+      // « Confirmer — il paiera sur place » : active l'abonnement MAINTENANT (la personne a sa
+      // place, son nom apparaît dans les participants) mais le laisse marqué « à payer sur place »
+      // (rouge) jusqu'à « Marquer payé ». Aucun reçu envoyé tant que rien n'est payé.
+      const m = state.data.memberships.find(mm=>mm.id===id);
+      if(!m) return;
+      activateMembership(m);
+      m.payOnSite = true;
+      m.payOnSiteAt = Date.now();
+      delete m.payOnSitePaidAt;
+      await persist();
+      render();
+      showToast('Confirmé — ' + m.studentName + ' paiera sur place (affiché en rouge).');
+    }
+    else if(action==='open-onsite-paid'){
+      state.modal = {type:'confirm-onsite-paid', payload:{id}};
+      render();
+    }
+    else if(action==='submit-onsite-paid'){
+      const m = state.data.memberships.find(mm=>mm.id===id);
+      if(!m) return;
+      const amount = parseFloat(document.getElementById('onsite-paid-amount').value);
+      if(!isNaN(amount) && amount>=0){
+        m.planPrice = amount.toFixed(2).replace(/\.00$/,'') + ' $';
+      }
+      m.payOnSitePaidAt = Date.now();
+      await persist();
+      state.modal = null; closeModalDom();
+      render();
+      showToast('Paiement enregistré — ' + m.studentName + ' n’est plus à payer.');
+      try{ sb.functions.invoke('koss-send-invoice', {body:{membershipId: m.id}}); }
+      catch(err){ console.error('Échec envoi du reçu (paiement sur place):', err); }
     }
     else if(action==='refuse-membership'){
       const m = state.data.memberships.find(mm=>mm.id===id);
