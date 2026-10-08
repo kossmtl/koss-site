@@ -1832,7 +1832,72 @@
     return out;
   }
 
+  // ───────── Garde-fou « page périmée » (8 oct. 2026) ─────────
+  // Problème visé : un onglet ou une appli installée (téléphone/tablette de coach) restée ouverte
+  // avec une ANCIENNE version du code continue d'exécuter l'ancien code — dont l'ancien
+  // comportement qui supprimait des réservations. Ici, la page compare régulièrement sa version
+  // (APP_BUILD) à celle du fichier en ligne ; si elle est plus vieille, un bandeau demande de
+  // recharger et, côté gestionnaire, l'enregistrement est refusé tant que la page n'est pas rechargée.
+  // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
+  // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
+  // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
+  const APP_BUILD = '2026-10-08-garde-fou';
+  let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
+  function pageStampUrl(){ return window.location.origin + window.location.pathname; }
+  function showStaleBanner(){
+    try{
+      if(document.getElementById('stale-banner')) return;
+      const b = document.createElement('div');
+      b.id = 'stale-banner';
+      b.setAttribute('role','alert');
+      b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#B3261E;color:#fff;padding:12px 16px;font:600 14px/1.35 -apple-system,BlinkMacSystemFont,sans-serif;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;text-align:center;';
+      const t = document.createElement('span');
+      t.textContent = "Une nouvelle version de l'app est disponible. Recharge la page pour continuer à enregistrer.";
+      const btn = document.createElement('button');
+      btn.textContent = 'Recharger';
+      btn.style.cssText = 'background:#fff;color:#B3261E;border:0;border-radius:8px;padding:8px 14px;font:700 14px sans-serif;cursor:pointer;';
+      btn.onclick = ()=>{ window.location.reload(); };
+      b.appendChild(t); b.appendChild(btn);
+      document.body.appendChild(b);
+    }catch(e){}
+  }
+  async function checkPageFreshness(force){
+    if(pageStale) return true;
+    const minGap = window.__KOSS_GUARD_MS != null ? window.__KOSS_GUARD_MS : 60000;
+    if(!force && Date.now() - pageCheckAt < minGap) return false;
+    if(pageChecking) return pageChecking;
+    pageChecking = (async ()=>{
+      try{
+        pageCheckAt = Date.now();
+        const r = await fetch(pageStampUrl(), {method:'HEAD', cache:'no-store'});
+        if(!r.ok) return false;
+        const stamp = r.headers.get('etag') || r.headers.get('last-modified');
+        if(!stamp) return false;
+        if(pageStamp === null){ pageStamp = stamp; return false; } // première lecture = version chargée
+        if(stamp === pageStamp) return false;
+        // Le fichier en ligne a changé : on lit sa version avant de conclure (évite les fausses alertes).
+        const g = await fetch(pageStampUrl(), {cache:'no-store'});
+        if(!g.ok) return false;
+        const txt = await g.text();
+        const m = txt.match(/const APP_BUILD = '([^']+)'/);
+        pageStamp = stamp;
+        if(m && m[1] !== APP_BUILD){ pageStale = true; showStaleBanner(); return true; }
+        return false;
+      }catch(e){ return false; }
+      finally{ pageChecking = null; }
+    })();
+    return pageChecking;
+  }
+  checkPageFreshness(true); // note la version chargée dès l'ouverture
+  function isAdminContextForGuard(){
+    try{ return !!ADMIN_URL_FLAG || !!currentManager(); }catch(e){ return false; }
+  }
+
   async function persistNow(){
+    if(isAdminContextForGuard() && (pageStale || await checkPageFreshness(true))){
+      showStaleBanner();
+      throw new Error("Cette page n'est plus à jour : recharge-la, puis refais ta modification (rien n'a été enregistré).");
+    }
     let toWrite = state.data;
     let deleted = {};
     try{
@@ -1904,6 +1969,7 @@
   // à chaque render() suivant.
   let pendingPayAttempted = false;
   async function refreshFromRemote(){
+    checkPageFreshness(); // garde-fou « page périmée » (limité à 1 vérification/minute)
     if(state.modal) return; // on ne dérange pas une saisie en cours
     // Vérifie d'abord si quelque chose a vraiment changé côté serveur avant de retélécharger
     // tout le bloc JSON du studio. Échec ouvert : toute erreur ici (réseau, etc.) fait
