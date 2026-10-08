@@ -1841,7 +1841,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-08-garde-fou';
+  const APP_BUILD = '2026-10-08-passes-visites';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -2804,7 +2804,7 @@
     if(isScheduledFuture(m)) return false;
     if(m.status !== 'active') return false;
     if(m.type === 'illimite') return m.endDate >= todayIso();
-    if(m.type === 'credits') return m.creditsRemaining > 0;
+    if(m.type === 'credits') return m.creditsRemaining > 0 && !(m.endDate && m.endDate < todayIso());
     return false;
   }
 
@@ -3191,7 +3191,7 @@
 
   function membershipDetail(m){
     if(m.type === 'illimite') return 'jusqu\u2019au ' + m.endDate;
-    if(m.type === 'credits') return m.creditsRemaining + ' cours restant(s)';
+    if(m.type === 'credits') return m.creditsRemaining + ' cours restant(s)' + (m.endDate ? ' \u00b7 expire le ' + m.endDate : '');
     return '';
   }
 
@@ -3320,14 +3320,10 @@
     };
     if(plan.type === 'illimite'){
       m.creditsRemaining = null;
-      if(free){
-        const start = new Date();
-        const end = new Date(start); end.setDate(end.getDate() + plan.durationDays);
-        m.startDate = isoDate(start);
-        m.endDate = isoDate(end);
-      }
+      if(free) setMembershipDates(m, plan, todayIso());
     } else {
       m.creditsRemaining = free ? plan.creditsCount : 0;
+      if(free) setMembershipDates(m, plan, todayIso());
     }
     state.data.memberships.push(m);
     return m;
@@ -3877,6 +3873,115 @@
   }
   // Onglet "Visites" dépliable dans la fiche d'un étudiant (ou d'un enfant) : toutes ses
   // réservations passées et à venir (hors déjà annulées), avec possibilité de les retirer.
+
+  // ---------- Passes de X cours : validité 1 an, barre de progression, visites ----------
+  const PASS_VALID_DAYS = 365;
+  const PASS_NOTE = 'Valide 1 an à partir de la date de début. Les cours non utilisés à l’expiration ne sont ni remboursés ni crédités.';
+  function addDaysIsoFrom(iso, n){ const d = new Date(iso+'T12:00:00'); d.setDate(d.getDate()+n); return isoDate(d); }
+  function planIsPass(plan){ return !!(plan && plan.type==='credits' && !plan.isIntroProgram); }
+  // Fixe les dates d'un abonnement : illimité = durée de la formule ; pass (hors programmes d'intro) = 1 an.
+  function setMembershipDates(m, plan, startIso){
+    startIso = startIso || todayIso();
+    if(m.type === 'illimite'){
+      m.startDate = startIso;
+      m.endDate = addDaysIsoFrom(startIso, plan ? plan.durationDays : 30);
+    } else if(m.type === 'credits' && planIsPass(plan) && !m.introStart){
+      m.startDate = startIso;
+      m.endDate = addDaysIsoFrom(startIso, PASS_VALID_DAYS);
+      m.creditsTotal = plan.creditsCount;
+    }
+  }
+  function passTotal(m){
+    if(m.creditsTotal) return Math.max(m.creditsTotal, m.creditsRemaining||0);
+    const plan = state.data.membershipPlans.find(p=>p.id===m.planId);
+    return Math.max((plan && plan.creditsCount) || 0, m.creditsRemaining||0, 1);
+  }
+  function passColor(ratio){ const r = Math.max(0, Math.min(1, ratio)); return 'hsl('+Math.round(120*r)+',70%,45%)'; }
+  // Barre de progression : dégradé vert (pass pleine) → rouge (0 cours restant).
+  function passBarHtml(m){
+    if(!m || m.type!=='credits') return '';
+    const total = passTotal(m), rem = Math.max(0, m.creditsRemaining||0);
+    const r = total ? rem/total : 0;
+    return `<div style="height:8px;border-radius:4px;background:rgba(255,255,255,0.12);overflow:hidden;margin:4px 0 2px;max-width:280px;"><div style="height:100%;width:${Math.round(r*100)}%;background:${passColor(r)};border-radius:4px;transition:width .3s;"></div></div>`;
+  }
+  function passExtraHtml(m, ds){
+    if(!m || m.type!=='credits') return '';
+    const exp = m.endDate ? fmtScheduledDate(m.endDate) : '';
+    if(ds==='active'){
+      return passBarHtml(m) + (exp ? `<div style="font-size:11px;color:var(--chalk-dim);">⏳ Expire le ${exp}. Les cours non utilisés ne sont ni remboursés ni crédités.</div>` : '');
+    }
+    if(ds==='expiree' && exp && m.endDate < todayIso()) return `<div style="font-size:11px;color:var(--chalk-dim);">Expirée le ${exp} — les cours non utilisés ne sont ni remboursés ni crédités.</div>`;
+    return '';
+  }
+
+  // Visites : réservations confirmées dont la date est passée ou aujourd'hui (annulées / liste d'attente exclues)
+  function visitIndex(){
+    const idx = new Map(), today = todayIso();
+    state.data.bookings.forEach(b=>{
+      if(b.status!=='confirmee' || !b.dateIso || b.dateIso>today || !b.studentEmail) return;
+      const k = b.studentEmail.toLowerCase()+'|'+(b.profileId||'');
+      if(!idx.has(k)) idx.set(k, []);
+      idx.get(k).push(b.dateIso);
+    });
+    return idx;
+  }
+  function visitAdjustOwner(email, profileId){
+    const acct = findStudentAccount(email);
+    if(!acct) return null;
+    if(profileId) return (acct.familyMembers||[]).find(f=>f.id===profileId) || null;
+    return acct;
+  }
+  function visitAdjustTotal(email, profileId){
+    const o = visitAdjustOwner(email, profileId);
+    return o ? (o.visitAdjustments||[]).reduce((t,a)=>t+(parseInt(a.n,10)||0),0) : 0;
+  }
+  function monthsAgoIso(n){ const d = new Date(todayIso()+'T12:00:00'); d.setMonth(d.getMonth()-n); return isoDate(d); }
+  function visitStats(email, profileId, idx){
+    idx = idx || visitIndex();
+    const dates = (idx.get((email||'').toLowerCase()+'|'+(profileId||'')) || []).slice().sort();
+    const added = visitAdjustTotal(email, profileId);
+    const today = todayIso();
+    const monthStart = today.slice(0,7)+'-01';
+    const o = visitAdjustOwner(email, profileId);
+    const since = (o && o.clientSince) || dates[0] || today;
+    const ageMonths = Math.max(0, Math.round((new Date(today+'T12:00:00') - new Date(since+'T12:00:00'))/(30.44*86400000)));
+    const wins = [{label:'Ce mois-ci', from:monthStart}];
+    [3,6,12,24,36,48,60,72,84,96,108,120].forEach((mo,i,arr)=>{
+      const prev = i===0 ? 1 : arr[i-1];
+      if(prev < ageMonths || i===0){
+        wins.push({label: mo<12 ? 'Depuis '+mo+' mois' : (mo===12 ? 'Depuis 1 an' : 'Depuis '+(mo/12)+' ans'), from:monthsAgoIso(mo)});
+      }
+    });
+    wins.forEach(w=>{ w.n = dates.filter(d=>d>=w.from).length; });
+    return {windows:wins, platform:dates.length, added, total:dates.length+added, month:wins[0].n};
+  }
+  let _visitIdxCache = null;
+  function visitListSummary(email, profileId){
+    if(!_visitIdxCache || _visitIdxCache.b !== state.data.bookings || _visitIdxCache.t !== state.data.bookings.length || _visitIdxCache.d !== todayIso()) _visitIdxCache = {b:state.data.bookings, t:state.data.bookings.length, d:todayIso(), idx:visitIndex()};
+    const st = visitStats(email, profileId, _visitIdxCache.idx);
+    return `<span style="color:var(--chalk);">Ce mois-ci : <strong>${st.month}</strong> · Total : <strong>${st.total}</strong></span> · `;
+  }
+  function visitsBlockHtml(email, profileId){
+    const st = visitStats(email, profileId);
+    const o = visitAdjustOwner(email, profileId);
+    const cell = (l,n)=>`<div style="background:var(--bg-tile);border:1px solid var(--border);border-radius:8px;padding:6px 8px;text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--chalk);">${n}</div><div style="font-size:10px;color:var(--chalk-dim);">${l}</div></div>`;
+    return `
+      <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:8px;">
+        <div style="font-size:12px;color:var(--chalk-dim);margin-bottom:6px;">Visites enregistrées sur la plateforme${o && o.clientSince ? ' · client depuis le '+fmtScheduledDate(o.clientSince) : ''}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px;">${st.windows.map(w=>cell(w.label,w.n)).join('')}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:13px;flex-wrap:wrap;">
+          <span>Visites ajoutées par le gestionnaire : <strong>${st.added}</strong></span>
+          <button class="small-btn" data-action="open-add-visits" data-email="${escapeHtml(email)}" data-profile="${profileId||''}">+ Ajouter des visites</button>
+        </div>
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:14px;">Total des visites depuis l’inscription : <strong style="font-size:20px;color:var(--amber);">${st.total}</strong> <span style="font-size:11px;color:var(--chalk-dim);">(${st.platform} plateforme + ${st.added} ajoutées)</span></div>
+      </div>`;
+  }
+  function clientSinceFieldHtml(idPrefix, value){
+    return `<label style="margin-top:14px;">Client depuis</label>
+            <input id="${idPrefix}-clientsince" type="date" value="${value||''}" style="max-width:220px;">
+            <p style="font-size:11px;color:var(--chalk-dim);margin:4px 0 0;">Date de début avec K-OSS (ex. : début chez MINDBODY). Laissez vide si inconnue.</p>`;
+  }
+
   function studentVisitsHtml(email, profileId, showVisits){
     const pid = profileId || null;
     const visits = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===(email||'').toLowerCase() && (b.profileId||null)===pid && b.status!=='annulee').sort((a,b)=>a.dateIso.localeCompare(b.dateIso));
@@ -4703,11 +4808,9 @@
     const durationDays = plan ? plan.durationDays : 30;
     const creditsCount = plan ? plan.creditsCount : 1;
     if(m.type === 'illimite'){
-      const start = new Date();
-      const end = new Date(start); end.setDate(end.getDate() + durationDays);
-      m.startDate = isoDate(start);
-      m.endDate = isoDate(end);
+      setMembershipDates(m, plan || {durationDays}, m.pastStart || todayIso());
     } else {
+      if(plan) setMembershipDates(m, plan, m.pastStart || todayIso());
       let remaining = creditsCount;
       if(m.introStart){
         const introClass = state.data.classes.find(c=>c.category==='intro_bjj' && c.startDate===m.introStart && c.endDate===m.introEnd);
@@ -5414,7 +5517,7 @@
           // pas accepter) — nécessite un accord côté Supabase (koss_sync_all) pour qu'un élève
           // puisse lui-même faire passer SON abonnement de "attente_paiement" à "annulee".
           const refuseBtn = ds==='attente_paiement' ? ` <button class="small-btn" data-action="student-refuse-pending-membership" data-id="${m.id}">Refuser</button>` : '';
-          return `<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m.planName)}${m.profileId?' <span style="color:var(--chalk-dim);">(pour '+escapeHtml(getProfileName(acct,m.profileId))+')</span>':''} — ${membershipBadge(m)} ${ds==='active' ? '· '+membershipDetail(m) : ''}${hideBtn}${invoiceBtn}${payBtn}${refuseBtn}</div>`;
+          return `<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m.planName)}${m.profileId?' <span style="color:var(--chalk-dim);">(pour '+escapeHtml(getProfileName(acct,m.profileId))+')</span>':''} — ${membershipBadge(m)} ${ds==='active' ? '· '+membershipDetail(m) : ''}${hideBtn}${invoiceBtn}${payBtn}${refuseBtn}${passExtraHtml(m, ds)}</div>`;
         }).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun abonnement.</p>'}
         ${hiddenOwnCount ? `<button class="small-btn" style="margin-top:4px;" data-action="toggle-show-hidden-memberships-self">${showHiddenMemberships ? 'Cacher les abonnements masqués' : `Afficher les abonnements masqués (${hiddenOwnCount})`}</button>` : ''}
         <div class="btn-row"><button class="btn btn-primary" data-action="browse-plans">Acheter / ajouter un abonnement</button></div>
@@ -6200,7 +6303,7 @@
                   <button class="small-btn" data-action="open-child-detail" data-parent-email="${escapeHtml(s.parentEmail)}" data-member-id="${s.memberId}">Voir la fiche</button>
                 </span>
               </div>
-              <div style="color:var(--chalk-dim);font-size:11px;margin-top:2px;">Enfant de ${escapeHtml(s.parentName)} · 🎂 ${escapeHtml(s.birthday||'—')} · ✉️ ${escapeHtml(s.email||'—')} · 📞 ${escapeHtml(s.phone||'—')}</div>
+              <div style="color:var(--chalk-dim);font-size:11px;margin-top:2px;">${visitListSummary(s.parentEmail, s.memberId)}Enfant de ${escapeHtml(s.parentName)} · 🎂 ${escapeHtml(s.birthday||'—')} · ✉️ ${escapeHtml(s.email||'—')} · 📞 ${escapeHtml(s.phone||'—')}</div>
             </li>
           `;
         }
@@ -6213,7 +6316,7 @@
               <button class="small-btn" data-action="delete-student" data-email="${escapeHtml(s.email)}">Supprimer</button>
             </span>
           </div>
-          <div style="color:var(--chalk-dim);font-size:11px;margin-top:2px;">${escapeHtml(s.email)}${s.phone?' · '+escapeHtml(s.phone):''}</div>
+          <div style="color:var(--chalk-dim);font-size:11px;margin-top:2px;">${visitListSummary(s.email, null)}${escapeHtml(s.email)}${s.phone?' · '+escapeHtml(s.phone):''}</div>
         </li>
       `;
       }).join('')}</ul>` : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucun résultat.</p>';
@@ -7652,6 +7755,7 @@
             ? ` <span style="color:var(--sage);">→ ${escapeHtml(p.memberPrice)} (prix membre)</span>`
             : ` <span style="color:var(--chalk-dim);">(${escapeHtml(p.memberPrice)} pour les membres)</span>`;
         }
+        if(planIsPass(p)) priceLine += ' · <span style="color:var(--amber);">valide 1 an</span>';
         if(p.isIntroProgram){
           const progs = upcomingIntroPrograms();
           if(progs.length){
@@ -7792,12 +7896,13 @@
         : `<p style="font-size:12px;color:var(--chalk-dim);margin-top:2px;">Prix membre (${escapeHtml(plan.memberPrice)}) réservé aux personnes ayant un abonnement illimité actif.</p>`
       ) : '';
       const needsContactGate = !!profileId && !contactConfirmed && !childHasPriorActivity(email, profileId);
+      const passNoteBlock = (planIsPass(plan) && !introStart) ? `<p style="font-size:12px;color:var(--amber);border:1px solid var(--amber);border-radius:8px;padding:8px 10px;margin:8px 0 0;line-height:1.4;">⏳ ${PASS_NOTE}</p>` : '';
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>${escapeHtml(plan.name)}</h3>
           ${needsContactGate ? '' : `<p class="muted">${plan.type==='illimite' ? plan.durationDays+' jours illimité' : plan.creditsCount+' cours'} · ${escapeHtml(displayPrice)}${introStart?` · Programme du ${formatShortDate(introStart)}`:''}</p>
-          ${memberPriceNote}`}
+          ${memberPriceNote}${passNoteBlock}`}
           ${needsContactGate ? `
             <div style="border:2px solid var(--coral);background:rgba(255,90,90,0.12);border-radius:10px;padding:16px;margin-top:6px;">
               <p style="font-size:14px;color:var(--coral);font-weight:700;margin:0 0 10px;line-height:1.5;">⚠️ Avez-vous contacté le club avant d’inscrire votre enfant pour la première fois ? Un contact téléphonique ou par courriel est obligatoire avant l’inscription au cours d’essai. Le cours d’essai est obligatoire, à la date mentionnée sous l’onglet <a href="https://kossmtl.ca/#important" target="_blank" rel="noopener" style="color:var(--coral);text-decoration:underline;">Cours d’essai pour enfants</a> sur le site web. Aucun remboursement n’est offert en cas d’absence.</p>
@@ -7924,8 +8029,8 @@
           <label>Formule</label>
           <select id="g-plan">${plans.map(p=>`<option value="${p.id}">${escapeHtml(p.name)} (${p.type==='illimite'?p.durationDays+' jours':p.creditsCount+' cours'})</option>`).join('') || '<option value="">Aucune formule créée</option>'}</select>
           <label style="margin-top:14px;">Date de début (facultatif)</label>
-          <input type="date" id="g-start" min="${todayIso()}" style="max-width:220px;">
-          <p id="g-start-hint" style="font-size:11px;color:var(--chalk-dim);margin:6px 0 0;">Laissez vide pour commencer aujourd\u2019hui. Avec une date future, l\u2019abonnement reste invisible pour l\u2019étudiant et s\u2019active ce jour-là ; s\u2019il est payant, la demande de paiement est envoyée par courriel ce jour-là (pas avant) et la période commence à cette date, même si l\u2019étudiant paie plus tard.</p>
+          <input type="date" id="g-start" style="max-width:220px;">
+          <p id="g-start-hint" style="font-size:11px;color:var(--chalk-dim);margin:6px 0 0;">Laissez vide pour commencer aujourd\u2019hui. <strong>Date passée permise</strong> : la période (durée de la formule, ou 1 an pour une passe de cours) est calculée à partir de cette date. Avec une date future, l\u2019abonnement reste invisible pour l\u2019étudiant et s\u2019active ce jour-là ; s\u2019il est payant, la demande de paiement est envoyée par courriel ce jour-là (pas avant). Les passes de cours expirent 1 an après leur début ; les cours non utilisés ne sont ni remboursés ni crédités.</p>
           <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
             <input type="checkbox" id="g-paid" style="width:auto;margin:0;" onchange="document.getElementById('g-amount-wrap').style.display=this.checked?'block':'none';">
             <span>Payant (montant personnalis\u00e9) \u2014 envoie une demande de paiement au client</span>
@@ -8460,6 +8565,28 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'add-visits'){
+      const o = visitAdjustOwner(m.payload.email, m.payload.profileId);
+      const who = o ? o.name : '';
+      const hist = o ? (o.visitAdjustments||[]).slice().sort((a,b)=>b.at-a.at) : [];
+      html = `
+        <div class="modal" style="max-width:480px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Ajouter des visites</h3>
+          <p class="muted">${escapeHtml(who)} — visites non enregistrées sur la plateforme (ex. historique MINDBODY).</p>
+          <label>Nombre de visites à ajouter</label>
+          <input id="av-n" type="number" step="1" placeholder="Ex. : 214" style="max-width:160px;">
+          <label style="margin-top:10px;">Note (facultatif)</label>
+          <input id="av-note" placeholder="Ex. : Historique MINDBODY jusqu\u2019au 30 sept. 2026">
+          <p style="font-size:11px;color:var(--chalk-dim);margin:6px 0 0;">Ces visites n\u2019ont pas de date : elles comptent seulement dans le total général.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="save-visit-adjust" data-email="${escapeHtml(m.payload.email)}" data-profile="${m.payload.profileId||''}">Ajouter</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+          <label style="margin-top:14px;">Historique des ajouts</label>
+          ${hist.length ? `<table style="margin-top:6px;"><tr><th>Date</th><th>Visites</th><th>Note</th><th>Par</th><th></th></tr>${hist.map(a=>`<tr><td>${isoDate(new Date(a.at))}</td><td>${a.n>0?'+':''}${a.n}</td><td>${escapeHtml(a.note||'')}</td><td>${escapeHtml(a.by||'')}</td><td><button class="small-btn" data-action="remove-visit-adjust" data-email="${escapeHtml(m.payload.email)}" data-profile="${m.payload.profileId||''}" data-adj="${a.id}">Retirer</button></td></tr>`).join('')}</table>` : '<p class="muted" style="color:var(--chalk-dim);">Aucun ajout.</p>'}
+        </div>
+      `;
     } else if(m.type === 'child-detail'){
       const parentAcct = findStudentAccount(m.payload.parentEmail);
       const fm = parentAcct ? (parentAcct.familyMembers||[]).find(f=>f.id===m.payload.memberId) : null;
@@ -8493,13 +8620,15 @@
 
             <label style="margin-top:14px;">Date de fête</label>
             <input id="cd-birthday" type="date" value="${fm.birthday||''}">
+            ${clientSinceFieldHtml('cd', fm.clientSince)}
             <label style="margin-top:8px;">Ceinture</label>
             <input id="cd-belt" value="${escapeHtml(fm.belt||'')}">
             <div class="btn-row"><button class="btn btn-secondary" data-action="save-child-info" data-parent-email="${escapeHtml(parentAcct.email)}" data-member-id="${fm.id}">Enregistrer</button></div>
 
             <label style="margin-top:14px;">Statistiques (visible seulement par vous)</label>
             <p style="font-size:13px;">Première visite : ${firstVisit} · Dernière visite : ${lastVisit}<br>
-            Nombre de visites : ${pastConfirmed.length} · Annulations : ${cancelCount}</p>
+            Annulations : ${cancelCount}</p>
+            ${visitsBlockHtml(parentAcct.email, fm.id)}
 
             ${(()=>{
               const notes = fm.notes || {};
@@ -8524,7 +8653,7 @@
             })()}
 
             <label style="margin-top:14px;">Abonnements actifs (${activeMemberships.length})</label>
-            ${activeMemberships.length ? activeMemberships.map(m2=>`<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m2.planName)} — ${membershipBadge(m2)} ${membershipDisplayStatus(m2)==='active' ? '· '+membershipDetail(m2) : ''}</div>`).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun abonnement actif.</p>'}
+            ${activeMemberships.length ? activeMemberships.map(m2=>`<div style="font-size:13px;margin-bottom:4px;">${escapeHtml(m2.planName)} — ${membershipBadge(m2)} ${membershipDisplayStatus(m2)==='active' ? '· '+membershipDetail(m2) : ''}${passBarHtml(m2)}</div>`).join('') : '<p class="muted" style="color:var(--chalk-dim);">Aucun abonnement actif.</p>'}
             <div class="btn-row"><button class="btn btn-primary" data-action="grant-membership-for" data-email="${escapeHtml(parentAcct.email)}" data-name="${escapeHtml(fm.name)}" data-profile="${fm.id}">Offrir un abonnement</button></div>
 
             <div class="btn-row">
@@ -8571,6 +8700,7 @@
 
             <label style="margin-top:14px;">Date de fête</label>
             <input id="sd-birthday" type="date" value="${acct.birthday||''}">
+            ${clientSinceFieldHtml('sd', acct.clientSince)}
             <div class="btn-row"><button class="btn btn-secondary" data-action="save-student-birthday" data-email="${escapeHtml(email)}">Enregistrer</button></div>
 
             ${(acct.familyMembers||[]).length ? `
@@ -8588,7 +8718,8 @@
             <label style="margin-top:14px;">Statistiques (visible seulement par vous)</label>
             <p style="font-size:13px;">Inscrit depuis : ${acct.createdAt ? isoDate(new Date(acct.createdAt)) : '—'}<br>
             Première visite : ${firstVisit} · Dernière visite : ${lastVisit}<br>
-            Nombre de visites : ${pastConfirmed.length} · Annulations : ${cancelCount}</p>
+            Annulations : ${cancelCount}</p>
+            ${visitsBlockHtml(email, null)}
 
             <label style="margin-top:14px;">Notes privées (visible seulement par vous)</label>
             <label style="margin-top:8px;font-size:12px;">Couleur de ceinture</label>
@@ -9347,6 +9478,8 @@
           ${mem.type==='credits' ? `
             <label>Nombre de cours restants</label>
             <input id="em-credits" type="number" min="0" value="${mem.creditsRemaining}">
+            <label style="margin-top:10px;">Date d\u2019expiration de la passe (vide = sans expiration)</label>
+            <input id="em-passend" type="date" value="${mem.endDate||''}" style="max-width:220px;">
           ` : `
             <label>Date de fin d\u2019accès</label>
             <input id="em-enddate" type="date" value="${mem.endDate||todayIso()}">
@@ -13087,12 +13220,10 @@
         const plan = state.data.membershipPlans.find(p=>p.id===mObj.planId);
         mObj.status = 'active';
         if(plan && plan.type === 'illimite'){
-          const start = new Date();
-          const end = new Date(start); end.setDate(end.getDate() + plan.durationDays);
-          mObj.startDate = isoDate(start);
-          mObj.endDate = isoDate(end);
+          setMembershipDates(mObj, plan, mObj.pastStart || todayIso());
         } else if(plan){
           mObj.creditsRemaining = plan.creditsCount;
+          setMembershipDates(mObj, plan, mObj.pastStart || todayIso());
         }
       }
       const nextDue = mObj.paymentPlan.installments.find(i=>i.status!=='paye');
@@ -13165,6 +13296,8 @@
       if(mem){
         if(mem.type==='credits'){
           mem.creditsRemaining = Math.max(0, parseInt(document.getElementById('em-credits').value,10)||0);
+          const pe = document.getElementById('em-passend');
+          if(pe){ if(pe.value){ mem.endDate = pe.value; if(!mem.startDate) mem.startDate = addDaysIsoFrom(pe.value, -PASS_VALID_DAYS); } else { delete mem.endDate; } }
         } else {
           mem.endDate = document.getElementById('em-enddate').value || mem.endDate;
         }
@@ -13370,6 +13503,7 @@
       const fm = acct ? (acct.familyMembers||[]).find(f=>f.id===memberId) : null;
       if(!fm){ showToast('Fiche introuvable.'); return; }
       fm.birthday = document.getElementById('cd-birthday').value;
+      fm.clientSince = document.getElementById('cd-clientsince').value || '';
       fm.belt = document.getElementById('cd-belt').value.trim();
       await persist();
       render();
@@ -13670,6 +13804,24 @@
       state.modal.payload.searchTried = false;
       render();
     }
+    else if(action==='open-add-visits'){
+      state.modal = {type:'add-visits', payload:{email:e.currentTarget.dataset.email, profileId:e.currentTarget.dataset.profile||null}};
+      render();
+    }
+    else if(action==='save-visit-adjust'){
+      const o = visitAdjustOwner(e.currentTarget.dataset.email, e.currentTarget.dataset.profile||null);
+      const n = parseInt(document.getElementById('av-n').value,10);
+      if(!o || !n){ showToast('Entre un nombre de visites (différent de 0).'); return; }
+      if(!o.visitAdjustments) o.visitAdjustments = [];
+      o.visitAdjustments.push({id:uid(), n, note:document.getElementById('av-note').value.trim(), at:Date.now(), by:(currentManager()||{}).name||''});
+      await persist();
+      render();
+      showToast(`${n} visite(s) ajoutée(s).`);
+    }
+    else if(action==='remove-visit-adjust'){
+      const o = visitAdjustOwner(e.currentTarget.dataset.email, e.currentTarget.dataset.profile||null);
+      if(o){ o.visitAdjustments = (o.visitAdjustments||[]).filter(a=>a.id!==e.currentTarget.dataset.adj); await persist(); render(); showToast('Ajout retiré.'); }
+    }
     else if(action==='toggle-modal-visits'){
       if(state.modal && state.modal.payload) state.modal.payload.showVisits = !state.modal.payload.showVisits;
       render();
@@ -13883,7 +14035,7 @@
       const email = e.currentTarget.dataset.email;
       const acct = findStudentAccount(email);
       const birthday = document.getElementById('sd-birthday').value;
-      if(acct){ acct.birthday = birthday; await persist(); showToast('Date de fête enregistrée.'); }
+      if(acct){ acct.birthday = birthday; acct.clientSince = document.getElementById('sd-clientsince').value || ''; await persist(); render(); showToast('Fiche enregistrée.'); }
     }
     else if(action==='save-student-notes'){
       const email = e.currentTarget.dataset.email;
@@ -13981,20 +14133,21 @@
       const startEl = document.getElementById('g-start');
       let scheduledStart = (startEl && !startEl.disabled && startEl.value) ? startEl.value : '';
       if(scheduledStart && !/^\d{4}-\d{2}-\d{2}$/.test(scheduledStart)) scheduledStart = '';
-      if(scheduledStart && scheduledStart < todayIso()){ showToast('La date de début ne peut pas être dans le passé.'); return; }
+      // Date de début PASSÉE permise (transferts depuis MINDBODY, rattrapages) : la période démarre à cette date.
+      let pastStart = '';
+      if(scheduledStart && scheduledStart < todayIso()){ pastStart = scheduledStart; scheduledStart = ''; }
       if(scheduledStart && scheduledStart === todayIso()) scheduledStart = '';
-      if(useInstallments) scheduledStart = '';
+      if(useInstallments){ scheduledStart = ''; pastStart = ''; }
       const m = activatePlanForStudent(plan, name, email, !isPaid, profileId, customPrice);
       if(isPaid) m.adminRequest = true;
+      if(pastStart){
+        m.pastStart = pastStart;
+        if(m.status === 'active') setMembershipDates(m, plan, pastStart);
+      }
       if(scheduledStart){
         m.scheduledStart = scheduledStart;
-        if(plan.type === 'illimite'){
-          const endD = new Date(scheduledStart+'T12:00:00'); endD.setDate(endD.getDate() + plan.durationDays);
-          m.startDate = scheduledStart;
-          m.endDate = isoDate(endD);
-        } else {
-          m.creditsRemaining = plan.creditsCount;
-        }
+        if(plan.type !== 'illimite') m.creditsRemaining = plan.creditsCount;
+        setMembershipDates(m, plan, scheduledStart);
         if(isPaid){
           // Actif (à la date choisie) avec UN versement dû à cette date : le paiement — même tardif —
           // ne change plus les dates. La demande de paiement part par courriel le jour même
@@ -14017,14 +14170,8 @@
           // l'abonnement démarre tout de suite même si rien n'est encore payé, à la demande
           // explicite d'Amélie ("activer l'abonnement avant le paiement").
           m.status = 'active';
-          if(plan.type === 'illimite'){
-            const start = new Date();
-            const end = new Date(start); end.setDate(end.getDate() + plan.durationDays);
-            m.startDate = isoDate(start);
-            m.endDate = isoDate(end);
-          } else {
-            m.creditsRemaining = plan.creditsCount;
-          }
+          if(plan.type !== 'illimite') m.creditsRemaining = plan.creditsCount;
+          setMembershipDates(m, plan, todayIso());
         }
       }
       await persist();
@@ -14034,6 +14181,8 @@
         showToast(isPaid
           ? `Abonnement planifié au ${fmtScheduledDate(scheduledStart)} — la demande de paiement sera envoyée ce jour-là.`
           : `Abonnement planifié : il s’activera le ${fmtScheduledDate(scheduledStart)}.`);
+      } else if(pastStart && !isPaid){
+        showToast(`Abonnement offert, débutant le ${fmtScheduledDate(pastStart)}.`);
       } else if(isPaid){
         showToast(paymentPlan ? 'Calendrier de versements créé, 1er avis envoyé au client.' : 'Demande de paiement envoyée au client.');
         // Best-effort : n'échoue jamais l'opération si le courriel ne part pas — le client
