@@ -1893,7 +1893,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-09-credits-passes-9';
+  const APP_BUILD = '2026-10-09-credits-passes-10';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -2805,7 +2805,7 @@
       );
       if(!membership){
         state.modal = {type:'need-membership', payload:{
-          name, email, profileId,
+          name, email, profileId, classId:c.id, dateIso:firstDateIso,
           intro:`Votre abonnement ne couvre pas ce programme (${categoryLabel(c.category)} du ${formatShortDate(c.startDate)})`,
           neededCategory:c.category
         }};
@@ -2814,7 +2814,7 @@
       }
       if(membership.type==='credits' && membership.creditsRemaining < occ.length){
         state.modal = {type:'need-membership', payload:{
-          name, email, profileId,
+          name, email, profileId, classId:c.id, dateIso:firstDateIso,
           intro:`Il vous manque des cours sur votre carte pour ce programme de ${occ.length} séances (${membership.creditsRemaining} restant(s))`,
           neededCategory:c.category
         }};
