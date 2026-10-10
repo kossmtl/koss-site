@@ -1890,7 +1890,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-09-messages-semaine-paiement';
+  const APP_BUILD = '2026-10-09-credits-passes';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -2811,7 +2811,8 @@
         studentName:name, studentEmail:email, profileId: profileId||null,
         status: full ? 'liste_attente' : 'confirmee',
         createdAt: Date.now(),
-        programBooking: true
+        programBooking: true,
+        membershipId: membership ? membership.id : null
       });
       if(full) waitlistCount++; else confirmedCount++;
       if(!full && membership && membership.type==='credits'){
