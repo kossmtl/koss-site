@@ -1890,7 +1890,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-09-credits-passes-6';
+  const APP_BUILD = '2026-10-09-credits-passes-7';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -3741,6 +3741,12 @@
   // Catégories considérées "enfants" pour le ciblage d'audience des autocollants (S41-bis) —
   // tout le reste (bjj_adulte, muay_thai, yoga, intro_bjj, catégories perso, etc.) = "adultes".
   const KIDS_STICKER_CATEGORIES = new Set(['enfants','parents_enfants']);
+  // Description d'un cours : ouverte par défaut pour les cours d'enfants (choix d'Amélie, 9 oct.), fermée sinon
+  // tant que la personne n'a pas cliqué sur le titre.
+  function classDescOpen(payload, c){
+    if(payload && payload.showDescription !== undefined) return !!payload.showDescription;
+    return !!(c && KIDS_STICKER_CATEGORIES.has(c.category));
+  }
   // Toutes les catégories couvertes par un abonnement ACTIF de ce profil précis (compte
   // principal si profileId est null, sinon cet enfant) — un abonnement peut couvrir plusieurs
   // catégories (ex. "All Unlimited").
@@ -7680,7 +7686,7 @@
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
           <h3 data-action="toggle-class-description" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">${escapeHtml(c.name)}</h3>
-          ${m.payload.showDescription ? `<p style="font-size:13px;color:var(--chalk-dim);white-space:pre-line;">${escapeHtml(c.description || 'Aucune description disponible pour ce cours.')}</p>` : ''}
+          ${classDescOpen(m.payload, c) ? `<p style="font-size:13px;color:var(--chalk-dim);white-space:pre-line;">${escapeHtml(c.description || 'Aucune description disponible pour ce cours.')}</p>` : ''}
           <p class="muted">${formatFullClassDateTime(dateIso, c.time, c.durationMinutes)} · ${payLabel}</p>
           ${c.publicNote ? `<p style="background:rgba(147,180,143,0.14);border:1px solid var(--sage);border-radius:8px;padding:9px 11px;color:var(--chalk);font-size:12.5px;line-height:1.45;">${escapeHtml(c.publicNote)}</p>` : ''}
           ${introBlock}
@@ -12076,7 +12082,7 @@
       render();
     }
     else if(action==='toggle-class-description'){
-      state.modal.payload.showDescription = !state.modal.payload.showDescription;
+      { const _p = state.modal.payload; const _c = state.data.classes.find(cl=>cl.id===_p.classId); _p.showDescription = !classDescOpen(_p, _c); }
       render();
     }
     else if(action==='toggle-participants'){
