@@ -1899,7 +1899,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-10-paiements-abandonnes';
+  const APP_BUILD = '2026-10-10-confirmation-heure';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -2456,9 +2456,50 @@
     render();
   }
 
+  // ---------- horloge du studio (heure de Montréal) ----------
+  // L'heure de l'appareil peut être fausse (ex. ordinateur Linux mal réglé). On prend l'heure du SERVEUR
+  // (en-tête HTTP « Date » de la page) pour corriger l'écart, puis on calcule tout en heure de Montréal.
+  const STUDIO_TZ = 'America/Toronto';
+  let _clockOffsetMs = 0;
+  function nowMs(){ return Date.now() + _clockOffsetMs; }
+  async function syncClock(){
+    try{
+      const t0 = Date.now();
+      const r = await fetch(window.location.pathname + '?clk=' + t0, {method:'HEAD', cache:'no-store'});
+      const d = r.headers.get('Date');
+      if(!d) return;
+      const srv = new Date(d).getTime();
+      if(isNaN(srv)) return;
+      _clockOffsetMs = srv - (t0 + Date.now())/2;
+    }catch(e){}
+  }
+  function studioParts(ms){
+    const f = new Intl.DateTimeFormat('en-CA', {timeZone:STUDIO_TZ, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hourCycle:'h23'});
+    const o = {}; f.formatToParts(new Date(ms)).forEach(p=>{ if(p.type!=='literal') o[p.type] = parseInt(p.value,10); });
+    return o;
+  }
+  function studioTodayIso(){
+    const p = studioParts(nowMs());
+    return p.year + '-' + String(p.month).padStart(2,'0') + '-' + String(p.day).padStart(2,'0');
+  }
+  // Moment réel (ms) d'une date + heure affichées à Montréal.
+  function studioInstantMs(dateIso, hhmm){
+    const [y,m,d] = dateIso.split('-').map(Number);
+    const [hh,mm] = (hhmm||'00:00').slice(0,5).split(':').map(Number);
+    const target = Date.UTC(y, m-1, d, hh, mm);
+    let guess = target;
+    for(let i=0;i<3;i++){
+      const p = studioParts(guess);
+      const wall = Date.UTC(p.year, p.month-1, p.day, p.hour, p.minute, 0);
+      guess -= (wall - target);
+    }
+    return guess;
+  }
+
   // ---------- date helpers ----------
   function startOfWeek(offset){
-    const now = new Date();
+    const _sp = studioParts(nowMs());
+    const now = new Date(_sp.year, _sp.month-1, _sp.day);
     const day = (now.getDay() + 6) % 7; // 0 = Monday
     const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + offset*7);
     return monday;
@@ -2634,9 +2675,9 @@
   function isClassPast(c, dateIso){
     if(!c || !dateIso) return false;
     try{
-      const start = new Date(dateIso+'T'+((c.time||'00:00').slice(0,5))+':00');
-      if(isNaN(start.getTime())) return false;
-      return start.getTime() + ((c.durationMinutes||60)*60000) < Date.now();
+      const startMs = studioInstantMs(dateIso, (c.time||'00:00'));
+      if(isNaN(startMs)) return false;
+      return startMs + ((c.durationMinutes||60)*60000) < nowMs();
     }catch(e){ return false; }
   }
   function isManagerContext(){ try{ return !!(state.adminUnlocked || currentManager()); }catch(e){ return false; } }
@@ -2751,7 +2792,12 @@
     await persist();
     state.modal = null; closeModalDom();
     render();
-    showToast(full ? 'Ajout\u00e9 \u00e0 la liste d\u2019attente.' : (isDuplicateConfirmed ? 'Deuxi\u00e8me r\u00e9servation confirm\u00e9e !' : 'R\u00e9servation confirm\u00e9e !'));
+    if(isManagerContext()){
+      showToast(full ? 'Ajout\u00e9 \u00e0 la liste d\u2019attente.' : (isDuplicateConfirmed ? 'Deuxi\u00e8me r\u00e9servation confirm\u00e9e !' : 'R\u00e9servation confirm\u00e9e !'));
+    } else {
+      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false}};
+      render();
+    }
   }
 
   async function attendanceAddParticipant(name, email, noMembership, profileId){
@@ -2849,6 +2895,11 @@
     await persist();
     state.modal = null; closeModalDom();
     render();
+    if(!isManagerContext()){
+      state.modal = {type:'booking-confirmed', payload:{classId:c.id, dateIso:firstDateIso, name, waitlist: (!confirmedCount && waitlistCount>0), program:true, count:occ.length, waitlistCount}};
+      render();
+      return;
+    }
     showToast(waitlistCount ? `Programme réservé — ${confirmedCount} confirmée(s), ${waitlistCount} en liste d\u2019attente.` : `Programme réservé — ${confirmedCount} séances confirmées !`);
   }
 
@@ -2865,7 +2916,7 @@
   }
 
   // ---------- membership logic ----------
-  function todayIso(){ return isoDate(new Date()); }
+  function todayIso(){ return studioTodayIso(); }
 
   // Abonnement PLANIFIÉ (offert avec une date de début future) : il existe déjà mais n'est ni
   // actif ni visible par l'étudiant avant cette date — aucune écriture nécessaire le jour J, tout
@@ -8773,6 +8824,28 @@
           <div class="btn-row">
             <button class="btn btn-danger" data-action="confirm-cancel-booking-yes" data-id="${id}">Oui, annuler</button>
             <button class="btn btn-secondary" data-action="close-modal">Non</button>
+          </div>
+        </div>
+      `;
+    } else if(m.type === 'booking-confirmed'){
+      const bc = m.payload;
+      const cc = state.data.classes.find(cl=>cl.id===bc.classId);
+      const when = cc ? formatFullClassDateTime(bc.dateIso, cc.time, cc.durationMinutes) : '';
+      const head = bc.waitlist ? '⏳ Vous êtes sur la liste d’attente' : (bc.program ? '✅ Votre inscription est confirmée' : '✅ Votre réservation est confirmée');
+      const sub = bc.waitlist
+        ? 'Ce cours est complet. Vous serez inscrit automatiquement si une place se libère.'
+        : (bc.program ? `Vous êtes inscrit aux ${bc.count} séances${bc.waitlistCount ? ' (dont ' + bc.waitlistCount + ' en liste d’attente)' : ''}.` : 'À bientôt sur les tapis !');
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>${head}</h3>
+          ${cc ? `<p style="font-size:15px;font-weight:700;margin:6px 0 2px;">${escapeHtml(cc.name)}</p>` : ''}
+          ${when ? `<p class="muted">${when}</p>` : ''}
+          ${bc.name ? `<p class="muted">Pour : ${escapeHtml(bc.name)}</p>` : ''}
+          <p style="font-size:13px;margin-top:10px;">${sub}</p>
+          <div class="btn-row">
+            ${bc.waitlist ? '' : `<button class="btn btn-primary" data-action="open-add-to-calendar" data-class="${escapeHtml(bc.classId)}" data-date="${escapeHtml(bc.dateIso)}">📅 Ajouter au calendrier</button>`}
+            <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
           </div>
         </div>
       `;
@@ -15102,6 +15175,7 @@
   });
 
   async function boot(){
+    syncClock(); // corrige l'heure de l'appareil avec celle du serveur (en arrière-plan)
     // NOUVEAU (S47) : capture ?pay=<membershipId> (lien "PAYER MAINTENANT" du courriel de
     // demande de paiement) tout de suite, en mémoire — avant que quoi que ce soit (dont le
     // nettoyage d'URL post-retour Google plus bas) ait la moindre chance d'y toucher. Reste en
