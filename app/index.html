@@ -1890,7 +1890,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-09-credits-passes-3';
+  const APP_BUILD = '2026-10-09-credits-passes-5';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -3254,7 +3254,9 @@
       annulee: ['badge-cancelled','Annulé'],
     };
     if(ds==='planifiee') return `<span class="badge badge-declared">Débute le ${fmtScheduledDate(m.scheduledStart)}</span>`;
-    const [cls,label] = map[ds] || ['badge-pending', ds];
+    const [cls,label0] = map[ds] || ['badge-pending', ds];
+    let label = label0;
+    if(ds==='expiree' && m.type==='credits' && (m.creditsRemaining||0) <= 0) label = (m.endDate && m.endDate < todayIso()) ? 'Échue' : 'Épuisée';
     return `<span class="badge ${cls}">${label}</span>`;
   }
 
@@ -3979,6 +3981,7 @@
     if(ds==='active'){
       return passBarHtml(m) + (exp ? `<div style="font-size:11px;color:var(--chalk-dim);">⏳ Expire le ${exp}. Les cours non utilisés ne sont ni remboursés ni crédités.</div>` : '');
     }
+    if(ds==='expiree' && (m.creditsRemaining||0) <= 0 && !(m.endDate && m.endDate < todayIso())) return `<div style="font-size:11px;color:var(--chalk-dim);">Tous les cours de cette passe ont été utilisés.</div>`;
     if(ds==='expiree' && exp && m.endDate < todayIso()) return `<div style="font-size:11px;color:var(--chalk-dim);">Expirée le ${exp} — les cours non utilisés ne sont ni remboursés ni crédités.</div>`;
     return '';
   }
