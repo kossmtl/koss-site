@@ -1890,7 +1890,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-09-credits-passes-5';
+  const APP_BUILD = '2026-10-09-credits-passes-6';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -8257,7 +8257,7 @@
                 const amountStr = mm.planPrice || (plan?plan.price:'') || '';
                 return `
                   <tr>
-                    <td${studentNameStyleAttr(mm.studentEmail, mm.profileId)}>${escapeHtml(mm.studentName)}</td>
+                    <td${studentNameStyleAttr(mm.studentEmail, mm.profileId)}>${(function(){const _e=escapeHtml(mm.studentEmail||''),_n=escapeHtml(mm.studentName||'');return mm.profileId ? `<button class="small-btn" data-action="open-child-detail" data-parent-email="${_e}" data-member-id="${escapeHtml(mm.profileId)}" style="padding:0;border:none;background:none;text-decoration:underline;color:inherit;font-weight:bold;cursor:pointer;">${_n}</button>` : `<button class="small-btn" data-action="open-student-detail" data-email="${_e}" style="padding:0;border:none;background:none;text-decoration:underline;color:inherit;font-weight:bold;cursor:pointer;">${_n}</button>`;})()}</td>
                     <td>${escapeHtml(mm.planName)}</td>
                     <td>${escapeHtml(amountStr)}</td>
                     <td>${mm.paidViaHelcim ? '<span style="color:var(--sage);">✅ Oui</span>' : '<span style="color:var(--chalk-dim);">— Non</span>'}</td>
@@ -8269,7 +8269,7 @@
                 const c = state.data.classes.find(cl=>cl.id===b.classId);
                 return `
                   <tr>
-                    <td${studentNameStyleAttr(b.studentEmail, b.profileId)}>${escapeHtml(b.studentName)}</td>
+                    <td${studentNameStyleAttr(b.studentEmail, b.profileId)}>${(function(){const _e=escapeHtml(b.studentEmail||''),_n=escapeHtml(b.studentName||'');return b.profileId ? `<button class="small-btn" data-action="open-child-detail" data-parent-email="${_e}" data-member-id="${escapeHtml(b.profileId)}" style="padding:0;border:none;background:none;text-decoration:underline;color:inherit;font-weight:bold;cursor:pointer;">${_n}</button>` : `<button class="small-btn" data-action="open-student-detail" data-email="${_e}" style="padding:0;border:none;background:none;text-decoration:underline;color:inherit;font-weight:bold;cursor:pointer;">${_n}</button>`;})()}</td>
                     <td>${c?escapeHtml(c.name):'Présence sans abonnement'}</td>
                     <td>${b.paidAmount.toFixed(2)} $</td>
                     <td><span style="color:var(--chalk-dim);">— Non (comptant/Interac)</span></td>
