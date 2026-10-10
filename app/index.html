@@ -1890,7 +1890,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-09-credits-passes-2';
+  const APP_BUILD = '2026-10-09-credits-passes-3';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -4652,7 +4652,7 @@
         <tr>
           <td>${nameLink}${childOfNoteHtml(m.studentEmail, m.profileId)}<br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(m.studentEmail)}</span></td>
           <td><span class="plan-name-link" data-action="open-membership-actions" data-id="${m.id}">${escapeHtml(m.planName)}</span>${m.grantedFree?' <span style="color:var(--chalk-dim);font-size:11px;">(offert)</span>':''}${hiddenNote}${refundNote}</td>
-          <td>${ds==='active' ? membershipDetail(m) : '—'}</td>
+          <td>${ds==='active' ? membershipDetail(m)+passBarHtml(m) : '—'}</td>
           <td>${membershipBadge(m)}</td>
           <td class="arrow-cell" style="text-align:center;width:30px;"><button type="button" class="arrow-btn" title="Voir les actions" onclick="var r=document.getElementById('${rowId}');var open=r.style.display!=='table-row';r.style.display=open?'table-row':'none';this.classList.toggle('open',open);">▼</button></td>
         </tr>
