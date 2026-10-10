@@ -1899,7 +1899,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-09-credits-passes-12';
+  const APP_BUILD = '2026-10-10-paiements-abandonnes';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -3314,6 +3314,29 @@
     return hasBooking;
   }
 
+  // Brouillon d'achat Helcim abandonné (paiement refusé, fenêtre fermée) : on ne peut PAS le supprimer côté
+  // élève (le serveur n'accepte pas les suppressions d'un compte élève), donc on l'annule et on le masque.
+  // « annulee » est accepté par le serveur ; hiddenByStudent/hiddenByAdmin le cachent des listes.
+  function abandonDraftMembership(mm){
+    mm.status = 'annulee';
+    mm.abandonedCheckout = true;
+    mm.abandonedAt = Date.now();
+    mm.hiddenByStudent = true;
+    mm.hiddenByAdmin = true;
+  }
+  // Après un paiement réussi : annule les autres brouillons « Paiement à faire » identiques (même personne, même profil,
+  // même formule) laissés par des essais ratés.
+  function cancelSupersededDrafts(paid, plan, email, profileId){
+    let n = 0;
+    state.data.memberships.forEach(o=>{
+      if(o.id===paid.id || o.status!=='attente_paiement' || o.grantedFree || o.payOnSite) return;
+      if(o.planId!==plan.id) return;
+      if(!o.studentEmail || o.studentEmail.toLowerCase()!==email.toLowerCase()) return;
+      if((o.profileId||null)!==(profileId||null)) return;
+      abandonDraftMembership(o); n++;
+    });
+    return n;
+  }
   function pendingMembershipForEmail(email){
     const e = email.toLowerCase();
     return state.data.memberships.find(m => m.studentEmail.toLowerCase()===e && (m.status==='attente_paiement' || m.status==='paiement_declare')) || null;
@@ -12614,6 +12637,8 @@
                 confirmedM.paidViaHelcimAt = Date.now();
                 await persist();
               }
+              // Nettoie les « Paiement à faire » laissés par des essais ratés de la même formule.
+              if(cancelSupersededDrafts(m, plan, email, profileId)) await persist();
               // Facture automatique par courriel — best-effort, ne bloque jamais l'activation.
               // L'élève garde aussi le bouton "Recevoir une facture" dans Mon compte si ça échoue.
               try{ sb.functions.invoke('koss-send-invoice', {body:{membershipId:m.id}}); }
@@ -12661,7 +12686,7 @@
             // brouillon pour ne pas laisser un faux "Paiement à faire" sur le compte.
             const stillPending = state.data.memberships.find(mm=>mm.id===m.id && mm.status==='attente_paiement');
             if(stillPending){
-              state.data.memberships = state.data.memberships.filter(mm=>mm.id!==m.id);
+              abandonDraftMembership(stillPending);
               await persist();
             }
             showToast('Paiement annulé.');
