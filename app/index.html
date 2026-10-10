@@ -1893,7 +1893,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-09-credits-passes-8';
+  const APP_BUILD = '2026-10-09-credits-passes-9';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -7693,6 +7693,7 @@
           <p class="muted">${formatFullClassDateTime(dateIso, c.time, c.durationMinutes)} · ${payLabel}</p>
           ${c.publicNote ? `<p style="background:rgba(147,180,143,0.14);border:1px solid var(--sage);border-radius:8px;padding:9px 11px;color:var(--chalk);font-size:12.5px;line-height:1.45;">${escapeHtml(c.publicNote)}</p>` : ''}
           ${introBlock}
+          ${c.category==='parents_enfants' ? '<p style="font-size:13px;color:var(--coral);font-weight:700;line-height:1.45;margin:10px 0;">⚠️ Il n’est pas possible d’annuler cette réservation sur la plateforme. Pour toute demande, communiquer avec nous au 438-869-9187.</p>' : ''}
           ${full ? '<p style="color:var(--amber);font-size:13px;">Ce cours est complet — vous pouvez rejoindre la liste d\u2019attente.</p>' : ''}
           <div class="btn-row" style="margin-top:6px;"><button class="small-btn" data-action="toggle-participants">Voir les participants (${confirmedList.length})</button></div>
           ${showParticipants ? `<ul class="link-list">${confirmedList.length ? confirmedList.map(b=>`<li>${escapeHtml(formatDisplayName(b.studentName))}</li>`).join('') : '<li style="color:var(--chalk-dim);">Aucun participant confirmé.</li>'}</ul>` : ''}
