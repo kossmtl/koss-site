@@ -1890,7 +1890,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-09-credits-passes';
+  const APP_BUILD = '2026-10-09-credits-passes-2';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -2571,6 +2571,7 @@
       hideFromSchedule,
     });
   }
+  function isClassProgramLike(c){ return !!(c && c.startDate && c.endDate && c.startDate!==c.endDate); }
   function isProgramClass(c){ return !!(c && c.startDate && c.endDate); }
   // Un cours à dates fixes dont le début et la fin sont le MÊME jour est un
   // événement ponctuel (une seule journée), pas un programme à plusieurs séances.
@@ -2620,9 +2621,25 @@
     }
   }
 
+  // Cours TERMINÉ (début + durée dépassés) : une personne qui n'est pas gestionnaire ne peut plus le réserver.
+  function isClassPast(c, dateIso){
+    if(!c || !dateIso) return false;
+    try{
+      const start = new Date(dateIso+'T'+((c.time||'00:00').slice(0,5))+':00');
+      if(isNaN(start.getTime())) return false;
+      return start.getTime() + ((c.durationMinutes||60)*60000) < Date.now();
+    }catch(e){ return false; }
+  }
+  function isManagerContext(){ try{ return !!(state.adminUnlocked || currentManager()); }catch(e){ return false; } }
+
   async function proceedBooking(classId, dateIso, name, email, isDuplicateConfirmed, profileId, membershipId){
     const c = state.data.classes.find(cl=>cl.id===classId);
     if(!c){ showToast('Ce cours n\u2019existe plus.'); return; }
+    if(!isClassProgramLike(c) && isClassPast(c, dateIso) && !isManagerContext()){
+      state.modal = null; closeModalDom(); render();
+      showToast('Ce cours est déjà passé : il n’est plus possible de le réserver.');
+      return;
+    }
 
     // S48 (23 sept, demande d'Am\u00e9lie) : Reconnaissance des risques obligatoire avant TOUTE
     // r\u00e9servation (cours normal ou programme) \u2014 signature une fois par personne, puis
@@ -5283,6 +5300,15 @@
     const nameColor = isRainbow ? '#FFFBF8' : accent;
     const tint = classTint(c);
     const tileStyle = isRainbow ? '' : ` style="border-left-color:${accent};${tint ? `background:${tint};` : ''}"`;
+    const _past = !isManagerContext() && !isProgram && isClassPast(c, dateIso);
+    if(_past){
+      return `
+        <div class="class-tile" style="opacity:.5;border-left-color:var(--border);">
+          <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">\u00b7 ${categoryLabel(c.category)}</span></div>
+          <div class="class-name" style="color:var(--chalk-dim);">${escapeHtml(c.name)}</div>
+          <div class="class-spots" style="color:var(--chalk-dim);">Cours terminé</div>
+        </div>`;
+    }
     const tileInner = `
       <div class="class-tile ${full?'full':''}"${tileStyle} data-action="open-class" data-class="${c.id}" data-date="${dateIso}">
         <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">\u00b7 ${categoryLabel(c.category)}</span> ${c.free ? '<span style="color:var(--sage);">\u00b7 gratuit</span>' : ''}</div>
@@ -12041,6 +12067,8 @@
     else if(action==='open-class'){
       const classId = e.currentTarget.dataset.class;
       const dateIso = e.currentTarget.dataset.date;
+      const _cc = state.data.classes.find(cl=>cl.id===classId);
+      if(!isManagerContext() && _cc && !isClassProgramLike(_cc) && isClassPast(_cc, dateIso)){ showToast('Ce cours est déjà passé.'); return; }
       state.modal = {type:'book-class', payload:{classId,dateIso}};
       render();
     }
