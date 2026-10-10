@@ -391,13 +391,16 @@
     font-weight:600;
   }
   .badge-pending{background:rgba(232,185,74,0.2);color:#FFD60A;}
-  .badge-declared{background:rgba(111,168,220,0.2);color:#6FA8DC;}
-  .badge-confirmed{background:var(--sage);color:var(--ink);}
+  .badge-declared{background:rgba(142,201,245,0.22);color:#8EC9F5;}
+  .badge-confirmed{background:rgba(147,180,143,0.22);color:#93B48F;}
   .badge-waitlist{background:rgba(174,184,172,0.2);color:var(--chalk-dim);}
-  .badge-cancelled{background:rgba(226,114,91,0.2);color:var(--coral);}
-  .badge-annulee{background:rgba(232,149,90,0.22);color:#F0A35E;}
-  .badge-epuisee{background:rgba(180,142,201,0.22);color:#C29BD9;}
-  .badge-echue{background:rgba(205,209,217,0.22);color:#D2D6DE;}
+  .badge-cancelled{background:rgba(217,83,79,0.22);color:#D9534F;}
+  .badge-annulee{background:rgba(217,83,79,0.22);color:#D9534F;}
+  .badge-passe{background:rgba(187,134,252,0.22);color:#BB86FC;}
+  .badge-onsite{background:rgba(240,163,94,0.22);color:#F0A35E;}
+  .badge-expire{background:rgba(208,211,217,0.22);color:#D0D3D9;}
+  .badge-epuisee{background:rgba(123,127,136,0.28);color:#7B7F88;}
+  .badge-echue{background:rgba(163,167,175,0.22);color:#A3A7AF;}
   .modal-backdrop{
     position:fixed;inset:0;background:rgba(0,0,0,0.55);
     display:flex;align-items:center;justify-content:center;
@@ -1896,7 +1899,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-09-credits-passes-11';
+  const APP_BUILD = '2026-10-09-credits-passes-12';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -3256,12 +3259,14 @@
       attente_paiement: ['badge-pending','Paiement à faire'],
       paiement_declare: ['badge-declared','Paiement déclaré'],
       active: ['badge-confirmed','Actif'],
-      expiree: ['badge-cancelled','Expiré'],
+      expiree: ['badge-expire','Expiré'],
       annulee: ['badge-annulee','Annulé'],
     };
     if(ds==='planifiee') return `<span class="badge badge-declared">Débute le ${fmtScheduledDate(m.scheduledStart)}</span>`;
     const [cls,label0] = map[ds] || ['badge-pending', ds];
     let label = label0, cls2 = cls;
+    if(ds==='active' && m.type==='credits'){ cls2='badge-passe'; }
+    if(ds==='active' && membershipOwesOnSite(m)){ label='Sur place'; cls2='badge-onsite'; }
     if(ds==='expiree' && m.type==='credits' && (m.creditsRemaining||0) <= 0){ if(m.endDate && m.endDate < todayIso()){ label='Échue'; cls2='badge-echue'; } else { label='Épuisée'; cls2='badge-epuisee'; } }
     return `<span class="badge ${cls2}">${label}</span>`;
   }
@@ -4492,17 +4497,32 @@
     const key = (email||'').toLowerCase(), pid = profileId || null;
     return state.data.memberships.filter(x=>x.studentEmail && x.studentEmail.toLowerCase()===key && (x.profileId||null)===pid && membershipOwesOnSite(x));
   }
+  // Couleur du nom d'un élève = la même que l'étiquette de sa situation (harmonisation du 9 oct.).
+  function membershipColorKey(m){
+    if(membershipOwesOnSite(m)) return 'onsite';
+    if(m.status==='attente_paiement' || hasDueInstallment(m)) return 'pending';
+    if(m.status==='paiement_declare') return 'declared';
+    if(m.status==='annulee') return 'annule';
+    const ds = membershipDisplayStatus(m);
+    if(ds==='active') return m.type==='illimite' ? 'illimite' : 'passe';
+    if(ds==='planifiee') return 'declared';
+    if(ds==='expiree'){
+      if(m.type==='credits' && (m.creditsRemaining||0) <= 0) return (m.endDate && m.endDate < todayIso()) ? 'echue' : 'epuisee';
+      return 'expire';
+    }
+    return 'expire';
+  }
+  const MEMBERSHIP_COLORS = {onsite:'#F0A35E', pending:'#FFD60A', declared:'#8EC9F5', illimite:'var(--sage)', passe:'#BB86FC', expire:'#D0D3D9', echue:'#A3A7AF', epuisee:'#7B7F88', annule:'#D9534F'};
+  const MEMBERSHIP_COLOR_ORDER = ['onsite','pending','declared','illimite','passe','expire','echue','epuisee','annule'];
   function studentStatusColor(email, profileId){
     if(!email) return null;
     const key = email.toLowerCase();
     const pid = profileId || null;
     const ms = state.data.memberships.filter(x=>x.studentEmail && x.studentEmail.toLowerCase()===key && (x.profileId||null)===pid);
-    if(!ms.length) return null;
-    if(ms.some(membershipOwesOnSite)) return '#E2725B';
-    if(ms.some(x=>x.status==='attente_paiement' || hasDueInstallment(x))) return '#E8973F';
-    if(ms.some(x=>x.type==='illimite' && membershipDisplayStatus(x)==='active')) return 'var(--sage)';
-    if(ms.some(x=>x.type==='credits' && membershipDisplayStatus(x)==='active')) return '#B08FCE';
-    return '#E8B94A';
+    if(!ms.length) return '#5C6068';
+    const keys = new Set(ms.map(membershipColorKey));
+    const k = MEMBERSHIP_COLOR_ORDER.find(x=>keys.has(x));
+    return MEMBERSHIP_COLORS[k] || '#5C6068';
   }
   function studentNameStyleAttr(email, profileId){
     const c = studentStatusColor(email, profileId);
