@@ -1070,7 +1070,7 @@
     'Muay Thaï': "Le Muay Thaï, c'est un sport de combat complet basé sur les poings, les jambes, les genoux et les coudes. Originaire de Thaïlande, il se distingue par son approche directe, son travail de distance et son combat rapproché. Tu y développes ta technique, ton cardio, tes réflexes et ta capacité à rester efficace sous pression.",
     'Yoga': "Le Yoga d'alignement met l'accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, et restauratrice..",
     'Intro au BJJ': "Les cours d\u2019intro ont lieu deux fois par semaine, les lundis et mercredis de 18h à 19h, pour un total de 5 cours. Les classes sont réduites afin de pouvoir accorder à chacun toute l\u2019attention requise, et tous les participants sont des débutants comme toi.\n\nLe but, c\u2019est que tu te sentes à l\u2019aise, que tu puisses t\u2019entraîner sans te sentir jugé et que tu puisses rejoindre les classes régulières en toute confiance à la fin du programme d\u2019intro. C\u2019est une super occasion de découvrir ce sport tout en te familiarisant tranquillement avec notre communauté.\n\nC\u2019est Amélie qui t\u2019enseignera tout ce que tu dois savoir à propos du Jiu-Jitsu. Elle en profitera pour te faire rire (ou pleurer) avec ses meilleures blagues. On ne t\u2019en voudra pas si tu ne les trouves pas drôles, nous non plus d\u2019ailleurs !\n\nOn se voit sur le mat !",
-    'Queers & Allies': "QUEERS & ALLIES est un cours de BJJ gratuit spécialement prévu pour les gens queers et leurs alliés. Ouvert à tous, le respect d\u2019autrui y est primordial et une politique de tolérance zéro sera appliquée envers tout comportement ou commentaire déplacé. Cette politique est d\u2019ailleurs appliquée dans tous nos cours, sans exception.\n\nLe cours se donne en GI et NOGI (come as you are) et est ouvert aux non-initiés une semaine sur deux. Horaire disponible et réservation obligatoire sur l’app K-OSS. Prêt de GI disponible au coût de 5$ (négociable en cas de besoin).",
+    'Queers & Allies': "QUEERS & ALLIES est un cours de BJJ à contribution volontaire (minimum 3 $) spécialement prévu pour les gens queers et leurs alliés. Ouvert à tous, le respect d\u2019autrui y est primordial et une politique de tolérance zéro sera appliquée envers tout comportement ou commentaire déplacé. Cette politique est d\u2019ailleurs appliquée dans tous nos cours, sans exception.\n\nLe cours se donne en GI et NOGI (come as you are) et est ouvert aux non-initiés une semaine sur deux. Horaire disponible et réservation obligatoire sur l’app K-OSS. Prêt de GI disponible au coût de 5$ (négociable en cas de besoin).",
   };
 
   const CATEGORY_ACCENT = {
@@ -1618,7 +1618,7 @@
       'Muay Thaï': 'Le Muay Thaï, c\u2019est un sport de combat complet basé sur les poings, les jambes, les genoux et les coudes. Originaire de Thaïlande, il se distingue par son approche directe, son travail de distance et son combat rapproché. Tu y développes ta technique, ton cardio, tes réflexes et ta capacité à rester efficace sous pression.',
       'Yoga': 'Le Yoga d\u2019alignement met l\u2019accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, et restauratrice..',
       'Intro au BJJ': 'Les cours d\u2019intro ont lieu deux fois par semaine, les lundis et mercredis de 18h à 19h, pour un total de 5 cours. Les classes sont réduites afin de pouvoir accorder à chacun toute l\u2019attention requise, et tous les participants sont des débutants comme toi.\n\nLe but, c\u2019est que tu te sentes à l\u2019aise, que tu puisses t\u2019entraîner sans te sentir jugé et que tu puisses rejoindre les classes régulières en toute confiance à la fin du programme d\u2019intro. C\u2019est une super occasion de découvrir ce sport tout en te familiarisant tranquillement avec notre communauté.\n\nC\u2019est Amélie qui t\u2019enseignera tout ce que tu dois savoir à propos du Jiu-Jitsu. Elle en profitera pour te faire rire (ou pleurer) avec ses meilleures blagues. On ne t\u2019en voudra pas si tu ne les trouves pas drôles, nous non plus d\u2019ailleurs !\n\nOn se voit sur le mat !',
-      'Queers & Allies': 'QUEERS & ALLIES est un cours de BJJ gratuit spécialement prévu pour les gens queers et leurs alliés. Ouvert à tous, le respect d\u2019autrui y est primordial et une politique de tolérance zéro sera appliquée envers tout comportement ou commentaire déplacé. Cette politique est d\u2019ailleurs appliquée dans tous nos cours, sans exception.\n\nLe cours se donne en GI et NOGI (come as you are) et est ouvert aux non-initiés une semaine sur deux. Prêt de GI disponible au coût de 5$ (négociable en cas de besoin).',
+      'Queers & Allies': 'QUEERS & ALLIES est un cours de BJJ à contribution volontaire (minimum 3 $) spécialement prévu pour les gens queers et leurs alliés. Ouvert à tous, le respect d\u2019autrui y est primordial et une politique de tolérance zéro sera appliquée envers tout comportement ou commentaire déplacé. Cette politique est d\u2019ailleurs appliquée dans tous nos cours, sans exception.\n\nLe cours se donne en GI et NOGI (come as you are) et est ouvert aux non-initiés une semaine sur deux. Prêt de GI disponible au coût de 5$ (négociable en cas de besoin).',
     };
     state.data.classes.forEach(c=>{
       if(!c.description && CLASS_DESCRIPTIONS[c.name]){
@@ -1899,7 +1899,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-10-confirmation-heure';
+  const APP_BUILD = '2026-10-12-contribution';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -2623,6 +2623,11 @@
   }
   function isClassProgramLike(c){ return !!(c && c.startDate && c.endDate && c.startDate!==c.endDate); }
   function isProgramClass(c){ return !!(c && c.startDate && c.endDate); }
+  // Cours à contribution volontaire (Queers & Allies) : gratuit côté crédits, mais l'élève choisit
+  // un montant (min 3 $). Sous 5 $ = sur place seulement (minimum de Helcim); dès 5 $ = en ligne ou sur place.
+  const CONTRIB_MIN = 3, CONTRIB_ONLINE_MIN = 5;
+  function isContributionClass(c){ return !!(c && c.name && c.name.trim()==='Queers & Allies'); }
+  function fmtMoney(n){ const v=Math.round(n*100)/100; return (Number.isInteger(v)?String(v):v.toFixed(2).replace('.',','))+' $'; }
   // Un cours à dates fixes dont le début et la fin sont le MÊME jour est un
   // événement ponctuel (une seule journée), pas un programme à plusieurs séances.
   function isEventClass(c){ return !!(c && c.startDate && c.endDate && c.startDate===c.endDate); }
@@ -2682,7 +2687,81 @@
   }
   function isManagerContext(){ try{ return !!(state.adminUnlocked || currentManager()); }catch(e){ return false; } }
 
-  async function proceedBooking(classId, dateIso, name, email, isDuplicateConfirmed, profileId, membershipId){
+  function ctParseAmount(){
+    const el = document.getElementById('ct-amount');
+    const raw = el ? el.value.replace(',','.').replace(/[^0-9.]/g,'') : '';
+    const n = parseFloat(raw);
+    return (isFinite(n) && n>0) ? Math.round(n*100)/100 : NaN;
+  }
+  window.ctInput = function(){
+    const amt = ctParseAmount();
+    const on = document.getElementById('ct-online'), off = document.getElementById('ct-onsite'), msg = document.getElementById('ct-msg');
+    if(!on || !off || !msg) return;
+    if(isNaN(amt) || amt < CONTRIB_MIN){
+      on.disabled = true; off.disabled = true;
+      msg.textContent = isNaN(amt) ? 'Choisissez ou entrez un montant.' : 'La contribution minimale est de '+CONTRIB_MIN+' $.';
+    } else if(amt < CONTRIB_ONLINE_MIN){
+      on.disabled = true; off.disabled = false;
+      msg.textContent = 'Sous '+CONTRIB_ONLINE_MIN+' $, la contribution se paie sur place (le minimum du paiement en ligne est de '+CONTRIB_ONLINE_MIN+' $).';
+    } else {
+      on.disabled = false; off.disabled = false;
+      msg.textContent = 'Vous pouvez payer ces '+fmtMoney(amt)+' en ligne maintenant, ou sur place le jour du cours.';
+    }
+  };
+  async function startContributionPayment(pl, amt, btn){
+    const c = state.data.classes.find(cl=>cl.id===pl.classId);
+    if(!c){ showToast('Ce cours n’existe plus.'); return; }
+    const m = {
+      id: uid(), planId:'contribution', planName:'Contribution — '+c.name, categories:[],
+      studentName: pl.name, studentEmail: pl.email, profileId: pl.profileId||null,
+      type:'credits', status:'attente_paiement', grantedFree:false, isContribution:true,
+      contributionClassId: c.id, contributionDateIso: pl.dateIso,
+      planPrice: amt.toFixed(2)+' $', creditsRemaining:0, createdAt: Date.now()
+    };
+    state.data.memberships.push(m);
+    await persist();
+    const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Ouverture du paiement sécurisé…';
+    const fail = ()=>{ btn.disabled = false; btn.textContent = orig; };
+    try{
+      const resp = await sb.functions.invoke('koss-init-payment', {body:{membershipId:m.id}});
+      if(resp.error || !resp.data || !resp.data.checkoutToken) throw new Error('init failed');
+      const checkoutToken = resp.data.checkoutToken;
+      startHelcimCheckout(checkoutToken, async (status, transaction)=>{
+        if(status==='SUCCESS'){
+          state.modal = null; closeModalDom(); render();
+          showToast('Paiement reçu, confirmation en cours…');
+          let ok = false;
+          try{
+            const cr = await sb.functions.invoke('koss-confirm-payment', {body:{checkoutToken, transactionId: transaction && transaction.transactionId}});
+            ok = !(cr.error || !cr.data || !cr.data.ok);
+          }catch(err){ console.error('Échec confirmation paiement:', err); }
+          await loadData();
+          const mm = state.data.memberships.find(x=>x.id===m.id);
+          if(mm){
+            mm.isContribution = true; mm.creditsRemaining = 0;
+            if(ok && !mm.paidViaHelcim){ mm.paidViaHelcim = true; mm.paidViaHelcimAt = Date.now(); }
+            await persist();
+          }
+          if(!ok) showToast('Paiement reçu ! Le studio confirmera votre contribution sous peu.');
+          try{ await proceedBooking(pl.classId, pl.dateIso, pl.name, pl.email, true, pl.profileId, null, {mode:'online', amount:amt, membershipId:m.id}); }
+          catch(err){ console.error(err); showToast('Contribution reçue, mais la réservation a échoué — réservez à nouveau (sans repayer) ou contactez le studio.'); }
+        } else if(status==='ABORTED'){
+          fail();
+          const still = state.data.memberships.find(x=>x.id===m.id && x.status==='attente_paiement');
+          if(still){ abandonDraftMembership(still); await persist(); }
+          showToast('Paiement annulé.');
+        } else { fail(); }
+      });
+    }catch(err){
+      console.error('Échec ouverture paiement Helcim:', err);
+      fail();
+      const still = state.data.memberships.find(x=>x.id===m.id && x.status==='attente_paiement');
+      if(still){ abandonDraftMembership(still); await persist(); }
+      showToast('Le paiement en ligne est momentanément indisponible. Vous pouvez payer sur place.');
+    }
+  }
+
+  async function proceedBooking(classId, dateIso, name, email, isDuplicateConfirmed, profileId, membershipId, contrib){
     const c = state.data.classes.find(cl=>cl.id===classId);
     if(!c){ showToast('Ce cours n\u2019existe plus.'); return; }
     if(!isClassProgramLike(c) && isClassPast(c, dateIso) && !isManagerContext()){
@@ -2725,6 +2804,12 @@
 
     if(alreadyBooked && !isDuplicateConfirmed){
       state.modal = {type:'confirm-duplicate', payload:{classId, dateIso, name, email, profileId}};
+      render();
+      return;
+    }
+
+    if(isContributionClass(c) && !contrib && !isManagerContext() && bookedCount(classId,dateIso) < c.capacity){
+      state.modal = {type:'contribution', payload:{classId, dateIso, name, email, profileId, isDuplicateConfirmed}};
       render();
       return;
     }
@@ -2785,6 +2870,12 @@
       membershipId: membership ? membership.id : null,
       createdAt: Date.now()
     };
+    if(contrib && !full){
+      booking.contribution = true;
+      booking.contributionAmount = contrib.amount;
+      if(contrib.mode==='onsite'){ booking.noMembership = true; }
+      else if(contrib.membershipId){ booking.paymentMembershipId = contrib.membershipId; }
+    }
     state.data.bookings.push(booking);
     if(!full && membership && membership.type==='credits'){
       membership.creditsRemaining = Math.max(0, membership.creditsRemaining - 1);
@@ -2795,7 +2886,7 @@
     if(isManagerContext()){
       showToast(full ? 'Ajout\u00e9 \u00e0 la liste d\u2019attente.' : (isDuplicateConfirmed ? 'Deuxi\u00e8me r\u00e9servation confirm\u00e9e !' : 'R\u00e9servation confirm\u00e9e !'));
     } else {
-      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false}};
+      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false, contribOnsite: (contrib && contrib.mode==='onsite' && !full) ? contrib.amount : null, contribPaid: (contrib && contrib.mode==='online' && !full) ? contrib.amount : null}};
       render();
     }
   }
@@ -2930,6 +3021,7 @@
   }
 
   function isMembershipActive(m){
+    if(m.isContribution) return false;
     if(isScheduledFuture(m)) return false;
     if(m.status !== 'active') return false;
     if(m.type === 'illimite') return m.endDate >= todayIso();
@@ -3306,6 +3398,7 @@
 
   function membershipBadge(m){
     const ds = membershipDisplayStatus(m);
+    if(m.isContribution && m.status==='active') return `<span class="badge badge-confirmed">Contribution</span>`;
     const map = {
       attente_paiement: ['badge-pending','Paiement à faire'],
       paiement_declare: ['badge-declared','Paiement déclaré'],
@@ -3323,6 +3416,7 @@
   }
 
   function membershipDetail(m){
+    if(m.isContribution) return 'Contribution volontaire' + (m.planPrice ? ' : '+m.planPrice : '');
     if(m.type === 'illimite') return 'jusqu\u2019au ' + m.endDate;
     if(m.type === 'credits') return m.creditsRemaining + ' cours restant(s)' + (m.endDate ? ' \u00b7 expire le ' + m.endDate : '');
     return '';
@@ -4592,7 +4686,9 @@
     if(!email) return null;
     const key = email.toLowerCase();
     const pid = profileId || null;
-    const ms = state.data.memberships.filter(x=>x.studentEmail && x.studentEmail.toLowerCase()===key && (x.profileId||null)===pid);
+    const ms = state.data.memberships.filter(x=>x.studentEmail && x.studentEmail.toLowerCase()===key && (x.profileId||null)===pid && !x.isContribution);
+    const owesContrib = state.data.bookings.some(b=>b.contribution && b.noMembership && b.status!=='annulee' && b.studentEmail && b.studentEmail.toLowerCase()===key && (b.profileId||null)===pid);
+    if(owesContrib) return MEMBERSHIP_COLORS.onsite;
     if(!ms.length) return '#5C6068';
     const keys = new Set(ms.map(membershipColorKey));
     const k = MEMBERSHIP_COLOR_ORDER.find(x=>keys.has(x));
@@ -5420,7 +5516,7 @@
     }
     const tileInner = `
       <div class="class-tile ${full?'full':''}"${tileStyle} data-action="open-class" data-class="${c.id}" data-date="${dateIso}">
-        <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">\u00b7 ${categoryLabel(c.category)}</span> ${c.free ? '<span style="color:var(--sage);">\u00b7 gratuit</span>' : ''}</div>
+        <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">\u00b7 ${categoryLabel(c.category)}</span> ${isContributionClass(c) ? '<span style="color:var(--sage);">\u00b7 contribution volontaire</span>' : (c.free ? '<span style="color:var(--sage);">\u00b7 gratuit</span>' : '')}</div>
         <div class="class-name" style="color:${nameColor};">${escapeHtml(c.name)}${isProgram ? ` <span style="color:var(--amber);font-size:11px;">\u00b7 ${programOrEventWord(c)}</span>` : ''}</div>
         ${c.publicNote ? `<div style="color:var(--sage);font-size:11px;line-height:1.3;margin-top:2px;">\u{1F4CC} ${escapeHtml(c.publicNote)}</div>` : ''}
         <div class="class-spots">${spotsText}</div>
@@ -5632,7 +5728,7 @@
     const email = state.studentSession.email;
     const acct = findStudentAccount(email);
     const showHiddenMemberships = !!state.accountShowHiddenMemberships;
-    const allOwnMemberships = state.data.memberships.filter(m=>m.studentEmail.toLowerCase()===email.toLowerCase() && m.status!=='annulee');
+    const allOwnMemberships = state.data.memberships.filter(m=>m.studentEmail.toLowerCase()===email.toLowerCase() && m.status!=='annulee' && !m.isContribution);
     const hiddenOwnCount = allOwnMemberships.filter(m=>m.hiddenByStudent).length;
     const memberships = (showHiddenMemberships ? allOwnMemberships : allOwnMemberships.filter(m=>!m.hiddenByStudent)).filter(m=>!isScheduledFuture(m));
     const bookings = state.data.bookings.filter(b=>b.studentEmail.toLowerCase()===email.toLowerCase() && b.status!=='annulee')
@@ -6061,7 +6157,7 @@
     const tileStyle = isRainbow ? '' : ` style="border-left-color:${accent};${tint ? `background:${tint};` : ''}${c.cancelled?'opacity:.55;':''}"`;
     const tileInner = `
       <div class="class-tile"${tileStyle} data-action="open-attendance" data-class="${c.id}" data-date="${dateIso}">
-        <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">· ${categoryLabel(c.category)}</span> ${c.free ? '<span style="color:var(--sage);">· gratuit</span>' : ''}</div>
+        <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">· ${categoryLabel(c.category)}</span> ${isContributionClass(c) ? '<span style="color:var(--sage);">· contribution volontaire</span>' : (c.free ? '<span style="color:var(--sage);">· gratuit</span>' : '')}</div>
         <div class="class-name" style="color:${nameColor};${c.cancelled?'text-decoration:line-through;':''}">${escapeHtml(c.name)}${c.cancelled?` <span style="color:var(--coral);font-size:11px;">(annulé${c.hideFromSchedule?' · caché des élèves':''})</span>`:''}</div>
         <div class="class-spots">${c.cancelled ? 'Annulé' : count+' inscrit(s)'}</div>
       </div>
@@ -8454,7 +8550,7 @@
           <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
             ${(()=>{
               const owed = owedOnSiteMembershipsFor(b.studentEmail, b.profileId)[0];
-              return `<span style="${(b.noMembership||owed)?'color:var(--coral);':''}${owed?'font-weight:700;':''}">${studentLinkHtml(b.studentName, b.studentEmail, b.profileId)}${b.noMembership ? ' <span style="font-size:11px;">(sans abonnement)</span>' : ''}${owed ? ' <span style="font-size:11px;background:var(--coral);color:#fff;border-radius:5px;padding:1px 7px;margin-left:4px;">💵 À payer sur place</span>' : ''}${classPayStatusHtml(b)}</span>
+              return `<span style="${(b.noMembership||owed)?'color:var(--coral);':''}${owed?'font-weight:700;':''}">${studentLinkHtml(b.studentName, b.studentEmail, b.profileId)}${b.noMembership ? (b.contribution ? ' <span style="font-size:11px;background:var(--coral);color:#fff;border-radius:5px;padding:1px 7px;">💵 Contribution '+escapeHtml(fmtMoney(b.contributionAmount||0))+' à payer sur place</span>' : ' <span style="font-size:11px;">(sans abonnement)</span>') : ''}${b.contribution && !b.noMembership && b.paymentMembershipId ? ' <span style="font-size:11px;">(contribution '+escapeHtml(fmtMoney(b.contributionAmount||0))+')</span>' : ''}${owed ? ' <span style="font-size:11px;background:var(--coral);color:#fff;border-radius:5px;padding:1px 7px;margin-left:4px;">💵 À payer sur place</span>' : ''}${classPayStatusHtml(b)}</span>
             <span style="display:flex;gap:6px;">${classPayBtnHtml(b)}${owed ? `<button class="small-btn" style="border-color:var(--coral);color:var(--coral);" data-action="open-onsite-paid" data-id="${owed.id}">Marquer payé</button>` : ''}<button class="small-btn" data-action="cancel-booking" data-id="${b.id}">Retirer</button></span>`;
             })()}
           </div>
@@ -8785,7 +8881,7 @@
             <h3>Confirmer le paiement</h3>
             <p class="muted">${studentLinkHtml(b.studentName, b.studentEmail, b.profileId)} — ${c?escapeHtml(c.name):'—'} du ${b.dateIso}${b.addedByManagerName ? '<br>Ajouté sans abonnement par : '+escapeHtml(b.addedByManagerName) : ''}</p>
             <label>Montant payé (obligatoire)</label>
-            <input id="mark-paid-amount" type="text" inputmode="decimal" placeholder="ex. 20">
+            <input id="mark-paid-amount" type="text" inputmode="decimal" placeholder="ex. 20" value="${b.contributionAmount?String(b.contributionAmount).replace('.',','):''}">
             <p class="muted" style="color:var(--chalk-dim);font-size:11px;margin:2px 0 10px;">Ajouté au total des ventes du mois (tableau de bord + rapport de ventes), comme un abonnement — sinon ce paiement comptant/Interac n'est compté nulle part.</p>
             <label>Note sur ce paiement (obligatoire)</label>
             <textarea id="mark-paid-note" rows="3" placeholder="ex. Payé comptant le ${todayIso()}"></textarea>
@@ -8827,6 +8923,30 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'contribution'){
+      const ct = m.payload;
+      const cc = state.data.classes.find(cl=>cl.id===ct.classId);
+      const when = cc ? formatFullClassDateTime(ct.dateIso, cc.time, cc.durationMinutes) : '';
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>🌈 Contribution volontaire</h3>
+          ${cc ? `<p style="font-size:15px;font-weight:700;margin:6px 0 2px;">${escapeHtml(cc.name)}</p>` : ''}
+          ${when ? `<p class="muted">${when}</p>` : ''}
+          <p style="font-size:13px;margin:10px 0;">Les instructeurs de ce cours sont <strong>bénévoles</strong>. Leur rémunération dépend des contributions de chacun·e. Chaque montant compte, sans aucun jugement : donnez selon vos moyens (minimum ${CONTRIB_MIN} $).</p>
+          <label>Ma contribution</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+            ${[3,5,10,20].map(v=>`<button type="button" class="small-btn" data-action="ct-chip" data-amt="${v}">${v} $</button>`).join('')}
+          </div>
+          <input id="ct-amount" type="text" inputmode="decimal" placeholder="Autre montant ($)" oninput="window.ctInput()">
+          <p id="ct-msg" class="muted" style="font-size:12px;min-height:34px;margin:6px 0;"></p>
+          <div class="btn-row" style="flex-wrap:wrap;">
+            <button class="btn btn-primary" id="ct-online" data-action="ct-online" disabled>🔒 Payer en ligne</button>
+            <button class="btn btn-secondary" id="ct-onsite" data-action="ct-onsite" disabled>💵 Payer sur place</button>
+          </div>
+          <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Annuler</button></div>
+        </div>
+      `;
     } else if(m.type === 'booking-confirmed'){
       const bc = m.payload;
       const cc = state.data.classes.find(cl=>cl.id===bc.classId);
@@ -8834,7 +8954,9 @@
       const head = bc.waitlist ? '⏳ Vous êtes sur la liste d’attente' : (bc.program ? '✅ Votre inscription est confirmée' : '✅ Votre réservation est confirmée');
       const sub = bc.waitlist
         ? 'Ce cours est complet. Vous serez inscrit automatiquement si une place se libère.'
-        : (bc.program ? `Vous êtes inscrit aux ${bc.count} séances${bc.waitlistCount ? ' (dont ' + bc.waitlistCount + ' en liste d’attente)' : ''}.` : 'À bientôt sur les tapis !');
+        : (bc.contribOnsite ? `À bientôt sur les tapis ! N’oubliez pas votre contribution de <strong>${fmtMoney(bc.contribOnsite)}</strong> à payer sur place. Merci de soutenir nos instructeurs bénévoles 💚`
+        : bc.contribPaid ? `Merci pour votre contribution de <strong>${fmtMoney(bc.contribPaid)}</strong> ! À bientôt sur les tapis 💚`
+        : bc.program ? `Vous êtes inscrit aux ${bc.count} séances${bc.waitlistCount ? ' (dont ' + bc.waitlistCount + ' en liste d’attente)' : ''}.` : 'À bientôt sur les tapis !');
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
@@ -12323,6 +12445,23 @@
       if(!cRaw){ showToast('Ce cours n’existe plus.'); return; }
       const evt = calendarEventForClass(cRaw, dateIso);
       downloadIcsEvent(evt);
+    }
+    else if(action==='ct-chip'){
+      const el = document.getElementById('ct-amount');
+      if(el){ el.value = e.currentTarget.dataset.amt; window.ctInput(); }
+    }
+    else if(action==='ct-onsite'){
+      const amt = ctParseAmount();
+      if(isNaN(amt) || amt < CONTRIB_MIN){ showToast('La contribution minimale est de '+CONTRIB_MIN+' $.'); return; }
+      const pl = state.modal.payload;
+      await proceedBooking(pl.classId, pl.dateIso, pl.name, pl.email, true, pl.profileId, null, {mode:'onsite', amount:amt});
+    }
+    else if(action==='ct-online'){
+      const amt = ctParseAmount();
+      if(isNaN(amt) || amt < CONTRIB_ONLINE_MIN){ showToast('Le paiement en ligne commence à '+CONTRIB_ONLINE_MIN+' $.'); return; }
+      const btn = e.currentTarget;
+      const pl = state.modal.payload;
+      await startContributionPayment(pl, amt, btn);
     }
     else if(action==='submit-booking'){
       const classId = e.currentTarget.dataset.class;
