@@ -16,13 +16,14 @@
 <meta property="og:url" content="https://kossmtl.ca/riposte/">
 <meta property="og:locale" content="fr_CA">
 <style>
+@font-face{font-family:'Aestetico';src:url('/fonts/aestetico-200.otf') format('opentype');font-weight:200;font-display:swap}
 @font-face{font-family:'Aestetico';src:url('/fonts/aestetico-400.otf') format('opentype');font-weight:400;font-display:swap}
 @font-face{font-family:'Aestetico';src:url('/fonts/aestetico-500.otf') format('opentype');font-weight:500;font-display:swap}
 @font-face{font-family:'Aestetico';src:url('/fonts/aestetico-600.otf') format('opentype');font-weight:600;font-display:swap}
 @font-face{font-family:'Aestetico';src:url('/fonts/aestetico-800.otf') format('opentype');font-weight:800;font-display:swap}
 *{box-sizing:border-box}
 html,body{margin:0;background:#0e0f11}
-body{color:rgba(255,255,255,.88);font-family:'Aestetico',system-ui,sans-serif;font-weight:400;font-size:17px;line-height:1.4em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;letter-spacing:0}
+body{color:#fff;font-family:'Aestetico',system-ui,sans-serif;font-weight:200;font-size:17px;line-height:1.4em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;letter-spacing:0}
 /* Fond de page fixe (comme Wix) : image à sa taille native, centrée en haut */
 .page-bg{position:fixed;inset:0;z-index:0;background:#0e0f11 url(/photos/riposte-bg.jpg) center top/768px 1920px no-repeat}
 /* Section : voile sombre 68 % sur toute la largeur */
@@ -32,13 +33,10 @@ body{color:rgba(255,255,255,.88);font-family:'Aestetico',system-ui,sans-serif;fo
 .in{width:980px;max-width:100%;margin:0 auto;position:relative}
 h1{margin:0;padding-top:148px;height:278px;font-weight:500;font-size:50px;line-height:.8em;text-align:center;color:#fff}
 .body{position:relative;margin:70px auto 0;width:466px;max-width:calc(100% - 40px);padding-bottom:28px}
-/* Amincit les lettres (pas de police Light disponible) */
-.body{-webkit-text-stroke:.3px #0e0f11;paint-order:fill stroke}
-.body b{-webkit-text-stroke:.2px #0e0f11}
 .body p,.body ul{margin:0}
 .body ul{padding-left:30px}
 .body li p{display:list-item}
-.body b{font-weight:600;color:#fff}
+.body b{font-weight:500}
 .body li p{margin:0}
 @media(max-width:980px){h1{height:auto;padding-bottom:0}}
 @media(max-width:700px){.tail{height:44vh}}
