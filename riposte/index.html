@@ -32,6 +32,9 @@ body{color:rgba(255,255,255,.88);font-family:'Aestetico',system-ui,sans-serif;fo
 .in{width:980px;max-width:100%;margin:0 auto;position:relative}
 h1{margin:0;padding-top:148px;height:278px;font-weight:500;font-size:50px;line-height:.8em;text-align:center;color:#fff}
 .body{position:relative;margin:70px auto 0;width:466px;max-width:calc(100% - 40px);padding-bottom:28px}
+/* Amincit les lettres (pas de police Light disponible) */
+.body{-webkit-text-stroke:.3px #0e0f11;paint-order:fill stroke}
+.body b{-webkit-text-stroke:.2px #0e0f11}
 .body p,.body ul{margin:0}
 .body ul{padding-left:30px}
 .body li p{display:list-item}
