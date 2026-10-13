@@ -417,6 +417,19 @@
     overflow-y:auto;
   }
   .modal h3{font-family:var(--font-d);margin:0 0 4px;font-size:18px;color:var(--chalk);}
+  /* Fenêtre de contribution volontaire */
+  .modal.ct-modal{max-width:480px;}
+  .ct-box{border:1px solid;border-radius:8px;padding:12px 14px;font-size:13px;line-height:1.5;margin:12px 0 14px;}
+  .ct-box-acc{border-color:var(--ct-acc);background:var(--ct-acc-bg);}
+  .ct-box-warn{border-color:#F0A35E;background:rgba(240,163,94,.14);margin:12px 0 14px;}
+  .ct-chips{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px;}
+  .ct-chip{border:1px solid var(--border);background:transparent;color:var(--chalk);border-radius:999px;padding:8px 16px;font:600 14px var(--font-b);cursor:pointer;}
+  .ct-chip.on{background:var(--ct-acc);border-color:var(--ct-acc);color:var(--ink);}
+  .ct-field{display:flex;align-items:center;gap:8px;background:#25262A;border:1px solid var(--border);border-radius:8px;padding:0 14px;}
+  .ct-field input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--chalk);font:600 22px var(--font-b);padding:12px 0;}
+  .ct-cur{color:var(--chalk-dim);font-size:16px;} .ct-cad{color:var(--chalk-dim);font-size:11px;font-weight:700;letter-spacing:.06em;}
+  .ct-help{font-size:12.5px;color:var(--chalk-dim);margin:10px 0 2px;}
+  .ct-note{font-size:11.5px;color:var(--chalk-dim);margin:10px 0 0;line-height:1.4;}
   .modal .muted{color:var(--chalk-dim);font-size:13px;margin-bottom:14px;}
 
   /* Centre de messages (7 oct) */
@@ -1722,7 +1735,7 @@
   }
 
   function seedKossSchedule(){
-    const mk = (name,dayOfWeek,time,category,free)=>({id:uid(),name,dayOfWeek,time,capacity:16,price: free?'Gratuit':'Inclus dans l\u2019abonnement',free:!!free,category});
+    const mk = (name,dayOfWeek,time,category,free)=>({id:uid(),name,dayOfWeek,time,capacity:16,price: free?'Contribution volontaire':'Inclus dans l\u2019abonnement',free:!!free,category});
     state.data.classes = [
       mk('Kids Skills',0,'17:00','enfants'),
       mk('Intro au BJJ',0,'18:00','bjj_adulte'),
@@ -1899,7 +1912,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-12-contribution';
+  const APP_BUILD = '2026-10-13-contribution-v2';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -2626,7 +2639,9 @@
   // Cours à contribution volontaire (Queers & Allies) : gratuit côté crédits, mais l'élève choisit
   // un montant (min 3 $). Sous 5 $ = sur place seulement (minimum de Helcim); dès 5 $ = en ligne ou sur place.
   const CONTRIB_MIN = 3, CONTRIB_ONLINE_MIN = 5;
-  function isContributionClass(c){ return !!(c && c.name && c.name.trim()==='Queers & Allies'); }
+  // Depuis le 13 oct. 2026 : TOUT cours marqué « gratuit » (c.free) est à contribution volontaire.
+  function isContributionClass(c){ return !!(c && (c.free || (c.name && c.name.trim()==='Queers & Allies'))); }
+  function isRainbowClass(c){ return !!(c && c.name && c.name.trim()==='Queers & Allies'); }
   function fmtMoney(n){ const v=Math.round(n*100)/100; return (Number.isInteger(v)?String(v):v.toFixed(2).replace('.',','))+' $'; }
   // Un cours à dates fixes dont le début et la fin sont le MÊME jour est un
   // événement ponctuel (une seule journée), pas un programme à plusieurs séances.
@@ -2693,20 +2708,44 @@
     const n = parseFloat(raw);
     return (isFinite(n) && n>0) ? Math.round(n*100)/100 : NaN;
   }
-  window.ctInput = function(){
-    const amt = ctParseAmount();
-    const on = document.getElementById('ct-online'), off = document.getElementById('ct-onsite'), msg = document.getElementById('ct-msg');
-    if(!on || !off || !msg) return;
-    if(isNaN(amt) || amt < CONTRIB_MIN){
-      on.disabled = true; off.disabled = true;
-      msg.textContent = isNaN(amt) ? 'Choisissez ou entrez un montant.' : 'La contribution minimale est de '+CONTRIB_MIN+' $.';
-    } else if(amt < CONTRIB_ONLINE_MIN){
-      on.disabled = true; off.disabled = false;
-      msg.textContent = 'Sous '+CONTRIB_ONLINE_MIN+' $, la contribution se paie sur place (le minimum du paiement en ligne est de '+CONTRIB_ONLINE_MIN+' $).';
-    } else {
-      on.disabled = false; off.disabled = false;
-      msg.textContent = 'Vous pouvez payer ces '+fmtMoney(amt)+' en ligne maintenant, ou sur place le jour du cours.';
+  const CT_PRESETS = [5,10,20,30];
+  window.ctOther = false;
+  // Bloc dynamique de la fenêtre de contribution (selon le montant saisi) : encart + boutons + note.
+  function ctDynHtml(amt){
+    const ok = !isNaN(amt) && amt >= CONTRIB_MIN;
+    if(ok && amt < CONTRIB_ONLINE_MIN){
+      return `
+        <div class="ct-box ct-box-warn">💵 <strong>En bas de ${CONTRIB_ONLINE_MIN} $, le paiement se fait obligatoirement sur place.</strong> Ta place est réservée tout de suite ; tu remettras ta contribution de <strong>${fmtMoney(amt)}</strong> à l’accueil le jour du cours.</div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="ct-onsite" data-action="ct-onsite">✓ Réserver — je paierai ${fmtMoney(amt)} sur place</button>
+          <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+        </div>
+        <p class="ct-note">Ta place est confirmée immédiatement.</p>`;
     }
+    const help = isNaN(amt) ? 'Choisis ou entre un montant.'
+      : (amt < CONTRIB_MIN ? 'La contribution minimale est de '+CONTRIB_MIN+' $.' : 'Tu peux payer en ligne ou sur place, comme tu préfères.');
+    return `
+      <p class="ct-help">${help}</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="ct-online" data-action="ct-online" ${ok?'':'disabled'}>🔒 ${ok ? 'Payer '+fmtMoney(amt)+' en ligne' : 'Payer en ligne'}</button>
+        <button class="btn btn-secondary" id="ct-onsite" data-action="ct-onsite" ${ok?'':'disabled'}>💵 Je paierai sur place</button>
+      </div>
+      <p class="ct-note">Paiement en ligne sécurisé par Helcim. Ta place est confirmée dès que le paiement est reçu (ou tout de suite si tu paies sur place).</p>`;
+  }
+  window.ctInput = function(){
+    const dyn = document.getElementById('ct-dyn');
+    if(!dyn) return;
+    const amt = ctParseAmount();
+    const el = document.getElementById('ct-amount');
+    const hasVal = !!(el && el.value.trim());
+    const isPreset = !isNaN(amt) && CT_PRESETS.indexOf(amt) >= 0 && hasVal;
+    (dyn.closest('.modal') || document).querySelectorAll('.ct-chip').forEach(btn=>{
+      const v = btn.dataset.amt;
+      const on = v==='other' ? (!isPreset && (window.ctOther || hasVal)) : (isPreset && Number(v)===amt);
+      btn.classList.toggle('on', on);
+    });
+    dyn.innerHTML = ctDynHtml(amt);
+    attachHandlers(dyn); // les clics de l'app sont attachés bouton par bouton
   };
   async function startContributionPayment(pl, amt, btn){
     const c = state.data.classes.find(cl=>cl.id===pl.classId);
@@ -6523,14 +6562,14 @@
         const delBtns = sibs.map(s=>`<button class="small-btn" data-action="delete-class" data-id="${s.id}">Supprimer (${DAYS[s.dayOfWeek].slice(0,3)})</button>`).join('');
         return `
         <li>
-          <span><strong>${escapeHtml(first.name)}</strong>${first.free ? ' <span style="color:var(--sage);">(gratuit)</span>' : ''} — ${dayLabel} ${timeLabel} · ${first.capacity} places · ${first.price}<br><span style="color:var(--amber);font-size:11px;">${ProgramOrEventWord(first)} : ${first.startDate||'\u2014'} \u2192 ${first.endDate||'\u2014'}</span></span>
+          <span><strong>${escapeHtml(first.name)}</strong>${first.free ? ' <span style="color:var(--sage);">(contribution)</span>' : ''} — ${dayLabel} ${timeLabel} · ${first.capacity} places · ${first.free ? 'Contribution volontaire (min. 3 $)' : first.price}<br><span style="color:var(--amber);font-size:11px;">${ProgramOrEventWord(first)} : ${first.startDate||'\u2014'} \u2192 ${first.endDate||'\u2014'}</span></span>
           <span>${editBtns}${delBtns}</span>
         </li>
       `;
       }).join('');
       const standaloneRows = standaloneItems.map(c=>`
         <li>
-          <span><strong>${escapeHtml(c.name)}</strong>${c.free ? ' <span style="color:var(--sage);">(gratuit)</span>' : ''} — ${DAYS[c.dayOfWeek]} ${c.time} · ${c.capacity} places · ${c.price}</span>
+          <span><strong>${escapeHtml(c.name)}</strong>${c.free ? ' <span style="color:var(--sage);">(contribution)</span>' : ''} — ${DAYS[c.dayOfWeek]} ${c.time} · ${c.capacity} places · ${c.free ? 'Contribution volontaire (min. 3 $)' : c.price}</span>
           <span>
             <button class="small-btn" data-action="edit-class" data-id="${c.id}">Modifier</button>
             <button class="small-btn" data-action="delete-class" data-id="${c.id}">Supprimer</button>
@@ -7815,7 +7854,7 @@
           <input id="f-duration" type="number" min="1" value="${c.durationMinutes||60}">
           <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
             <input type="checkbox" id="f-free" style="width:auto;" ${c.free?'checked':''}>
-            <span style="color:var(--chalk);font-size:13px;">Cours gratuit — réservable sans abonnement</span>
+            <span style="color:var(--chalk);font-size:13px;">Cours à contribution volontaire (min. 3 $) — réservable sans abonnement</span>
           </label>
           <label style="margin-top:14px;">Description du cours (visible aux étudiants)</label>
           <textarea id="f-description" rows="4">${escapeHtml(c.description||'')}</textarea>
@@ -7859,7 +7898,7 @@
       const occ = isProgram ? getProgramOccurrences(c) : [];
       const isFirstOcc = isProgram && isFirstProgramOccurrence(c, dateIso);
       const confirmedList = state.data.bookings.filter(b=>b.classId===classId && b.dateIso===dateIso && b.status==='confirmee');
-      const payLabel = c.free ? 'Cours gratuit' : 'Cours payant';
+      const payLabel = c.free ? 'Cours à contribution volontaire' : 'Cours payant';
       // Demandé par Amélie (S41) : pouvoir annuler sa présence directement en cliquant sur
       // le cours (pas seulement via le ✕ dans "Mes réservations cette semaine"). On liste ici
       // TOUTES les réservations actives de ce compte (élève + famille) pour cette occurrence.
@@ -8927,24 +8966,23 @@
       const ct = m.payload;
       const cc = state.data.classes.find(cl=>cl.id===ct.classId);
       const when = cc ? formatFullClassDateTime(ct.dateIso, cc.time, cc.durationMinutes) : '';
+      const rb = !!(cc && isRainbowClass(cc));
+      // Même message pour tous les cours à contribution ; seul l'accent change (🏳️‍🌈 rose pour Queers & Allies, 💚 sauge pour les autres).
+      const accRgb = rb ? '224,160,196' : '147,180,143';
+      window.ctOther = false;
       html = `
-        <div class="modal">
+        <div class="modal ct-modal" style="--ct-acc:rgb(${accRgb});--ct-acc-bg:rgba(${accRgb},.12);">
           <button class="close-x" data-action="close-modal">✕</button>
-          <h3>🌈 Contribution volontaire</h3>
-          ${cc ? `<p style="font-size:15px;font-weight:700;margin:6px 0 2px;">${escapeHtml(cc.name)}</p>` : ''}
-          ${when ? `<p class="muted">${when}</p>` : ''}
-          <p style="font-size:13px;margin:10px 0;">Les instructeurs de ce cours sont <strong>bénévoles</strong>. Leur rémunération dépend des contributions de chacun·e. Chaque montant compte, sans aucun jugement : donnez selon vos moyens (minimum ${CONTRIB_MIN} $).</p>
+          <h3>${cc ? escapeHtml(cc.name) : 'Contribution volontaire'}</h3>
+          <p class="muted">${when ? when + ' · ' : ''}Contribution volontaire</p>
+          <div class="ct-box ct-box-acc">${rb ? '🏳️‍🌈' : '💚'} <strong>Nos instructeur·trice·s sont bénévoles.</strong> Leur rémunération dépend des contributions des participant·e·s. Chacun·e a une capacité de payer différente : <strong>choisis le montant qui te convient, sans gêne.</strong> Une contribution est requise pour réserver, mais le montant est entièrement libre.</div>
           <label>Ma contribution</label>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
-            ${[3,5,10,20].map(v=>`<button type="button" class="small-btn" data-action="ct-chip" data-amt="${v}">${v} $</button>`).join('')}
+          <div class="ct-chips">
+            ${CT_PRESETS.map(v=>`<button type="button" class="ct-chip${v===20?' on':''}" data-action="ct-chip" data-amt="${v}">${v} $</button>`).join('')}
+            <button type="button" class="ct-chip" data-action="ct-chip" data-amt="other">Autre montant</button>
           </div>
-          <input id="ct-amount" type="text" inputmode="decimal" placeholder="Autre montant ($)" oninput="window.ctInput()">
-          <p id="ct-msg" class="muted" style="font-size:12px;min-height:34px;margin:6px 0;"></p>
-          <div class="btn-row" style="flex-wrap:wrap;">
-            <button class="btn btn-primary" id="ct-online" data-action="ct-online" disabled>🔒 Payer en ligne</button>
-            <button class="btn btn-secondary" id="ct-onsite" data-action="ct-onsite" disabled>💵 Payer sur place</button>
-          </div>
-          <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Annuler</button></div>
+          <div class="ct-field"><span class="ct-cur">$</span><input id="ct-amount" type="text" inputmode="decimal" value="20" autocomplete="off" oninput="window.ctInput()"><span class="ct-cad">CAD</span></div>
+          <div id="ct-dyn">${ctDynHtml(20)}</div>
         </div>
       `;
     } else if(m.type === 'booking-confirmed'){
@@ -12448,7 +12486,11 @@
     }
     else if(action==='ct-chip'){
       const el = document.getElementById('ct-amount');
-      if(el){ el.value = e.currentTarget.dataset.amt; window.ctInput(); }
+      const v = e.currentTarget.dataset.amt;
+      if(el){
+        if(v==='other'){ window.ctOther = true; el.value = ''; window.ctInput(); el.focus(); }
+        else { window.ctOther = false; el.value = v; window.ctInput(); }
+      }
     }
     else if(action==='ct-onsite'){
       const amt = ctParseAmount();
