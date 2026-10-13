@@ -429,6 +429,12 @@
   .ct-field input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--chalk);font:600 22px var(--font-b);padding:12px 0;}
   .ct-cur{color:var(--chalk-dim);font-size:16px;} .ct-cad{color:var(--chalk-dim);font-size:11px;font-weight:700;letter-spacing:.06em;}
   .ct-help{font-size:12.5px;color:var(--chalk-dim);margin:10px 0 2px;}
+  .ct-pass{border:1px solid var(--border);background:#25262A;border-radius:8px;padding:12px 14px;margin:0 0 4px;}
+  .ct-pass-t{font:700 14px var(--font-b);color:var(--chalk);margin-bottom:4px;}
+  .ct-pass-s{font-size:12.5px;color:var(--chalk-dim);line-height:1.45;margin-bottom:10px;}
+  .ct-pass .btn{width:100%;}
+  .ct-or{display:flex;align-items:center;gap:10px;margin:14px 0 2px;color:var(--chalk-dim);font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;}
+  .ct-or::before,.ct-or::after{content:'';flex:1;height:1px;background:var(--border);}
   .ct-note{font-size:11.5px;color:var(--chalk-dim);margin:10px 0 0;line-height:1.4;}
   .modal .muted{color:var(--chalk-dim);font-size:13px;margin-bottom:14px;}
 
@@ -1922,7 +1928,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-13-carnet-cellulaire';
+  const APP_BUILD = '2026-10-13-contribution-abonnement-passe';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -2652,6 +2658,19 @@
   // Depuis le 13 oct. 2026 : TOUT cours marqué « gratuit » (c.free) est à contribution volontaire.
   function isContributionClass(c){ return !!(c && (c.free || (c.name && c.name.trim()==='Queers & Allies'))); }
   function isRainbowClass(c){ return !!(c && c.name && c.name.trim()==='Queers & Allies'); }
+  // Règle du 13 oct. 2026 (Amélie) : un cours à contribution est INCLUS dans tout abonnement illimité actif
+  // (aucune contribution demandée). Une personne qui a une passe (crédits) peut, si elle préfère, payer ce
+  // cours avec 1 crédit au lieu de contribuer.
+  function unlimitedMembershipFor(email, profileId){
+    const e = (email||'').toLowerCase(), pid = profileId || null;
+    return state.data.memberships.find(m => m.studentEmail && m.studentEmail.toLowerCase()===e && (m.profileId||null)===pid && m.type==='illimite' && isMembershipActive(m)) || null;
+  }
+  function passesFor(email, profileId){
+    const e = (email||'').toLowerCase(), pid = profileId || null;
+    return state.data.memberships
+      .filter(m => m.studentEmail && m.studentEmail.toLowerCase()===e && (m.profileId||null)===pid && m.type==='credits' && isMembershipActive(m))
+      .sort((a,b)=> (a.endDate||'9999').localeCompare(b.endDate||'9999'));
+  }
   function fmtMoney(n){ const v=Math.round(n*100)/100; return (Number.isInteger(v)?String(v):v.toFixed(2).replace('.',','))+' $'; }
   // Un cours à dates fixes dont le début et la fin sont le MÊME jour est un
   // événement ponctuel (une seule journée), pas un programme à plusieurs séances.
@@ -2858,13 +2877,21 @@
     }
 
     if(isContributionClass(c) && !contrib && !isManagerContext() && bookedCount(classId,dateIso) < c.capacity){
-      state.modal = {type:'contribution', payload:{classId, dateIso, name, email, profileId, isDuplicateConfirmed}};
-      render();
-      return;
+      const inc = unlimitedMembershipFor(email, profileId);
+      if(inc){
+        contrib = {mode:'included', membershipId: inc.id};   // abonnement illimité : inclus, aucune fenêtre
+      } else {
+        state.modal = {type:'contribution', payload:{classId, dateIso, name, email, profileId, isDuplicateConfirmed}};
+        render();
+        return;
+      }
     }
 
     let membership = null;
-    if(!c.free){
+    if(contrib && (contrib.mode==='included' || contrib.mode==='pass') && bookedCount(classId,dateIso) < c.capacity){
+      membership = state.data.memberships.find(m=>m.id===contrib.membershipId && isMembershipActive(m)) || null;
+      if(!membership){ showToast('Abonnement ou passe introuvable.'); return; }
+    } else if(!c.free){
       if(alreadyBooked){
         const candidates = activeMembershipsForEmail(email, c.category, profileId).filter(m=>m.type==='credits');
         if(!candidates.length){
@@ -2919,7 +2946,11 @@
       membershipId: membership ? membership.id : null,
       createdAt: Date.now()
     };
-    if(contrib && !full){
+    if(contrib && !full && contrib.mode==='included'){
+      booking.includedInMembership = true;
+    } else if(contrib && !full && contrib.mode==='pass'){
+      booking.paidWithPass = true;
+    } else if(contrib && !full){
       booking.contribution = true;
       booking.contributionAmount = contrib.amount;
       if(contrib.mode==='onsite'){ booking.noMembership = true; }
@@ -2935,7 +2966,7 @@
     if(isManagerContext()){
       showToast(full ? 'Ajout\u00e9 \u00e0 la liste d\u2019attente.' : (isDuplicateConfirmed ? 'Deuxi\u00e8me r\u00e9servation confirm\u00e9e !' : 'R\u00e9servation confirm\u00e9e !'));
     } else {
-      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false, contribOnsite: (contrib && contrib.mode==='onsite' && !full) ? contrib.amount : null, contribPaid: (contrib && contrib.mode==='online' && !full) ? contrib.amount : null}};
+      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false, contribOnsite: (contrib && contrib.mode==='onsite' && !full) ? contrib.amount : null, contribPaid: (contrib && contrib.mode==='online' && !full) ? contrib.amount : null, contribIncluded: !!(contrib && contrib.mode==='included' && !full), contribPass: !!(contrib && contrib.mode==='pass' && !full)}};
       render();
     }
   }
@@ -3485,7 +3516,7 @@
   function refundCreditIfNeeded(b){
     if(!b || b.status !== 'confirmee') return;
     const c = state.data.classes.find(cl=>cl.id===b.classId);
-    if(!c || c.free) return;
+    if(!c || (c.free && !b.paidWithPass)) return;
     // Si on sait quel abonnement a servi à réserver (cas normal depuis le 11 sept, utile
     // quand l'élève a plusieurs abonnements actifs), on rembourse celui-là précisément.
     const m = b.membershipId
@@ -9087,6 +9118,14 @@
           <h3>${cc ? escapeHtml(cc.name) : 'Contribution volontaire'}</h3>
           <p class="muted">${when ? when + ' · ' : ''}Contribution volontaire</p>
           <div class="ct-box ct-box-acc">${rb ? '🏳️‍🌈' : '💚'} <strong>Nos instructeur·trice·s sont bénévoles.</strong> Leur rémunération dépend des contributions des participant·e·s. Puisque chacun·e a une capacité de payer différente, une contribution est requise pour réserver, mais le montant est entièrement libre&nbsp;: <strong>choisis le montant qui te convient, sans gêne.</strong></div>
+          ${(()=>{ const ps = passesFor(ct.email, ct.profileId); if(!ps.length) return ''; const pm = ps[0];
+            const n = pm.creditsRemaining;
+            return `<div class="ct-pass">
+              <div class="ct-pass-t">🎟️ Tu as une passe</div>
+              <div class="ct-pass-s">Tu peux utiliser <strong>1 cours de ta passe</strong> au lieu de contribuer. Il t’en restera ${n-1}.</div>
+              <button class="btn btn-secondary" data-action="ct-pass" data-mid="${escapeHtml(pm.id)}">🎟️ Utiliser 1 cours de ma passe (${n} restant${n>1?'s':''})</button>
+            </div>
+            <div class="ct-or"><span>ou contribue</span></div>`; })()}
           <label>Ma contribution</label>
           <div class="ct-chips">
             ${CT_PRESETS.map(v=>`<button type="button" class="ct-chip${v===20?' on':''}" data-action="ct-chip" data-amt="${v}">${v} $</button>`).join('')}
@@ -9104,6 +9143,8 @@
       const sub = bc.waitlist
         ? 'Ce cours est complet. Vous serez inscrit automatiquement si une place se libère.'
         : (bc.contribOnsite ? `À bientôt sur les tapis ! N’oubliez pas votre contribution de <strong>${fmtMoney(bc.contribOnsite)}</strong> à payer sur place. Merci de soutenir nos instructeurs bénévoles 💚`
+        : bc.contribIncluded ? 'Ce cours est inclus dans ton abonnement. À bientôt sur les tapis 💚'
+        : bc.contribPass ? 'Un cours de ta passe a été utilisé. À bientôt sur les tapis 💚'
         : bc.contribPaid ? `Merci pour votre contribution de <strong>${fmtMoney(bc.contribPaid)}</strong> ! À bientôt sur les tapis 💚`
         : bc.program ? `Vous êtes inscrit aux ${bc.count} séances${bc.waitlistCount ? ' (dont ' + bc.waitlistCount + ' en liste d’attente)' : ''}.` : 'À bientôt sur les tapis !');
       html = `
@@ -12629,6 +12670,10 @@
         if(v==='other'){ window.ctOther = true; el.value = ''; window.ctInput(); el.focus(); }
         else { window.ctOther = false; el.value = v; window.ctInput(); }
       }
+    }
+    else if(action==='ct-pass'){
+      const pl = state.modal.payload;
+      await proceedBooking(pl.classId, pl.dateIso, pl.name, pl.email, true, pl.profileId, null, {mode:'pass', membershipId:e.currentTarget.dataset.mid});
     }
     else if(action==='ct-onsite'){
       const amt = ctParseAmount();
