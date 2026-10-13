@@ -8975,7 +8975,7 @@
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>${cc ? escapeHtml(cc.name) : 'Contribution volontaire'}</h3>
           <p class="muted">${when ? when + ' · ' : ''}Contribution volontaire</p>
-          <div class="ct-box ct-box-acc">${rb ? '🏳️‍🌈' : '💚'} <strong>Nos instructeur·trice·s sont bénévoles.</strong> Leur rémunération dépend des contributions des participant·e·s. Chacun·e a une capacité de payer différente : <strong>choisis le montant qui te convient, sans gêne.</strong> Une contribution est requise pour réserver, mais le montant est entièrement libre.</div>
+          <div class="ct-box ct-box-acc">${rb ? '🏳️‍🌈' : '💚'} <strong>Nos instructeur·trice·s sont bénévoles.</strong> Leur rémunération dépend des contributions des participant·e·s. Puisque chacun·e a une capacité de payer différente, une contribution est requise pour réserver, mais le montant est entièrement libre&nbsp;: <strong>choisis le montant qui te convient, sans gêne.</strong></div>
           <label>Ma contribution</label>
           <div class="ct-chips">
             ${CT_PRESETS.map(v=>`<button type="button" class="ct-chip${v===20?' on':''}" data-action="ct-chip" data-amt="${v}">${v} $</button>`).join('')}
