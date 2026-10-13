@@ -739,6 +739,15 @@
     min-height:420px;
     flex:1;
   }
+  /* Carnet : version cellulaire (vrai cellulaire OU aperçu sur ordinateur) */
+  .nb-auto{visibility:hidden;}
+  .nb-mobile .notebook-canvas{min-height:calc(100dvh - 200px);}
+  .nb-mobile .notebook-canvas.notebook-page{padding:14px 10px 14px 28px;background-position:20px 0, 0 6px;}
+  .nb-actions{display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch;}
+  .nb-actions .btn{flex:0 0 auto;white-space:nowrap;font-family:var(--font-b);font-size:13px;padding:10px 14px;}
+  .nb-phone{width:390px;max-width:100%;margin:0 auto 12px;border:10px solid #000;border-radius:34px;background:var(--bg);padding:12px 8px 8px;box-shadow:0 8px 30px rgba(0,0,0,.45);}
+  .nb-phone .notebook-canvas{min-height:620px;}
+  .nb-phone-banner{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;background:rgba(147,180,143,.14);border:1px solid var(--sage);border-radius:8px;padding:10px 14px;margin:0 auto 12px;max-width:560px;font-size:13px;color:var(--chalk);text-align:center;}
   .postit-free{
     position:absolute;
     width:150px;
@@ -1279,6 +1288,7 @@
     notebookFilterCategory: null,
     notebookSelectedEntry: null,
     notebookEditMode: false,
+    notebookPhonePreview: false,
     notebookQuickTextDraw: false,
     notebookQuickEditId: null,
     notebookTextSelectId: null,
@@ -1912,7 +1922,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-13-contribution-v2';
+  const APP_BUILD = '2026-10-13-carnet-cellulaire';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -5304,7 +5314,7 @@
     }
 
     attachHandlers();
-    if(state.view === 'notebook') { attachNotebookDrag(); attachFreeHandles(); attachQuickTextDraw(); attachQuickTextEditor(); attachTextSelectEditor(); attachNotebookTextEdit(); }
+    if(state.view === 'notebook') { nbLastMobile = nbIsMobile(); nbMobileLayoutPass(); attachNotebookDrag(); attachFreeHandles(); attachQuickTextDraw(); attachQuickTextEditor(); attachTextSelectEditor(); attachNotebookTextEdit(); }
     if(state.view === 'notebook' && !state.notebookOpened){ attachCoverLogoDrag(); }
 
     const wirePhotoInput = (inputId, forManager)=>{
@@ -5942,6 +5952,93 @@
     `;
   }
 
+  // ---------- Carnet : deux dispositions, ordinateur et cellulaire (comme Wix) ----------
+  // Chaque note a sa position « ordinateur » (x, y en %, size, rotation…) et, une fois placée à la main
+  // sur cellulaire, sa position « cellulaire » dans entry.m = {x (% de la largeur), y (px depuis le haut),
+  // size, fontSize, boxWidth, rotation}. Sans entry.m, la disposition cellulaire est calculée automatiquement
+  // à partir de la version ordinateur (notes réduites, jamais empilées l'une sur l'autre).
+  const NB_PHONE_MAX = 700, NB_K = 0.78;
+  let nbLastMobile = false;
+  function nbIsRealPhone(){ return window.innerWidth <= NB_PHONE_MAX; }
+  function nbIsMobile(){ return nbIsRealPhone() || !!state.notebookPhonePreview; }
+  function nbMobileDefaults(n){
+    const isSticker = n.kind==='sticker', isText = n.kind==='text';
+    return {
+      size: isText ? undefined : Math.round((n.size || (isSticker ? 60 : 150)) * NB_K),
+      fontSize: isText ? Math.max(10, Math.round((n.fontSize || 16) * NB_K)) : undefined,
+      boxWidth: (isText && n.boxWidth) ? Math.round(n.boxWidth * NB_K) : undefined,
+      rotation: n.rotation || 0
+    };
+  }
+  // Disposition effective d'une note dans le mode courant.
+  function nbItemLay(n){
+    if(!nbIsMobile()){
+      return {pos:`left:${n.x||0}%;top:${n.y||0}%;`, size:n.size, fontSize:n.fontSize, boxWidth:n.boxWidth, rotation:n.rotation||0, wide:200, auto:false};
+    }
+    const d = nbMobileDefaults(n), m = n.m;
+    if(m){
+      return {pos:`left:${m.x||0}%;top:${m.y||0}px;`,
+        size: m.size!=null ? m.size : d.size,
+        fontSize: m.fontSize!=null ? m.fontSize : d.fontSize,
+        boxWidth: m.boxWidth!=null ? m.boxWidth : d.boxWidth,
+        rotation: m.rotation!=null ? m.rotation : d.rotation, wide:Math.round(200*NB_K), auto:false};
+    }
+    // Pas encore placée sur cellulaire : position provisoire, calculée juste après l'affichage (nbMobileLayoutPass).
+    return {pos:`left:${n.x||0}%;top:0px;`, size:d.size, fontSize:d.fontSize, boxWidth:d.boxWidth, rotation:d.rotation, wide:Math.round(200*NB_K), auto:true};
+  }
+  // Fige la disposition cellulaire actuelle (automatique) de la page affichée : à appeler avant la
+  // première modification manuelle, pour que le reste de la page ne bouge pas.
+  function nbSnapshotMobilePage(){
+    const canvas = document.getElementById('nb-canvas');
+    if(!canvas) return;
+    canvas.querySelectorAll('.postit-free,.textnote-free,.sticker-free').forEach(el=>{
+      const e = state.data.notebookEntries.find(n=>n.id===el.dataset.id);
+      if(!e || e.m) return;
+      const d = nbMobileDefaults(e);
+      e.m = {x: Math.round((parseFloat(el.style.left)||0)*10)/10, y: Math.round(parseFloat(el.style.top)||0),
+             size:d.size, fontSize:d.fontSize, boxWidth:d.boxWidth, rotation:d.rotation};
+    });
+  }
+  // Place automatiquement (sans chevauchement) les notes qui n'ont pas encore de position cellulaire,
+  // en gardant l'ordre et la position relative de la version ordinateur. Les notes déjà placées à la main
+  // (entry.m) restent où elles sont et servent d'obstacles.
+  function nbMobileLayoutPass(){
+    if(!nbIsMobile()) return;
+    const canvas = document.getElementById('nb-canvas');
+    if(!canvas) return;
+    const W = canvas.clientWidth, M = 8;
+    if(!W) return;
+    const cr = canvas.getBoundingClientRect();
+    const rectOf = el => { const r = el.getBoundingClientRect(); return {l:r.left-cr.left, t:r.top-cr.top, w:r.width, h:r.height}; };
+    const nodes = Array.from(canvas.querySelectorAll('.postit-free,.textnote-free,.sticker-free'));
+    const placed = []; let maxB = 0;
+    nodes.filter(el=>!el.classList.contains('nb-auto')).forEach(el=>{ const r = rectOf(el); placed.push(r); maxB = Math.max(maxB, r.t + r.h); });
+    nodes.filter(el=>el.classList.contains('nb-auto')).map(el=>{
+      const e = state.data.notebookEntries.find(n=>n.id===el.dataset.id) || {};
+      return {el, x:e.x||0, y:e.y||0};
+    }).sort((a,b)=> (a.y-b.y) || (a.x-b.x)).forEach(o=>{
+      const el = o.el;
+      el.style.left = '0px'; el.style.top = '0px';
+      const r0 = rectOf(el);
+      const w = r0.w, h = r0.h, dx = r0.l, dy = r0.t;
+      let L = Math.min(Math.max(M, o.x/100*W), W-w-M); if(L < M) L = M;
+      let T = Math.max(M, o.y/100*520*NB_K);
+      let moved = true, guard = 0;
+      while(moved && guard++ < 200){
+        moved = false;
+        for(const p of placed){
+          if(L < p.l+p.w+M && L+w+M > p.l && T < p.t+p.h+M && T+h+M > p.t){ T = p.t+p.h+M; moved = true; }
+        }
+      }
+      placed.push({l:L, t:T, w, h}); maxB = Math.max(maxB, T+h);
+      el.style.left = ((L-dx)/W*100) + '%';
+      el.style.top = (T-dy) + 'px';
+      el.classList.remove('nb-auto');
+    });
+    const need = Math.ceil(maxB + 70);
+    if(need > canvas.clientHeight) canvas.style.minHeight = need + 'px';
+  }
+
   function renderNotebook(){
     const acct = notebookSessionAccount();
     if(!acct) return '<p>Session expirée.</p>';
@@ -6054,6 +6151,7 @@
         <button class="small-btn" data-action="open-notebook-settings">⚙ Personnaliser</button>
         <button class="small-btn" data-action="new-notebook">+ Nouveau carnet</button>
         <button class="small-btn ${state.notebookEditMode?'active':''}" data-action="toggle-notebook-edit-mode" style="${state.notebookEditMode?'background:var(--amber);color:var(--ink);':''}">${state.notebookEditMode ? '✓ Mode édition' : '✎ Modifier le carnet'}</button>
+        ${nbIsRealPhone() ? '' : `<button class="small-btn" data-action="toggle-notebook-phone" style="${state.notebookPhonePreview?'background:var(--sage);color:var(--ink);font-weight:700;':''}">${state.notebookPhonePreview ? '🖥 Version ordinateur' : '📱 Voir la version cellulaire'}</button>`}
         <button class="small-btn" data-action="open-received-items" data-owner="${escapeHtml(ownerKey)}" style="${totalInboxCountForOwner(ownerKey)?'background:var(--amber);color:var(--ink);':''}">📥 Reçu${totalInboxCountForOwner(ownerKey)?' ('+totalInboxCountForOwner(ownerKey)+')':''}</button>
         <button class="small-btn" data-action="open-notebook-trash" data-owner="${escapeHtml(ownerKey)}">🗑 Corbeille${trashedItemsForOwner(ownerKey).length?' ('+trashedItemsForOwner(ownerKey).length+')':''}</button>
         <button class="small-btn" data-action="delete-notebook" data-notebook="${activeNotebook.id}" style="color:var(--coral);">🗑 Supprimer ce carnet</button>
@@ -6063,6 +6161,8 @@
         ${usedCategories.map(cat=>`<button class="category-chip ${state.notebookFilterCategory===cat?'active':''}" data-action="filter-notebook-category" data-category="${escapeHtml(cat)}">${escapeHtml(cat)}</button>`).join('')}
       </div>
       ${searchResultsHtml}
+      ${(!nbIsRealPhone() && state.notebookPhonePreview) ? `<div class="nb-phone-banner"><span>📱 <strong>Version cellulaire.</strong> Ce que tu places ici s’applique seulement au cellulaire ; ta version ordinateur ne change pas.</span><button class="small-btn" data-action="toggle-notebook-phone">🖥 Retour à la version ordinateur</button></div>` : ''}
+      <div class="${(!nbIsRealPhone() && state.notebookPhonePreview) ? 'nb-phone' : ''}"><div class="nb-wrap ${nbIsMobile() ? 'nb-mobile' : ''}">
       ${state.notebookFilterCategory ? `
         <div class="notebook-page" style="${notebookPageBgCss(settings)}">
           <div class="notebook-postits">
@@ -6098,9 +6198,9 @@
           </div>
           <div class="notebook-canvas notebook-page" style="${notebookPageBgCss(settings)}" id="nb-canvas">
             ${pageEntries.filter(n=>n.kind!=='text' && n.kind!=='sticker').map(n=>{
-              const pSize = n.size||150; const pScale = pSize/150;
+              const Ly = nbItemLay(n); const pSize = Ly.size||150; const pScale = pSize/150;
               return `
-              <div class="postit postit-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;transform:rotate(${n.rotation||0}deg);background:${n.color};width:${pSize}px;min-height:${Math.round(130*pScale)}px;">
+              <div class="postit postit-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}${Ly.auto?' nb-auto':''}" data-id="${n.id}" style="${Ly.pos}transform:rotate(${Ly.rotation}deg);background:${n.color};width:${pSize}px;min-height:${Math.round(130*pScale)}px;">
                 <div class="postit-cat" style="font-size:${(10*pScale).toFixed(1)}px;">${escapeHtml(n.category)}</div>
                 <div class="postit-text" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="font-size:${(15*pScale).toFixed(1)}px;">${escapeHtml(n.text)}</div>
                 ${n.photo ? `<img src="${n.photo}">` : ''}
@@ -6119,9 +6219,10 @@
               </div>
             `;}).join('')}
             ${pageEntries.filter(n=>n.kind==='text').map(n=>{
+              const Ly = nbItemLay(n);
               if(n.id===state.notebookQuickEditId){
                 return `
-                <div class="textnote-free quick-editing" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;">
+                <div class="textnote-free quick-editing" data-id="${n.id}" style="${Ly.pos}">
                   <textarea id="quick-text-input" class="quick-text-textarea" data-id="${n.id}" placeholder="Écris ici..." style="width:${n.boxWidth||160}px;height:${Math.max(28,n.boxHeight||28)}px;font-family:${textnoteFontCss(n.fontFamily||'sans')};font-size:${n.fontSize||10}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};">${escapeHtml(n.text||'')}</textarea>
                 </div>
                 `;
@@ -6129,11 +6230,11 @@
               const hAlign = n.hAlign||'left';
               const tx = hAlign==='right' ? '-100%' : (hAlign==='center' ? '-50%' : '0');
               const wide = (hAlign==='center' || hAlign==='justify');
-              const wrapStyle = n.boxWidth ? `width:${n.boxWidth}px;` : (wide ? 'width:200px;' : '');
-              const contentStyle = n.boxWidth ? 'display:block;width:100%;' : (wide ? 'display:block;width:100%;' : '');
+              const wrapStyle = Ly.boxWidth ? `width:${Ly.boxWidth}px;` : (wide ? `width:${Ly.wide}px;` : '');
+              const contentStyle = Ly.boxWidth ? 'display:block;width:100%;' : (wide ? 'display:block;width:100%;' : '');
               return `
-              <div class="textnote-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;translate:${tx} 0;transform:rotate(${n.rotation||0}deg);text-align:${hAlign};${n.boxWidth?`max-width:${n.boxWidth}px;`:''}${wrapStyle}font-family:${textnoteFontCss(n.fontFamily)};font-size:${n.fontSize||16}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};"><span class="textnote-content" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="${contentStyle}">${escapeHtml(n.text)}</span>
-                ${n.senderOwnerKey ? `<div class="note-signature" style="font-size:${Math.round((n.fontSize||16)*0.6)}px;">— ${escapeHtml(ownerKeyLabel(n.senderOwnerKey))}</div>` : ''}
+              <div class="textnote-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}${Ly.auto?' nb-auto':''}" data-id="${n.id}" style="${Ly.pos}translate:${tx} 0;transform:rotate(${Ly.rotation}deg);text-align:${hAlign};${Ly.boxWidth?`max-width:${Ly.boxWidth}px;`:''}${wrapStyle}font-family:${textnoteFontCss(n.fontFamily)};font-size:${Ly.fontSize||16}px;color:${n.color||TEXTNOTE_INK_COLORS[0]};"><span class="textnote-content" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="${contentStyle}">${escapeHtml(n.text)}</span>
+                ${n.senderOwnerKey ? `<div class="note-signature" style="font-size:${Math.round((Ly.fontSize||16)*0.6)}px;">— ${escapeHtml(ownerKeyLabel(n.senderOwnerKey))}</div>` : ''}
                 ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
                   <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
                   <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
@@ -6150,9 +6251,10 @@
             ${pageEntries.filter(n=>n.kind==='sticker').map(n=>{
               const sticker = state.data.stickers.find(s=>s.id===n.stickerId);
               if(!sticker) return '';
+              const Ly = nbItemLay(n);
               return `
-              <div class="sticker-free ${n.id===state.notebookSelectedEntry?'selected':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;transform:rotate(${n.rotation||0}deg);width:${n.size||60}px;">
-                <img src="${sticker.image}" style="width:${n.size||60}px;">
+              <div class="sticker-free ${n.id===state.notebookSelectedEntry?'selected':''}${Ly.auto?' nb-auto':''}" data-id="${n.id}" style="${Ly.pos}transform:rotate(${Ly.rotation}deg);width:${Ly.size||60}px;">
+                <img src="${sticker.image}" style="width:${Ly.size||60}px;">
                 ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
                   <button type="button" class="free-handle rotate-handle" data-id="${n.id}" title="Pivoter">↻</button>
                   <button type="button" class="free-handle resize-handle" data-id="${n.id}" title="Redimensionner">⤡</button>
@@ -6166,14 +6268,14 @@
               </div>
             `;
             }).join('')}
-            <div class="btn-row" style="position:absolute;bottom:10px;right:10px;">
+            ${nbIsMobile() ? '' : `<div class="btn-row" style="position:absolute;bottom:10px;right:10px;">
               <button class="btn btn-primary" data-action="new-postit" style="font-family:var(--font-b);">+ Post-it</button>
               <button class="btn btn-secondary" data-action="new-textnote" style="font-family:var(--font-b);">+ Note</button>
               <button class="btn btn-secondary ${state.notebookQuickTextDraw?'active':''}" data-action="start-quick-text" style="font-family:var(--font-b);${state.notebookQuickTextDraw?'background:var(--amber);color:var(--ink);':''}">+ Texte</button>
               <button class="btn btn-secondary" data-action="open-sticker-picker" style="font-family:var(--font-b);">+ Autocollant</button>
               ${pageCount < MAX_NOTEBOOK_PAGES ? `<button class="btn btn-secondary" data-action="add-notebook-page" style="font-family:var(--font-b);">+ Page</button>` : ''}
               ${pageCount > 1 ? `<button class="btn btn-secondary" data-action="delete-notebook-page" style="font-family:var(--font-b);">🗑 Supprimer la page</button>` : ''}
-            </div>
+            </div>`}
             ${state.notebookQuickTextDraw ? `<p style="font-family:var(--font-b);position:absolute;top:8px;left:12px;background:var(--bg-panel);color:var(--chalk);padding:4px 10px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,0.25);">Dessine un rectangle sur la page pour écrire.</p>` : ''}
             ${!pageEntries.length ? `<p style="font-family:var(--font-b);color:rgba(40,41,46,0.55);">Page ${activePage} vide — clique sur + Post-it, + Note, + Texte ou + Autocollant, ou glisse une note d’une autre page ici.</p>` : ''}
           </div>
@@ -6181,8 +6283,17 @@
             ${rightTabs.map(p=>`<div class="nb-tab ${p===activePage?'active':''}" data-action="goto-notebook-page" data-page="${p}">${p}</div>`).join('')}
           </div>
         </div>
-        <p class="muted" style="color:var(--chalk-dim);font-size:11px;margin-top:6px;">Page ${activePage} sur ${pageCount} · glisse une note pour la repositionner sur la page.</p>
+        ${nbIsMobile() ? `<div class="nb-actions">
+          <button class="btn btn-primary" data-action="new-postit">+ Post-it</button>
+          <button class="btn btn-secondary" data-action="new-textnote">+ Note</button>
+          <button class="btn btn-secondary ${state.notebookQuickTextDraw?'active':''}" data-action="start-quick-text" style="${state.notebookQuickTextDraw?'background:var(--amber);color:var(--ink);':''}">+ Texte</button>
+          <button class="btn btn-secondary" data-action="open-sticker-picker">+ Autocollant</button>
+          ${pageCount < MAX_NOTEBOOK_PAGES ? `<button class="btn btn-secondary" data-action="add-notebook-page">+ Page</button>` : ''}
+          ${pageCount > 1 ? `<button class="btn btn-secondary" data-action="delete-notebook-page">🗑 Supprimer la page</button>` : ''}
+        </div>` : ''}
+        <p class="muted" style="color:var(--chalk-dim);font-size:11px;margin-top:6px;">Page ${activePage} sur ${pageCount} · glisse une note pour la repositionner sur la page${nbIsMobile() ? ' (version cellulaire)' : ''}.</p>
       `}
+      </div></div>
     `;
   }
 
@@ -10420,6 +10531,7 @@
     if(!canvas) return;
     if(!state.notebookEditMode) return;
     let dragEl = null, dragId = null, startX = 0, startY = 0, startLeft = 0, startTop = 0, moved = false;
+    const mobile = nbIsMobile();
 
     function onMove(ev){
       if(!dragEl) return;
@@ -10431,11 +10543,17 @@
       const dxPct = (dxPx / rect.width) * 100;
       const dyPct = (dyPx / rect.height) * 100;
       let newLeft = startLeft + dxPct;
-      let newTop = startTop + dyPct;
       newLeft = Math.max(0, Math.min(85, newLeft));
-      newTop = Math.max(0, Math.min(88, newTop));
       dragEl.style.left = newLeft + '%';
-      dragEl.style.top = newTop + '%';
+      if(mobile){
+        // Version cellulaire : la position verticale est en pixels depuis le haut de la page.
+        const newTopPx = Math.max(0, Math.min(rect.height - 24, startTop + dyPx));
+        dragEl.style.top = newTopPx + 'px';
+      } else {
+        let newTop = startTop + dyPct;
+        newTop = Math.max(0, Math.min(88, newTop));
+        dragEl.style.top = newTop + '%';
+      }
     }
     async function onUp(){
       if(!dragEl) return;
@@ -10449,8 +10567,14 @@
       if(wasMoved){
         const entry = state.data.notebookEntries.find(n=>n.id===dragId);
         if(entry){
-          entry.x = parseFloat(el.style.left);
-          entry.y = parseFloat(el.style.top);
+          if(mobile){
+            entry.m = entry.m || {};
+            entry.m.x = Math.round(parseFloat(el.style.left)*10)/10;
+            entry.m.y = Math.round(parseFloat(el.style.top));
+          } else {
+            entry.x = parseFloat(el.style.left);
+            entry.y = parseFloat(el.style.top);
+          }
           await persist();
         }
       } else if(el.classList.contains('textnote-free') || el.classList.contains('sticker-free') || el.classList.contains('postit-free')){
@@ -10475,6 +10599,7 @@
         if(node.dataset.id === state.notebookTextSelectId) return;
         if(state.notebookTextSelectId && state.notebookTextSelectId !== node.dataset.id) state.notebookTextSelectId = null;
         const point = ev.touches ? ev.touches[0] : ev;
+        if(mobile) nbSnapshotMobilePage(); // fige la disposition cellulaire actuelle avant de bouger une note
         dragEl = node;
         dragId = node.dataset.id;
         moved = false;
@@ -10535,7 +10660,9 @@
         const rect = wrap.getBoundingClientRect();
         const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
         const entry = state.data.notebookEntries.find(n=>n.id===id);
-        const startRotation = (entry && entry.rotation) || 0;
+        const mobileH = nbIsMobile();
+        if(mobileH) nbSnapshotMobilePage();
+        const startRotation = entry ? (nbItemLay(entry).rotation || 0) : 0;
         const startAngle = Math.atan2(point.clientY-cy, point.clientX-cx) * 180/Math.PI;
         let pendingRotation = startRotation;
         function onMove(mv){
@@ -10550,7 +10677,8 @@
           document.removeEventListener('touchmove', onMove);
           document.removeEventListener('touchend', onEnd);
           if(entry){
-            entry.rotation = pendingRotation;
+            if(mobileH){ entry.m = entry.m || {}; entry.m.rotation = pendingRotation; }
+            else entry.rotation = pendingRotation;
             await persist();
           }
         }
@@ -10576,7 +10704,10 @@
         const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
         const startDist = Math.max(20, Math.hypot(point.clientX-cx, point.clientY-cy));
         const entry = state.data.notebookEntries.find(n=>n.id===id);
-        const startSize = isSticker ? (entry.size||60) : isPostit ? (entry.size||150) : (entry.fontSize||16);
+        const mobileH = nbIsMobile();
+        if(mobileH) nbSnapshotMobilePage();
+        const lay = nbItemLay(entry);
+        const startSize = isSticker ? (lay.size||60) : isPostit ? (lay.size||150) : (lay.fontSize||16);
         const minSize = isSticker ? 24 : isPostit ? 100 : 10;
         const maxSize = isSticker ? 240 : isPostit ? 400 : 60;
         let pendingSize = startSize;
@@ -10604,7 +10735,8 @@
           document.removeEventListener('touchmove', onMove);
           document.removeEventListener('touchend', onEnd);
           if(entry){
-            if(isSticker || isPostit) entry.size = pendingSize; else entry.fontSize = pendingSize;
+            const target = mobileH ? (entry.m = entry.m || {}) : entry;
+            if(isSticker || isPostit) target.size = pendingSize; else target.fontSize = pendingSize;
             await persist();
           }
         }
@@ -10659,6 +10791,11 @@
         text:'', fontFamily:'sans', fontSize:10, color:TEXTNOTE_INK_COLORS[0], rotation:0, hAlign:'left',
         createdAt: Date.now(),
       };
+      if(nbIsMobile()){
+        // Dessiné sur la version cellulaire : on garde ce rectangle tel quel pour le cellulaire.
+        nbSnapshotMobilePage();
+        entry.m = {x: entry.x, y: Math.round(topPx), boxWidth: entry.boxWidth, fontSize: 10, rotation: 0};
+      }
       state.data.notebookEntries.push(entry);
       state.notebookQuickTextDraw = false;
       state.notebookQuickEditId = entry.id;
@@ -10900,6 +11037,7 @@
     }
     else if(action==='open-notebook-cover'){ state.notebookOpened = true; render(); }
     else if(action==='close-notebook-cover'){ state.notebookOpened = false; state.notebookEditMode = false; state.notebookSelectedEntry = null; render(); }
+    else if(action==='toggle-notebook-phone'){ state.notebookPhonePreview = !state.notebookPhonePreview; state.notebookSelectedEntry = null; state.notebookTextSelectId = null; state.notebookQuickTextDraw = false; render(); }
     else if(action==='toggle-notebook-edit-mode'){ state.notebookEditMode = !state.notebookEditMode; if(!state.notebookEditMode) state.notebookSelectedEntry = null; render(); }
     else if(action==='filter-notebook-category'){
       state.notebookFilterCategory = e.currentTarget.dataset.category || null;
@@ -15322,6 +15460,7 @@
     clearTimeout(resizeRenderTimer);
     resizeRenderTimer = setTimeout(()=>{
       if((state.view==='student' || state.view==='attendance') && !state.modal) render();
+      else if(state.view==='notebook' && !state.modal && state.notebookOpened && nbLastMobile !== nbIsMobile()) render();
     }, 200);
   });
 
