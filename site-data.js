@@ -97,6 +97,9 @@
   ];
 
   function cleanHashUrl() {
+    // Pages dans un sous-dossier (ex. /muaythai/) : on ne réécrit pas l'adresse,
+    // « #horaire » y désigne la section de CETTE page, pas la page /horaire.
+    if (document.documentElement.hasAttribute("data-no-clean-hash")) return;
     var slug = window.location.hash.replace(/^#/, "");
     if (CLEAN_HASH_SLUGS.indexOf(slug) === -1) return;
     var cleanPath = "/" + slug;
@@ -107,7 +110,14 @@
   cleanHashUrl();
   window.addEventListener("hashchange", cleanHashUrl);
 
-  fetch("data.txt", { cache: "no-store" })
+  // data.txt est toujours à la racine du site, même si cette page est dans un sous-dossier.
+  var DATA_URL = "data.txt";
+  try {
+    var _src = (document.currentScript && document.currentScript.src) || "";
+    if (_src) DATA_URL = _src.replace(/site-data\.js(\?.*)?$/, "data.txt");
+  } catch (e) {}
+
+  fetch(DATA_URL, { cache: "no-store" })
     .then(function (r) {
       if (!r.ok) throw new Error("data.txt introuvable");
       return r.text();
