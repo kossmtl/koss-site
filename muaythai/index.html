@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muay Thaï — K-OSS Jiu-Jitsu, Villeray, Montréal</title>
+<meta name="description" content="Cours de Muay Thaï à Villeray, Montréal : puissance, technique, vitesse. Mardi et jeudi 17 h, vendredi 9 h.">
+<link rel="canonical" href="https://kossmtl.ca/muaythai/">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="stylesheet" href="../site.css">
+<style>
+  /* Spécifique à la page Muay Thaï : la photo remplace la vidéo du hero */
+  .hero-photo{ width:100%; height:100%; object-fit:cover; object-position:center 22%; display:block; }
+  /* le tréma de « Thaï » touchait le Y de la ligne du dessus */
+  .hero h1{ line-height:1.0; }
+  @media (max-width:700px){
+    /* cellulaire : la photo démarre sous les boutons pour qu'on voie bien la tête */
+    .hero-media{ margin-top:8px; height:560px; }
+    .hero-photo{ object-position:center top; }
+    .hero-media::before{ background:linear-gradient(to bottom, var(--deep) 0%, rgba(56,70,57,0) 14%); }
+  }
+</style>
+</head>
+<body>
+<nav class="nav">
+  <a class="brand" href="/" style="text-decoration:none">K-OSS</a>
+  <a class="nav-cta" href="/app/">Réserver</a>
+</nav>
+<header class="hero">
+  <div class="hero-panel">
+    <div class="stamp">100 %<br>DIRIGÉE<br>PAR UNE<br>FEMME</div>
+    <div class="eyebrow">Villeray — Montréal</div>
+    <h1>Muay<br>Thaï<span>.</span></h1>
+    <div class="hero-ctas">
+      <a class="btn-primary" href="/app/">Réserver ma place</a>
+      <a class="btn-ghost" href="#horaire">Voir l'horaire</a>
+    </div>
+    <div class="hero-media">
+      <img class="hero-photo" src="../photos/sophie.jpg" alt="Coup de pied de Muay Thaï à l'entraînement">
+    </div>
+  </div>
+</header>
+
+<section class="intro-banner" id="le-cours">
+  <div class="section-inner">
+    <h2 class="index">00 — le cours</h2>
+    <div class="intro-banner-grid">
+      <div class="intro-card">
+        <div class="intro-card-label-row"><span class="intro-card-label">Muay Thaï</span></div>
+        <div class="intro-card-date">Puissance, technique, vitesse</div>
+        <p class="intro-card-text">Le Muay Thaï, c'est un sport de combat complet basé sur les poings, les jambes, les genoux et les coudes.</p>
+      </div>
+      <div class="intro-card">
+        <div class="intro-card-label-row"><span class="intro-card-label">Ce que tu y développes</span></div>
+        <div class="intro-card-date">Cardio, réflexes, technique</div>
+        <p class="intro-card-text">Originaire de Thaïlande, il se distingue par son approche directe, son travail de distance et son combat rapproché. Tu y développes ta technique, ton cardio, tes réflexes et ta capacité à rester efficace sous pression.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="horaire">
+  <div class="section-inner">
+    <div class="index">01 — horaire</div>
+    <h2 class="section-title">Les cours</h2>
+    <div class="tickets">
+      <div class="ticket"><div class="name">Mardi</div><div class="when mono">17h</div></div>
+      <div class="ticket"><div class="name">Jeudi</div><div class="when mono">17h</div></div>
+      <div class="ticket"><div class="name">Vendredi</div><div class="when mono">9h</div></div>
+    </div>
+  </div>
+</section>
+
+<footer id="contact">
+  <div class="footer-inner">
+    <div class="footer-sig">K-OSS Jiu-Jitsu — Villeray, Montréal</div>
+    <div class="footer-row">
+      <span>1871 rue Bélanger, Villeray</span><span class="dot">·</span>
+      <a href="mailto:kossmtl@gmail.com">kossmtl@gmail.com</a><span class="dot">·</span>
+      <a href="tel:4388699187">438-869-9187</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
