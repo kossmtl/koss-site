@@ -10,6 +10,116 @@
 <link rel="stylesheet" href="../site.css">
 <style>
   /* Spécifique à la page Muay Thaï : la photo remplace la vidéo du hero */
+  /* Fiche de l'instructeur·trice : COPIE du style de la page À propos (le contenu de la fiche, lui, est relu depuis a-propos.html). */
+.instr-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:24px; margin-top:32px; }
+.instr-card-wrap{ position:relative; }
+.instr-flip-check{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+    clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
+.instr-scene{ display:block; height:500px; perspective:1400px; cursor:pointer; }
+.instr-flip-check:focus-visible ~ .instr-scene{ outline:2px solid var(--tan); outline-offset:4px; }
+.flip-inner{
+    position:relative; width:100%; height:100%;
+    transition:transform 0.7s cubic-bezier(.4,.2,.2,1);
+    transform-style:preserve-3d;
+  }
+.instr-flip-check:checked ~ .instr-scene .flip-inner{ transform:rotateY(180deg); }
+@media (hover:hover){
+    .instr-scene:hover .flip-inner,
+    .instr-scene:focus-within .flip-inner{ transform:rotateY(180deg); }
+  }
+.flip-face{
+    position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    -webkit-transform-style:preserve-3d; transform:translateZ(0);
+    border:2px solid var(--ink); background:var(--paper-2); padding:22px; overflow-y:auto;
+  }
+.flip-front{
+    padding:0; overflow:hidden; background:var(--deep); border-color:var(--deep);
+    text-align:left; transform:rotateY(0deg) translateZ(0);
+  }
+.instr-photo-full{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:top center; }
+.flip-scrim{
+    position:absolute; inset:0;
+    background:linear-gradient(to top, rgba(40,41,46,0.95) 0%, rgba(40,41,46,0.72) 34%, rgba(40,41,46,0.1) 62%, rgba(40,41,46,0) 100%);
+  }
+.flip-front-top{ position:absolute; top:14px; left:14px; right:14px; z-index:2; }
+.flip-front-content{ position:relative; z-index:2; height:100%; display:flex; flex-direction:column; justify-content:flex-end; padding:20px; gap:6px; }
+.flip-back{ transform:rotateY(180deg) translateZ(0); display:flex; flex-direction:column; gap:12px; border-top:5px solid var(--tan); }
+.instr-photo-watermark{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:top center;
+    opacity:0.09; z-index:0; pointer-events:none;
+    transform:scaleX(-1);
+  }
+.flip-back-content{ position:relative; z-index:1; display:flex; flex-direction:column; gap:12px; }
+.instr-name{ font-family:'Aestetico', sans-serif; font-weight:800; font-size:22px; text-transform:uppercase; }
+.flip-front .instr-name{ color:var(--paper); }
+.instr-name a{ color:inherit; text-decoration:none; }
+.instr-name a:hover{ text-decoration:underline; }
+.instr-nickname{ font-family:'Aestetico', sans-serif; font-weight:500; font-style:italic; font-size:13px; text-transform:none; color:var(--tan); margin-left:2px; }
+.instr-eco{
+    display:inline-block; font-family:'Aestetico', sans-serif; font-weight:600; font-size:10px;
+    letter-spacing:0.05em; padding:2px 6px; color:var(--tan); border:1px solid var(--tan); background:rgba(40,41,46,0.5);
+  }
+.instr-role{ font-family:'Aestetico', sans-serif; font-weight:600; font-size:12px; letter-spacing:0.04em; text-transform:uppercase; }
+.flip-front .instr-role{ color:var(--paper); }
+.instr-belt{ font-family:'Aestetico', sans-serif; font-weight:500; font-size:12px; letter-spacing:0.02em; }
+.flip-front .instr-belt{ color:var(--tan); }
+.flip-back .instr-role{ color:var(--deep); }
+.flip-hint{
+    font-family:'Aestetico', sans-serif; font-weight:600; font-size:10px; letter-spacing:0.05em; text-transform:uppercase;
+    color:var(--tan); background:rgba(40,41,46,0.5); border:1px solid var(--tan); padding:3px 7px;
+  }
+.instr-specs{ display:flex; flex-direction:column; gap:7px; }
+.spec-row{ display:flex; gap:8px; align-items:flex-start; }
+.spec-label{
+    font-family:'Aestetico', sans-serif; font-weight:600; font-size:10px; letter-spacing:0.03em;
+    text-transform:uppercase; color:var(--deep); min-width:88px; flex-shrink:0; padding-top:1px;
+  }
+.spec-value{ font-size:12.5px; line-height:1.45; color:var(--ink); }
+.spec-row-stacked{ flex-direction:column; gap:2px; }
+.instr-quote{ font-style:italic; font-size:14px; line-height:1.45; border-left:2px solid var(--tan); padding-left:10px; margin:0; }
+.flip-front .instr-quote{ color:var(--paper); }
+.instr-book{ font-family:'Aestetico', sans-serif; font-weight:600; font-size:12px; color:var(--deep); text-decoration:underline; margin-top:2px; }
+.flip-back-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.instr-video{
+    flex:none; width:34px; height:34px; border-radius:50%; margin-top:1px;
+    background:var(--ink); border:2px solid var(--tan);
+    display:flex; align-items:center; justify-content:center;
+    text-decoration:none; transition:background 0.15s ease, transform 0.15s ease;
+  }
+.instr-video:hover, .instr-video:focus{ background:var(--deep); transform:scale(1.08); }
+.instr-video-icon{
+    width:0; height:0; margin-left:2px;
+    border-top:6px solid transparent; border-bottom:6px solid transparent; border-left:10px solid var(--tan);
+  }
+  #coach .instr-grid{ grid-template-columns:1fr; margin-top:20px; }
+  #coach .notice-head-text .section-title{ margin-bottom:0; }
+  /* ORDINATEUR : pas de titre « Ton coach » ; la fiche occupe la zone du titre + texte (comme le 02 de l'accueil). */
+  #coach .notice-head-text .section-title{ display:none; }
+  @media (min-width:701px){
+    #coach .instr-grid{ margin-top:-2px; }
+  }
+  /* ORDINATEUR : fiche large, sans retournement — la photo à gauche, ce qui était au dos de la fiche à droite.
+     CELLULAIRE (≤700px) : on garde la fiche qui pivote, telle que sur la page À propos. */
+  @media (min-width:701px){
+    /* Zone mesurée sur ta capture (rectangle rouge) : ≈ 718 × 376 px à 100 %. */
+    #coach .instr-grid{ grid-template-columns:minmax(0,1fr); }
+    #coach .instr-scene{ height:500px; cursor:default; perspective:none; }
+    #coach .flip-inner{ display:grid; grid-template-columns:290px minmax(0,1fr); height:auto; min-height:500px; transform:none !important; transform-style:flat; transition:none; }
+    #coach .flip-face{ position:relative; inset:auto; backface-visibility:visible; -webkit-backface-visibility:visible; transform:none !important; min-height:500px; }
+    #coach .flip-back{ padding:22px 28px; justify-content:center; gap:12px; }
+    #coach .flip-back .instr-photo-watermark{ display:none; }
+    #coach .flip-back .instr-name{ font-size:22px !important; }
+    #coach .instr-specs{ gap:7px; }
+    #coach .spec-label{ min-width:104px; }
+    #coach .spec-value{ font-size:12.5px; }
+  }
+  /* Phrase d'explication au-dessus du tableau d'horaire */
+  #horaire .semaine{ font-size:17px; line-height:1.5; max-width:none; margin:-12px 0 32px; color:var(--ink); }
+  #horaire .materiel{ font-size:15px; line-height:1.5; max-width:none; margin:24px 0 0; color:var(--ink); }
+  #horaire .materiel strong{ font-weight:800; color:var(--deep); }
+  #horaire .semaine strong{ font-weight:800; color:var(--deep); }
   .hero-photo{ width:100%; height:100%; object-fit:cover; object-position:center 22%; display:block; }
   /* le tréma de « Thaï » touchait le Y de la ligne du dessus */
   .hero h1{ line-height:1.0; }
@@ -63,10 +173,67 @@
   <div class="section-inner">
     <div class="index">02 — horaire</div>
     <h2 class="section-title">Les cours</h2>
+    <p class="semaine">Un concept par semaine&nbsp;: <strong>introduit</strong> le mardi, <strong>approfondi</strong> le jeudi, puis <strong>mis en pratique</strong> le vendredi.</p>
     <div class="tickets">
       <div class="ticket"><div class="name">Mardi</div><div class="when mono">17h</div></div>
       <div class="ticket"><div class="name">Jeudi</div><div class="when mono">17h</div></div>
       <div class="ticket"><div class="name">Vendredi</div><div class="when mono">9h</div></div>
+    </div>
+    <p class="materiel"><strong>Aucun matériel requis.</strong> On te prête tout l’équipement pour tes 5 premiers cours. Ensuite, la location est de 5&nbsp;$ de plus par cours.</p>
+  </div>
+</section>
+
+<!-- 03 — Ton coach : la fiche est PARTAGÉE avec la page À propos. Copie de secours ci-dessous ; au chargement, le script
+     relit a-propos.html et remplace la fiche de Sophie par la version à jour. -->
+<section class="notice-wrap" id="coach">
+  <div class="section-inner">
+    <div class="notice-head">
+      <div class="notice-left">
+        <div class="notice-bignum">03</div>
+      </div>
+      <div class="notice-head-text">
+        <div class="index">03 — ton coach</div>
+        <h2 class="section-title">Ton coach</h2>
+    <div class="instr-grid">
+<div class="instr-card-wrap"><input type="checkbox" id="instr-flip-1" class="instr-flip-check"><label for="instr-flip-1" class="instr-scene">
+        <div class="flip-inner">
+          <div class="flip-face flip-front">
+            <img class="instr-photo-full" src="../photos/sophie.jpg" alt="Sophie">
+            <div class="flip-scrim"></div>
+            <div class="flip-front-top">
+              <span class="instr-eco">ECO/CLA/TRADITIONNEL</span>
+            </div>
+            <div class="flip-front-content">
+              <div class="instr-name"><a href="https://www.kossmtl.ca/instructeurs">Sophie</a> <span class="instr-nickname">La guérisseuse</span></div>
+              <p class="instr-quote">« Tout est lié »</p>
+              <div class="instr-role">Instructeur</div>
+              <div class="instr-belt">Muay thai et yoga</div>
+            </div>
+          </div>
+          <div class="flip-face flip-back">
+            <img class="instr-photo-watermark" src="../photos/sophie.jpg" alt="">
+            <div class="flip-back-content">
+            <div class="flip-back-top">
+              <div class="instr-name" style="font-size:18px;">Sophie <span class="instr-nickname" style="color:var(--deep);">La guérisseuse</span></div>
+              <a class="instr-video" href="#_" aria-label="Vidéo de présentation de Sophie" title="Vidéo de présentation — bientôt disponible"><span class="instr-video-icon"></span></a>
+            </div>
+            <div class="instr-specs">
+              <div class="spec-row"><span class="spec-label">Âge</span><span class="spec-value">Celui de la sagesse</span></div>
+              <div class="spec-row"><span class="spec-label">D&amp;D character</span><span class="spec-value">Aasimar / Moine</span></div>
+              <div class="spec-row"><span class="spec-label">Langues</span><span class="spec-value">Français, anglais</span></div>
+              <div class="spec-row"><span class="spec-label">Spécialités</span><span class="spec-value">Muay Thai et Yoga</span></div>
+              <div class="spec-row"><span class="spec-label">Expérience</span><span class="spec-value">8 ans</span></div>
+              <div class="spec-row"><span class="spec-label">Enseignement</span><span class="spec-value">Moderne et psychomoteur</span></div>
+              <div class="spec-row"><span class="spec-label">Expertises</span><span class="spec-value">Massothérapie, reiki</span></div>
+              <div class="spec-row"><span class="spec-label">Cours privés</span><span class="spec-value">Oui, ainsi que des formations — tarif variable</span></div>
+            </div>
+            <a class="instr-book" href="mailto:kossmtl@gmail.com?subject=Cours%20Priv%C3%A9%20Sophie" data-field-href="../courriel" data-field-href-type="mailto" data-mailto-subject="Cours Privé Sophie">Réserver un cours privé →</a>
+            </div>
+          </div>
+        </div>
+      </label></div>
+    </div>
+      </div>
     </div>
   </div>
 </section>
@@ -76,7 +243,7 @@
      à jour dans index.html et la remplace. Modifier l'accueil modifie donc cette page. -->
 <section class="quote-wrap" id="communaute">
   <div class="section-inner">
-    <h2 class="index">03 — communauté</h2>
+    <h2 class="index">04 — communauté</h2>
     <div class="quote"><span class="postit-wrap quote-postit"><input type="checkbox" id="postit-i-6" class="postit-check"><label for="postit-i-6" class="postit-name-btn" aria-label="En savoir plus sur l'accès équitable au sport">L'accès équitable au sport, pour tous.</label><span class="postit"><label for="postit-i-6" class="postit-close" aria-label="Fermer">✕</label><p>On fait aussi notre part pour la communauté grâce à notre programme <strong>Pay What You Can</strong>. Les gens en situation de précarité, les membres de la communauté LGBTQIA2S+ et les étudiants peuvent profiter de cours d'arts martiaux à prix libre, selon leurs moyens. L'idée, c'est de pouvoir offrir aux plus de gens possible un accès équitable au sport. Chez K-OSS, on n'est pas juste un endroit, on est aussi une famille qui s'entraide, et on veut que tout le monde puisse en faire parti.</p><p>Appelle-nous ou écris-nous pour en savoir plus : <a href="tel:4388699187" data-field-href="telephone" data-field-href-type="tel" data-field="telephone">438-869-9187</a> · <a href="mailto:kossmtl@gmail.com" data-field-href="courriel" data-field-href-type="mailto" data-field="courriel">kossmtl@gmail.com</a></p></span></span></div>
     <p class="quote-sub">Référence communautaire acceptée.</p>
   </div>
@@ -795,10 +962,47 @@
     return out;
   }
   function esc(t){ return String(t).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+  function fixPaths(root){
+    root.querySelectorAll("[src],[href]").forEach(function(el){
+      ["src","href"].forEach(function(a){
+        var v=el.getAttribute(a);
+        if(v && !/^(https?:|mailto:|tel:|#|\/|\.\.\/)/i.test(v)) el.setAttribute(a,"../"+v);
+      });
+    });
+  }
+  /* Fiche de Sophie : relue depuis a-propos.html (même fiche que la page À propos). */
+  function syncCoach(){
+    return fetch("../a-propos.html",{cache:"no-cache"})
+      .then(function(r){ if(!r.ok) throw new Error("a-propos"); return r.text(); })
+      .then(function(html){
+        var doc=new DOMParser().parseFromString(html,"text/html"), found=null;
+        doc.querySelectorAll(".instr-card-wrap").forEach(function(c){
+          var a=c.querySelector(".flip-front .instr-name a, .flip-front .instr-name");
+          if(a && /^sophie/i.test(a.textContent.trim())) found=c;
+        });
+        var grid=document.querySelector("#coach .instr-grid");
+        if(found && grid){
+          var node=document.importNode(found,true); fixPaths(node);
+          grid.innerHTML=""; grid.appendChild(node); balanceCoach();
+        }
+      })
+      .catch(function(){});
+  }
+
+  /* Ordinateur : la marge blanche à droite de la fiche = celle à gauche (distance du bord de l'écran au bord gauche de la fiche). */
+  function balanceCoach(){
+      var g=document.querySelector("#coach .instr-grid"); if(!g) return;
+      g.style.width=""; g.style.marginRight="";
+      var vw=document.documentElement.clientWidth;
+      if(vw<=700) return;
+      var left=g.getBoundingClientRect().left, w=vw-2*left;
+      if(w>=520) g.style.width=w+"px";
+    }
+    window.addEventListener("resize",balanceCoach); window.addEventListener("load",balanceCoach); balanceCoach();
   function loadSiteData(){
     var sc=document.createElement("script"); sc.src="../site-data.js"; document.body.appendChild(sc);
   }
-  fetch("../index.html",{cache:"no-store"})
+  fetch("../index.html",{cache:"no-cache"})
     .then(function(r){ if(!r.ok) throw new Error("index.html"); return r.text(); })
     .then(function(html){
       var doc=new DOMParser().parseFromString(html,"text/html");
@@ -807,6 +1011,7 @@
         if(n && cur) cur.replaceWith(document.importNode(n,true));
       }
       swap("#communaute"); swap(".footer-reviews"); swap("footer#contact");
+      var ci=document.querySelector("#communaute .index"); if(ci) ci.textContent="04 \u2014 communaut\u00e9";
       var newModals=doc.querySelectorAll('.modal[id^="review-"]');
       if(newModals.length){
         document.querySelectorAll('.modal[id^="review-"]').forEach(function(m){ m.remove(); });
@@ -826,6 +1031,7 @@
       }
     })
     .catch(function(){})
+    .then(syncCoach)
     .then(loadSiteData);
 })();
 </script>
