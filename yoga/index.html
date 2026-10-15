@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="fr" data-no-clean-hash>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yoga — K-OSS Jiu-Jitsu, Villeray, Montréal</title>
+<meta name="description" content="Cours de Yoga d'alignement à Villeray, Montréal : respiration, mobilité, conscience. Mardi et jeudi 19 h 30, vendredi 12 h.">
+<link rel="canonical" href="https://kossmtl.ca/yoga/">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="stylesheet" href="../site.css">
+<style>
+  /* Spécifique à la page Yoga : la photo remplace la vidéo du hero */
+  /* Fiche de l'instructeur·trice : COPIE du style de la page À propos (le contenu de la fiche, lui, est relu depuis a-propos.html). */
+.instr-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:24px; margin-top:32px; }
+.instr-card-wrap{ position:relative; }
+.instr-flip-check{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+    clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
+.instr-scene{ display:block; height:500px; perspective:1400px; cursor:pointer; }
+.instr-flip-check:focus-visible ~ .instr-scene{ outline:2px solid var(--tan); outline-offset:4px; }
+.flip-inner{
+    position:relative; width:100%; height:100%;
+    transition:transform 0.7s cubic-bezier(.4,.2,.2,1);
+    transform-style:preserve-3d;
+  }
+.instr-flip-check:checked ~ .instr-scene .flip-inner{ transform:rotateY(180deg); }
+@media (hover:hover){
+    .instr-scene:hover .flip-inner,
+    .instr-scene:focus-within .flip-inner{ transform:rotateY(180deg); }
+  }
+.flip-face{
+    position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    -webkit-transform-style:preserve-3d; transform:translateZ(0);
+    border:2px solid var(--ink); background:var(--paper-2); padding:22px; overflow-y:auto;
+  }
+.flip-front{
+    padding:0; overflow:hidden; background:var(--deep); border-color:var(--deep);
+    text-align:left; transform:rotateY(0deg) translateZ(0);
+  }
+.instr-photo-full{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:top center; }
+.flip-scrim{
+    position:absolute; inset:0;
+    background:linear-gradient(to top, rgba(40,41,46,0.95) 0%, rgba(40,41,46,0.72) 34%, rgba(40,41,46,0.1) 62%, rgba(40,41,46,0) 100%);
+  }
+.flip-front-top{ position:absolute; top:14px; left:14px; right:14px; z-index:2; }
+.flip-front-content{ position:relative; z-index:2; height:100%; display:flex; flex-direction:column; justify-content:flex-end; padding:20px; gap:6px; }
+.flip-back{ transform:rotateY(180deg) translateZ(0); display:flex; flex-direction:column; gap:12px; border-top:5px solid var(--tan); }
+.instr-photo-watermark{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:top center;
+    opacity:0.09; z-index:0; pointer-events:none;
+    transform:scaleX(-1);
+  }
+.flip-back-content{ position:relative; z-index:1; display:flex; flex-direction:column; gap:12px; }
+.instr-name{ font-family:'Aestetico', sans-serif; font-weight:800; font-size:22px; text-transform:uppercase; }
+.flip-front .instr-name{ color:var(--paper); }
+.instr-name a{ color:inherit; text-decoration:none; }
+.instr-name a:hover{ text-decoration:underline; }
+.instr-nickname{ font-family:'Aestetico', sans-serif; font-weight:500; font-style:italic; font-size:13px; text-transform:none; color:var(--tan); margin-left:2px; }
+.instr-eco{
+    display:inline-block; font-family:'Aestetico', sans-serif; font-weight:600; font-size:10px;
+    letter-spacing:0.05em; padding:2px 6px; color:var(--tan); border:1px solid var(--tan); background:rgba(40,41,46,0.5);
+  }
+.instr-role{ font-family:'Aestetico', sans-serif; font-weight:600; font-size:12px; letter-spacing:0.04em; text-transform:uppercase; }
+.flip-front .instr-role{ color:var(--paper); }
+.instr-belt{ font-family:'Aestetico', sans-serif; font-weight:500; font-size:12px; letter-spacing:0.02em; }
+.flip-front .instr-belt{ color:var(--tan); }
+.flip-back .instr-role{ color:var(--deep); }
+.flip-hint{
+    font-family:'Aestetico', sans-serif; font-weight:600; font-size:10px; letter-spacing:0.05em; text-transform:uppercase;
+    color:var(--tan); background:rgba(40,41,46,0.5); border:1px solid var(--tan); padding:3px 7px;
+  }
+.instr-specs{ display:flex; flex-direction:column; gap:7px; }
+.spec-row{ display:flex; gap:8px; align-items:flex-start; }
+.spec-label{
+    font-family:'Aestetico', sans-serif; font-weight:600; font-size:10px; letter-spacing:0.03em;
+    text-transform:uppercase; color:var(--deep); min-width:88px; flex-shrink:0; padding-top:1px;
+  }
+.spec-value{ font-size:12.5px; line-height:1.45; color:var(--ink); }
+.spec-row-stacked{ flex-direction:column; gap:2px; }
+.instr-quote{ font-style:italic; font-size:14px; line-height:1.45; border-left:2px solid var(--tan); padding-left:10px; margin:0; }
+.flip-front .instr-quote{ color:var(--paper); }
+.instr-book{ font-family:'Aestetico', sans-serif; font-weight:600; font-size:12px; color:var(--deep); text-decoration:underline; margin-top:2px; }
+.flip-back-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.instr-video{
+    flex:none; width:34px; height:34px; border-radius:50%; margin-top:1px;
+    background:var(--ink); border:2px solid var(--tan);
+    display:flex; align-items:center; justify-content:center;
+    text-decoration:none; transition:background 0.15s ease, transform 0.15s ease;
+  }
+.instr-video:hover, .instr-video:focus{ background:var(--deep); transform:scale(1.08); }
+.instr-video-icon{
+    width:0; height:0; margin-left:2px;
+    border-top:6px solid transparent; border-bottom:6px solid transparent; border-left:10px solid var(--tan);
+  }
+  #coach .instr-grid{ grid-template-columns:1fr; margin-top:20px; }
+  #coach .notice-head-text .section-title{ margin-bottom:0; }
+  /* ORDINATEUR : pas de titre « Ton coach » ; la fiche occupe la zone du titre + texte (comme le 02 de l'accueil). */
+  #coach .notice-head-text .section-title{ display:none; }
+  @media (min-width:701px){
+    #coach .instr-grid{ margin-top:-2px; }
+  }
+  /* ORDINATEUR : fiche large, sans retournement — la photo à gauche, ce qui était au dos de la fiche à droite.
+     CELLULAIRE (≤700px) : on garde la fiche qui pivote, telle que sur la page À propos. */
+  @media (min-width:701px){
+    /* Zone mesurée sur ta capture (rectangle rouge) : ≈ 718 × 376 px à 100 %. */
+    #coach .instr-grid{ grid-template-columns:minmax(0,1fr); }
+    #coach .instr-scene{ height:500px; cursor:default; perspective:none; }
+    #coach .flip-inner{ display:grid; grid-template-columns:290px minmax(0,1fr); height:auto; min-height:500px; transform:none !important; transform-style:flat; transition:none; }
+    #coach .flip-face{ position:relative; inset:auto; backface-visibility:visible; -webkit-backface-visibility:visible; transform:none !important; min-height:500px; }
+    #coach .flip-back{ padding:22px 28px; justify-content:center; gap:12px; }
+    #coach .flip-back .instr-photo-watermark{ display:none; }
+    #coach .flip-back .instr-name{ font-size:22px !important; }
+    #coach .instr-specs{ gap:7px; }
+    #coach .spec-label{ min-width:104px; }
+    #coach .spec-value{ font-size:12.5px; }
+  }
+  /* Phrase d'explication au-dessus du tableau d'horaire */
+  #horaire .semaine{ font-size:17px; line-height:1.5; max-width:none; margin:-12px 0 32px; color:var(--ink); }
+  #horaire .materiel{ font-size:15px; line-height:1.5; max-width:none; margin:24px 0 0; color:var(--ink); }
+  #horaire .materiel strong{ font-weight:800; color:var(--deep); }
+  #horaire .semaine strong{ font-weight:800; color:var(--deep); }
+  .hero-photo{ width:100%; height:100%; object-fit:cover; object-position:center 22%; display:block; }
+  @media (max-width:700px){
+    /* cellulaire : la photo démarre sous les boutons pour qu'on voie bien la tête */
+    .hero-media{ margin-top:8px; height:560px; }
+    .hero-photo{ object-position:center top; }
+    .hero-media::before{ background:linear-gradient(to bottom, var(--deep) 0%, rgba(36,59,90,0) 14%); }
+  }
+  /* PALETTE BLEU FONCÉ (page Yoga seulement) : remplace le vert foncé, le sauge et le papier 2 */
+  :root{ --deep:#243B5A; --sage:#8FA3BA; --paper-2:#DADFE4; --tan:#E6D5BF; }
+  @media (min-width:701px){ .hero-media::before{ background:linear-gradient(to right, var(--deep) 0%, rgba(36,59,90,0.88) 10%, rgba(36,59,90,0) 38%); } }
+  .announce{ border-top-color:rgba(143,163,186,0.25); }
+  .hero h1 .deva{ font-family:'Aestetico','Noto Sans Devanagari','Kohinoor Devanagari','Nirmala UI','Mangal',sans-serif; font-weight:800; color:inherit; display:inline-block; font-size:.84em; line-height:1.024; vertical-align:top; position:relative; top:.1em; }
+  .hero-photo{ width:100%; margin-left:0; object-position:right center; -webkit-mask-image:linear-gradient(to right,transparent 0,#000 62%); mask-image:linear-gradient(to right,transparent 0,#000 62%); }
+  @media (max-width:700px){ .hero-photo{ object-position:94% center; -webkit-mask-image:none; mask-image:none; } }
+  #coach .instr-photo-full, #coach .instr-photo-watermark{ object-position:100% 30%; }
+</style>
+</head>
+<body>
+<nav class="nav">
+  <a class="brand" href="/" style="text-decoration:none">K-OSS</a>
+  <a class="nav-cta" href="/app/">Réserver</a>
+</nav>
+<header class="hero">
+  <div class="hero-panel">
+    <div class="stamp">100 %<br>DIRIGÉE<br>PAR UNE<br>FEMME</div>
+    <div class="eyebrow">Villeray — Montréal</div>
+    <h1><span class="deva">योग</span><br>Yoga<span>.</span></h1>
+    <div class="hero-ctas">
+      <a class="btn-primary" href="/app/">Réserver ma place</a>
+      <a class="btn-ghost" href="#horaire">Voir l'horaire</a>
+    </div>
+    <div class="hero-media">
+      <img class="hero-photo" src="../photos/yoga-bandeau.jpg" alt="Yoga à K-OSS">
+    </div>
+  </div>
+</header>
+
+<section class="intro-banner" id="le-cours">
+  <div class="section-inner">
+    <h2 class="index">01 — le cours</h2>
+    <div class="intro-banner-grid">
+      <div class="intro-card">
+        <div class="intro-card-label-row"><span class="intro-card-label">Yoga</span></div>
+        <div class="intro-card-date">Respiration, mobilité, conscience</div>
+        <p class="intro-card-text">Le Yoga d'alignement met l'accent sur la précision des postures, la mobilité et la conscience du corps.</p>
+      </div>
+      <div class="intro-card">
+        <div class="intro-card-label-row"><span class="intro-card-label">Ce que tu y développes</span></div>
+        <div class="intro-card-date">Force, souplesse, équilibre</div>
+        <p class="intro-card-text">Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, mais exigeante, qui permet de mieux comprendre son corps et de bouger plus efficacement.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="horaire">
+  <div class="section-inner">
+    <div class="index">02 — horaire</div>
+    <h2 class="section-title">Les cours</h2>
+    <div class="tickets">
+      <div class="ticket"><div class="name">Mardi</div><div class="when mono">19h30</div></div>
+      <div class="ticket"><div class="name">Jeudi</div><div class="when mono">19h30</div></div>
+      <div class="ticket"><div class="name">Vendredi</div><div class="when mono">12h</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 03 — Ton coach : la fiche est PARTAGÉE avec la page À propos. Copie de secours ci-dessous ; au chargement, le script
+     relit a-propos.html et remplace la fiche de Sophie par la version à jour. -->
+<section class="notice-wrap" id="coach">
+  <div class="section-inner">
+    <div class="notice-head">
+      <div class="notice-left">
+        <div class="notice-bignum">03</div>
+      </div>
+      <div class="notice-head-text">
+        <div class="index">03 — ton coach</div>
+        <h2 class="section-title">Ton coach</h2>
+    <div class="instr-grid">
+<div class="instr-card-wrap"><input type="checkbox" id="instr-flip-1" class="instr-flip-check"><label for="instr-flip-1" class="instr-scene">
+        <div class="flip-inner">
+          <div class="flip-face flip-front">
+            <img class="instr-photo-full" src="../photos/yoga-fiche.jpg" alt="Sophie">
+            <div class="flip-scrim"></div>
+            <div class="flip-front-top">
+              <span class="instr-eco">ECO/CLA/TRADITIONNEL</span>
+            </div>
+            <div class="flip-front-content">
+              <div class="instr-name"><a href="https://www.kossmtl.ca/instructeurs">Sophie</a> <span class="instr-nickname">La guérisseuse</span></div>
+              <p class="instr-quote">« Tout est lié »</p>
+              <div class="instr-role">Instructeur</div>
+              <div class="instr-belt">Muay thai et yoga</div>
+            </div>
+          </div>
+          <div class="flip-face flip-back">
+            <img class="instr-photo-watermark" src="../photos/yoga-fiche.jpg" alt="">
+            <div class="flip-back-content">
+            <div class="flip-back-top">
+              <div class="instr-name" style="font-size:18px;">Sophie <span class="instr-nickname" style="color:var(--deep);">La guérisseuse</span></div>
+              <a class="instr-video" href="#_" aria-label="Vidéo de présentation de Sophie" title="Vidéo de présentation — bientôt disponible"><span class="instr-video-icon"></span></a>
+            </div>
+            <div class="instr-specs">
+              <div class="spec-row"><span class="spec-label">Âge</span><span class="spec-value">Celui de la sagesse</span></div>
+              <div class="spec-row"><span class="spec-label">D&amp;D character</span><span class="spec-value">Aasimar / Moine</span></div>
+              <div class="spec-row"><span class="spec-label">Langues</span><span class="spec-value">Français, anglais</span></div>
+              <div class="spec-row"><span class="spec-label">Spécialités</span><span class="spec-value">Muay Thai et Yoga</span></div>
+              <div class="spec-row"><span class="spec-label">Expérience</span><span class="spec-value">8 ans</span></div>
+              <div class="spec-row"><span class="spec-label">Enseignement</span><span class="spec-value">Moderne et psychomoteur</span></div>
+              <div class="spec-row"><span class="spec-label">Expertises</span><span class="spec-value">Massothérapie, reiki</span></div>
+              <div class="spec-row"><span class="spec-label">Cours privés</span><span class="spec-value">Oui, ainsi que des formations — tarif variable</span></div>
+            </div>
+            <a class="instr-book" href="mailto:kossmtl@gmail.com?subject=Cours%20Priv%C3%A9%20Sophie" data-field-href="../courriel" data-field-href-type="mailto" data-mailto-subject="Cours Privé Sophie">Réserver un cours privé →</a>
+            </div>
+          </div>
+        </div>
+      </label></div>
+    </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Blocs PARTAGÉS avec l'accueil (index.html) : section 03, avis Google, pied de page et fenêtres d'avis.
+     Ce qui est ici est une copie de secours ; au chargement, le script ci-dessous va chercher la version
+     à jour dans index.html et la remplace. Modifier l'accueil modifie donc cette page. -->
+<section class="quote-wrap" id="communaute">
+  <div class="section-inner">
+    <h2 class="index">04 — communauté</h2>
+    <div class="quote"><span class="postit-wrap quote-postit"><input type="checkbox" id="postit-i-6" class="postit-check"><label for="postit-i-6" class="postit-name-btn" aria-label="En savoir plus sur l'accès équitable au sport">L'accès équitable au sport, pour tous.</label><span class="postit"><label for="postit-i-6" class="postit-close" aria-label="Fermer">✕</label><p>On fait aussi notre part pour la communauté grâce à notre programme <strong>Pay What You Can</strong>. Les gens en situation de précarité, les membres de la communauté LGBTQIA2S+ et les étudiants peuvent profiter de cours d'arts martiaux à prix libre, selon leurs moyens. L'idée, c'est de pouvoir offrir aux plus de gens possible un accès équitable au sport. Chez K-OSS, on n'est pas juste un endroit, on est aussi une famille qui s'entraide, et on veut que tout le monde puisse en faire parti.</p><p>Appelle-nous ou écris-nous pour en savoir plus : <a href="tel:4388699187" data-field-href="telephone" data-field-href-type="tel" data-field="telephone">438-869-9187</a> · <a href="mailto:kossmtl@gmail.com" data-field-href="courriel" data-field-href-type="mailto" data-field="courriel">kossmtl@gmail.com</a></p></span></span></div>
+    <p class="quote-sub">Référence communautaire acceptée.</p>
+  </div>
+</section>
+
+<div class="footer-reviews">
+    <div class="footer-reviews-label"><span class="google-badge">G</span><span>4,9 / 5 — avis Google de nos élèves</span></div>
+    <div class="footer-reviews-marquee">
+      <div class="footer-reviews-track">
+        <a class="review-card" href="#review-1-sophie-anne-s">
+          <div class="review-top">
+            <span class="review-avatar">S</span>
+            <div class="review-meta"><span class="review-name">Sophie-Anne S.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Le cours parents-enfants était vraiment amusant et les jeux d'Amélie étaient très bien organisés avec des explications claires. On recommande!</p>
+        </a>
+        <a class="review-card" href="#review-2-lea-b">
+          <div class="review-top">
+            <span class="review-avatar">L</span>
+            <div class="review-meta"><span class="review-name">Léa B.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Excellent cours enseigné par une prof formidable! Jeux-exercices ludiques et instructifs qui nous poussent à penser en dehors de la boîte 📦</p>
+        </a>
+        <a class="review-card" href="#review-3-rhode-malaure-p">
+          <div class="review-top">
+            <span class="review-avatar">R</span>
+            <div class="review-meta"><span class="review-name">Rhode-Malaure P.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">It was amazing.</p>
+        </a>
+        <a class="review-card" href="#review-4-angele-b">
+          <div class="review-top">
+            <span class="review-avatar">A</span>
+            <div class="review-meta"><span class="review-name">Angele B.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Ce cours s'adresse à qui veut développer une compréhension des concepts du mouvement bjj à deux. L'approche pédagogique est réfléchie... pour une transmission non pas de formules toutes faites, mais de clés qui nous permettent d'adapter en fonction de notre progression, mobilité et physionomie, le tout en collaboration et en présence de l'autre sans rentrer dans des « combats de coqs ». Technique over strength. Dans le jeu on apprend plus... et grâce aux autres on va plus loin, merci K-OSS.</p>
+        </a>
+        <a class="review-card" href="#review-5-yannick-c">
+          <div class="review-top">
+            <span class="review-avatar">Y</span>
+            <div class="review-meta"><span class="review-name">Yannick C.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Classes variées avec techniques bien définies. La proprio est super investie et les pratiquants super accueillants et respectueux. Fortement recommandé autant pour un drop-in qu'un abonnement.</p>
+        </a>
+        <a class="review-card" href="#review-6-zachary-g">
+          <div class="review-top">
+            <span class="review-avatar">Z</span>
+            <div class="review-meta"><span class="review-name">Zachary G.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Always a great class, the intro to bjj program is a recommend to everyone!</p>
+        </a>
+        <a class="review-card" href="#review-7-alexandre-g">
+          <div class="review-top">
+            <span class="review-avatar">A</span>
+            <div class="review-meta"><span class="review-name">Alexandre G.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Super ambiance pour les enfants, très pédagogique.</p>
+        </a>
+        <a class="review-card" href="#review-8-camille-b">
+          <div class="review-top">
+            <span class="review-avatar">C</span>
+            <div class="review-meta"><span class="review-name">Camille B.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Cours très technique et très intéressant avec Zo ! Super stimulant !</p>
+        </a>
+        <a class="review-card" href="#review-9-camille-b">
+          <div class="review-top">
+            <span class="review-avatar">C</span>
+            <div class="review-meta"><span class="review-name">Camille B.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Maurice is a great teacher with an amazing intuitive approach for you to learn BJJ! Will come back again for sure!</p>
+        </a>
+        <a class="review-card" href="#review-10-anne-frederic-blais">
+          <div class="review-top">
+            <span class="review-avatar">A</span>
+            <div class="review-meta"><span class="review-name">Anne-Frédéric Blais</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Merci à Amélie pour le cours d'introduction ! J'ai beaucoup aimé son approche au sport et je recommande fortement à quiconque veut s'initier au jiu jitsu :)</p>
+        </a>
+        <a class="review-card" href="#review-11-alexandre-belanger">
+          <div class="review-top">
+            <span class="review-avatar">A</span>
+            <div class="review-meta"><span class="review-name">Alexandre Bélanger</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Belle ambiance, les cours de jiu-jitsu se font dans un environnement sain et pour tous les niveaux. Je recommande fortement, que vous soyez débutant ou d'un niveau avancé vous y trouverez votre compte. Je retourne régulièrement pour mon café, il est excellent!!</p>
+        </a>
+        <a class="review-card" href="#review-12-timothy-listes-spensieri">
+          <div class="review-top">
+            <span class="review-avatar">T</span>
+            <div class="review-meta"><span class="review-name">Timothy Listes-Spensieri</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Did the intro classes here and had a great experience, challenging but very rewarding. Instructors were very good, knowledgable and gave good feedback... you learn a lot in a short period of time. Great way for beginners to get started in BJJ!</p>
+        </a>
+        <a class="review-card" href="#review-13-lea-boudreau">
+          <div class="review-top">
+            <span class="review-avatar">L</span>
+            <div class="review-meta"><span class="review-name">Léa Boudreau</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Merveilleux endroit pour apprendre le jiu-jitsu! Environnement agréable, enseignement soigné, équipe attentive. Je recommande à toutes et à tous (surtout aux personnes qui, comme moi, ne pensaient jamais pratiquer ce sport de leur vie... me voilà conquise!)</p>
+        </a>
+        <a class="review-card" href="#review-14-kevin-pichonot">
+          <div class="review-top">
+            <span class="review-avatar">K</span>
+            <div class="review-meta"><span class="review-name">Kevin Pichonot</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Je voudrais remercier Amélie et son dojo pour l'expérience qu'ils m'ont fait vivre. Beaucoup de dojos et gyms gagneraient à s'inspirer de leur méthodologie. Approche ludique, fonctionnelle, sécuritaire, efficace dans un environnement agréable et inclusif, chapeau!</p>
+        </a>
+        <a class="review-card" href="#review-15-olivier-belanger-duchesneau">
+          <div class="review-top">
+            <span class="review-avatar">O</span>
+            <div class="review-meta"><span class="review-name">Olivier Bélanger-Duchesneau</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Excellent studio de jiu-jitsu brésilien, parfait pour quiconque souhaite s'initier à la discipline (notamment grâce aux cours d'intro et de fondamentaux) ou également poursuivre sa progression grâce à une approche pédagogique qui se distingue des écoles traditionnelles. Ambiance sympathique, compétence et très bon café : je recommande fortement.</p>
+        </a>
+        <a class="review-card" href="#review-16-carolann-fortin-chartrand">
+          <div class="review-top">
+            <span class="review-avatar">C</span>
+            <div class="review-meta"><span class="review-name">Carolann Fortin-Chartrand</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Je me suis initiée au sport en participant aux cours d'introduction au jiu-jitsu et j'ai ADORÉ! Le gym est vraiment accueillant et la formule des cours est bien pensée! Amélie et Émile ont bien partagé leur passion et ont su rendre la discipline accessible pour les nouveaux apprenants. Je recommande chaudement à toustes sans hésitation.</p>
+        </a>
+        <a class="review-card" href="#review-17-nadav-cliff">
+          <div class="review-top">
+            <span class="review-avatar">N</span>
+            <div class="review-meta"><span class="review-name">Nadav Cliff</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Beautiful BJJ gym with a very nice owner, don't be shy to contact her with any questions. Clean mats, calm atmosphere and nice vibes. OSSU!</p>
+        </a>
+        <a class="review-card" href="#review-18-manuel-buteau">
+          <div class="review-top">
+            <span class="review-avatar">M</span>
+            <div class="review-meta"><span class="review-name">Manuel Buteau</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">J'ai eu une expérience vraiment plaisante de jiu-jitsu. L'endroit est accueillant et chaleureux ce qui met immédiatement en confiance. La coach Amélie nous a offert un cours d'introduction très ludique, bien structuré et accessible. Je recommande vivement l'endroit à toute personne souhaitant découvrir cette discipline dans un environnement positif et respectueux.</p>
+        </a>
+        <a class="review-card" href="#review-19-sabrina-belval">
+          <div class="review-top">
+            <span class="review-avatar">S</span>
+            <div class="review-meta"><span class="review-name">Sabrina Belval</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Si vous pensez à pratiquer un art martial, ou le jiu-jitsu en particulier : vous êtes au meilleur endroit. Dès le premier cours d'intro, tout a changé — l'équipe est accueillante, les coachs sont passionnés et pédagogues, et surtout, l'ambiance est incroyable. Il n'y a pas d'égo, pas de compétition malsaine. Tout le monde s'élève ensemble.</p>
+        </a>
+        <a class="review-card" href="#review-20-mark-carras">
+          <div class="review-top">
+            <span class="review-avatar">M</span>
+            <div class="review-meta"><span class="review-name">Mark Carras</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">My daughter is loving her jiu-jitsu class — it's a natural way to learn, fun for a kid (not just drills!), and the teacher, Amélie, has been incredibly welcoming. Looking forward to many a class!!</p>
+        </a>
+        <a class="review-card" href="#review-21-aurelie-sasias">
+          <div class="review-top">
+            <span class="review-avatar">A</span>
+            <div class="review-meta"><span class="review-name">Aurélie Sasias</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Amélie est une super pédagogue, avec les adultes comme les enfants. Les cours sont toujours super intéressants, on se dépense, on a du plaisir et le café est super!</p>
+        </a>
+        <a class="review-card" href="#review-22-paul-morgan">
+          <div class="review-top">
+            <span class="review-avatar">P</span>
+            <div class="review-meta"><span class="review-name">Paul Morgan</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Stopped by while visiting Montreal. Wonderful place to train. Everyone very welcoming, and wonderful facility. Would be very happy to come by to train again. 100% recommend.</p>
+        </a>
+        <a class="review-card" href="#review-23-leo-coulombe">
+          <div class="review-top">
+            <span class="review-avatar">L</span>
+            <div class="review-meta"><span class="review-name">Léo Coulombe</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">J'aime l'approche des cours de bjj, car elle permet de découvrir et explorer par nous-même, et aussi de pratiquer beaucoup des concepts particuliers plutôt que juste des techniques.</p>
+        </a>
+        <a class="review-card" href="#review-1-sophie-anne-s" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">S</span>
+            <div class="review-meta"><span class="review-name">Sophie-Anne S.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Le cours parents-enfants était vraiment amusant et les jeux d'Amélie étaient très bien organisés avec des explications claires. On recommande!</p>
+        </a>
+        <a class="review-card" href="#review-2-lea-b" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">L</span>
+            <div class="review-meta"><span class="review-name">Léa B.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Excellent cours enseigné par une prof formidable! Jeux-exercices ludiques et instructifs qui nous poussent à penser en dehors de la boîte 📦</p>
+        </a>
+        <a class="review-card" href="#review-3-rhode-malaure-p" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">R</span>
+            <div class="review-meta"><span class="review-name">Rhode-Malaure P.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">It was amazing.</p>
+        </a>
+        <a class="review-card" href="#review-4-angele-b" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">A</span>
+            <div class="review-meta"><span class="review-name">Angele B.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Ce cours s'adresse à qui veut développer une compréhension des concepts du mouvement bjj à deux. L'approche pédagogique est réfléchie... pour une transmission non pas de formules toutes faites, mais de clés qui nous permettent d'adapter en fonction de notre progression, mobilité et physionomie, le tout en collaboration et en présence de l'autre sans rentrer dans des « combats de coqs ». Technique over strength. Dans le jeu on apprend plus... et grâce aux autres on va plus loin, merci K-OSS.</p>
+        </a>
+        <a class="review-card" href="#review-5-yannick-c" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">Y</span>
+            <div class="review-meta"><span class="review-name">Yannick C.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Classes variées avec techniques bien définies. La proprio est super investie et les pratiquants super accueillants et respectueux. Fortement recommandé autant pour un drop-in qu'un abonnement.</p>
+        </a>
+        <a class="review-card" href="#review-6-zachary-g" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">Z</span>
+            <div class="review-meta"><span class="review-name">Zachary G.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Always a great class, the intro to bjj program is a recommend to everyone!</p>
+        </a>
+        <a class="review-card" href="#review-7-alexandre-g" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">A</span>
+            <div class="review-meta"><span class="review-name">Alexandre G.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Super ambiance pour les enfants, très pédagogique.</p>
+        </a>
+        <a class="review-card" href="#review-8-camille-b" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">C</span>
+            <div class="review-meta"><span class="review-name">Camille B.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Cours très technique et très intéressant avec Zo ! Super stimulant !</p>
+        </a>
+        <a class="review-card" href="#review-9-camille-b" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">C</span>
+            <div class="review-meta"><span class="review-name">Camille B.</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Maurice is a great teacher with an amazing intuitive approach for you to learn BJJ! Will come back again for sure!</p>
+        </a>
+        <a class="review-card" href="#review-10-anne-frederic-blais" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">A</span>
+            <div class="review-meta"><span class="review-name">Anne-Frédéric Blais</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Merci à Amélie pour le cours d'introduction ! J'ai beaucoup aimé son approche au sport et je recommande fortement à quiconque veut s'initier au jiu jitsu :)</p>
+        </a>
+        <a class="review-card" href="#review-11-alexandre-belanger" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">A</span>
+            <div class="review-meta"><span class="review-name">Alexandre Bélanger</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Belle ambiance, les cours de jiu-jitsu se font dans un environnement sain et pour tous les niveaux. Je recommande fortement, que vous soyez débutant ou d'un niveau avancé vous y trouverez votre compte. Je retourne régulièrement pour mon café, il est excellent!!</p>
+        </a>
+        <a class="review-card" href="#review-12-timothy-listes-spensieri" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">T</span>
+            <div class="review-meta"><span class="review-name">Timothy Listes-Spensieri</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Did the intro classes here and had a great experience, challenging but very rewarding. Instructors were very good, knowledgable and gave good feedback... you learn a lot in a short period of time. Great way for beginners to get started in BJJ!</p>
+        </a>
+        <a class="review-card" href="#review-13-lea-boudreau" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">L</span>
+            <div class="review-meta"><span class="review-name">Léa Boudreau</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Merveilleux endroit pour apprendre le jiu-jitsu! Environnement agréable, enseignement soigné, équipe attentive. Je recommande à toutes et à tous (surtout aux personnes qui, comme moi, ne pensaient jamais pratiquer ce sport de leur vie... me voilà conquise!)</p>
+        </a>
+        <a class="review-card" href="#review-14-kevin-pichonot" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">K</span>
+            <div class="review-meta"><span class="review-name">Kevin Pichonot</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Je voudrais remercier Amélie et son dojo pour l'expérience qu'ils m'ont fait vivre. Beaucoup de dojos et gyms gagneraient à s'inspirer de leur méthodologie. Approche ludique, fonctionnelle, sécuritaire, efficace dans un environnement agréable et inclusif, chapeau!</p>
+        </a>
+        <a class="review-card" href="#review-15-olivier-belanger-duchesneau" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">O</span>
+            <div class="review-meta"><span class="review-name">Olivier Bélanger-Duchesneau</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Excellent studio de jiu-jitsu brésilien, parfait pour quiconque souhaite s'initier à la discipline (notamment grâce aux cours d'intro et de fondamentaux) ou également poursuivre sa progression grâce à une approche pédagogique qui se distingue des écoles traditionnelles. Ambiance sympathique, compétence et très bon café : je recommande fortement.</p>
+        </a>
+        <a class="review-card" href="#review-16-carolann-fortin-chartrand" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">C</span>
+            <div class="review-meta"><span class="review-name">Carolann Fortin-Chartrand</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Je me suis initiée au sport en participant aux cours d'introduction au jiu-jitsu et j'ai ADORÉ! Le gym est vraiment accueillant et la formule des cours est bien pensée! Amélie et Émile ont bien partagé leur passion et ont su rendre la discipline accessible pour les nouveaux apprenants. Je recommande chaudement à toustes sans hésitation.</p>
+        </a>
+        <a class="review-card" href="#review-17-nadav-cliff" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">N</span>
+            <div class="review-meta"><span class="review-name">Nadav Cliff</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Beautiful BJJ gym with a very nice owner, don't be shy to contact her with any questions. Clean mats, calm atmosphere and nice vibes. OSSU!</p>
+        </a>
+        <a class="review-card" href="#review-18-manuel-buteau" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">M</span>
+            <div class="review-meta"><span class="review-name">Manuel Buteau</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">J'ai eu une expérience vraiment plaisante de jiu-jitsu. L'endroit est accueillant et chaleureux ce qui met immédiatement en confiance. La coach Amélie nous a offert un cours d'introduction très ludique, bien structuré et accessible. Je recommande vivement l'endroit à toute personne souhaitant découvrir cette discipline dans un environnement positif et respectueux.</p>
+        </a>
+        <a class="review-card" href="#review-19-sabrina-belval" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">S</span>
+            <div class="review-meta"><span class="review-name">Sabrina Belval</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Si vous pensez à pratiquer un art martial, ou le jiu-jitsu en particulier : vous êtes au meilleur endroit. Dès le premier cours d'intro, tout a changé — l'équipe est accueillante, les coachs sont passionnés et pédagogues, et surtout, l'ambiance est incroyable. Il n'y a pas d'égo, pas de compétition malsaine. Tout le monde s'élève ensemble.</p>
+        </a>
+        <a class="review-card" href="#review-20-mark-carras" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">M</span>
+            <div class="review-meta"><span class="review-name">Mark Carras</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">My daughter is loving her jiu-jitsu class — it's a natural way to learn, fun for a kid (not just drills!), and the teacher, Amélie, has been incredibly welcoming. Looking forward to many a class!!</p>
+        </a>
+        <a class="review-card" href="#review-21-aurelie-sasias" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">A</span>
+            <div class="review-meta"><span class="review-name">Aurélie Sasias</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Amélie est une super pédagogue, avec les adultes comme les enfants. Les cours sont toujours super intéressants, on se dépense, on a du plaisir et le café est super!</p>
+        </a>
+        <a class="review-card" href="#review-22-paul-morgan" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">P</span>
+            <div class="review-meta"><span class="review-name">Paul Morgan</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">Stopped by while visiting Montreal. Wonderful place to train. Everyone very welcoming, and wonderful facility. Would be very happy to come by to train again. 100% recommend.</p>
+        </a>
+        <a class="review-card" href="#review-23-leo-coulombe" aria-hidden="true" tabindex="-1">
+          <div class="review-top">
+            <span class="review-avatar">L</span>
+            <div class="review-meta"><span class="review-name">Léo Coulombe</span><span class="review-stars">★★★★★</span></div>
+          </div>
+          <p class="review-text">J'aime l'approche des cours de bjj, car elle permet de découvrir et explorer par nous-même, et aussi de pratiquer beaucoup des concepts particuliers plutôt que juste des techniques.</p>
+        </a>
+      </div>
+    </div>
+</div>
+<footer id="contact">
+  <div class="footer-inner">
+    <div class="footer-sig">K-OSS Jiu-Jitsu — Villeray, Montréal</div>
+    <div class="footer-row">
+      <span>1871 rue Bélanger, Villeray</span><span class="dot">·</span>
+      <a href="mailto:kossmtl@gmail.com" data-field-href="courriel" data-field-href-type="mailto" data-field="courriel">kossmtl@gmail.com</a><span class="dot">·</span>
+      <a href="tel:4388699187" data-field-href="telephone" data-field-href-type="tel" data-field="telephone">438-869-9187</a>
+    </div>
+    <div class="footer-social">
+      <a href="https://www.instagram.com/k.oss.montreal/" data-field-href="instagram" target="_blank" rel="noopener" aria-label="K-OSS sur Instagram">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"></rect><circle cx="12" cy="12" r="4.2"></circle><circle cx="17.3" cy="6.7" r="1.1" fill="currentColor" stroke="none"></circle></svg>
+      </a>
+      <a href="/app/" class="app-k" aria-label="Plateforme de réservation K-OSS" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5.5 4h4v6.2L14.6 4h4.8l-6.3 7.6L19.6 20h-4.9l-5.2-7.2V20h-4V4z"></path></svg>
+      </a>
+      <a href="https://www.facebook.com/k.oss.montreal/" data-field-href="facebook" target="_blank" rel="noopener" aria-label="K-OSS sur Facebook">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M13.4 21v-6.6h2.2l.33-2.56h-2.53V10.1c0-.74.2-1.25 1.27-1.25h1.36V6.13c-.24-.03-1.04-.1-1.97-.1-1.95 0-3.28 1.19-3.28 3.37v1.88H8.5v2.56h2.3V21" fill="currentColor" stroke="none"></path></svg>
+      </a>
+    </div>
+  </div>
+</footer>
+
+<div id="review-1-sophie-anne-s" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">S</span>
+      <div>
+        <div class="review-modal-name">Sophie-Anne S.</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Le cours parents-enfants était vraiment amusant et les jeux d'Amélie étaient très bien organisés avec des explications claires. On recommande!</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-2-lea-b" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">L</span>
+      <div>
+        <div class="review-modal-name">Léa B.</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Excellent cours enseigné par une prof formidable! Jeux-exercices ludiques et instructifs qui nous poussent à penser en dehors de la boîte 📦</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-3-rhode-malaure-p" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">R</span>
+      <div>
+        <div class="review-modal-name">Rhode-Malaure P.</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">It was amazing.</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-4-angele-b" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">A</span>
+      <div>
+        <div class="review-modal-name">Angele B.</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Ce cours s'adresse à qui veut développer une compréhension des concepts du mouvement bjj à deux. L'approche pédagogique est réfléchie... pour une transmission non pas de formules toutes faites, mais de clés qui nous permettent d'adapter en fonction de notre progression, mobilité et physionomie, le tout en collaboration et en présence de l'autre sans rentrer dans des « combats de coqs ». Technique over strength. Dans le jeu on apprend plus... et grâce aux autres on va plus loin, merci K-OSS.</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-5-yannick-c" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">Y</span>
+      <div>
+        <div class="review-modal-name">Yannick C.</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Classes variées avec techniques bien définies. La proprio est super investie et les pratiquants super accueillants et respectueux. Fortement recommandé autant pour un drop-in qu'un abonnement.</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-6-zachary-g" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">Z</span>
+      <div>
+        <div class="review-modal-name">Zachary G.</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Always a great class, the intro to bjj program is a recommend to everyone!</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-7-alexandre-g" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">A</span>
+      <div>
+        <div class="review-modal-name">Alexandre G.</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Super ambiance pour les enfants, très pédagogique.</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-8-camille-b" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">C</span>
+      <div>
+        <div class="review-modal-name">Camille B.</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Cours très technique et très intéressant avec Zo ! Super stimulant !</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-9-camille-b" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">C</span>
+      <div>
+        <div class="review-modal-name">Camille B.</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Maurice is a great teacher with an amazing intuitive approach for you to learn BJJ! Will come back again for sure!</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-10-anne-frederic-blais" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">A</span>
+      <div>
+        <div class="review-modal-name">Anne-Frédéric Blais</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Merci à Amélie pour le cours d'introduction ! J'ai beaucoup aimé son approche au sport et je recommande fortement à quiconque veut s'initier au jiu jitsu :)</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-11-alexandre-belanger" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">A</span>
+      <div>
+        <div class="review-modal-name">Alexandre Bélanger</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Belle ambiance, les cours de jiu-jitsu se font dans un environnement sain et pour tous les niveaux. Je recommande fortement, que vous soyez débutant ou d'un niveau avancé vous y trouverez votre compte. Je retourne régulièrement pour mon café, il est excellent!!</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-12-timothy-listes-spensieri" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">T</span>
+      <div>
+        <div class="review-modal-name">Timothy Listes-Spensieri</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Did the intro classes here and had a great experience, challenging but very rewarding. Instructors were very good, knowledgable and gave good feedback... you learn a lot in a short period of time. Great way for beginners to get started in BJJ!</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-13-lea-boudreau" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">L</span>
+      <div>
+        <div class="review-modal-name">Léa Boudreau</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Merveilleux endroit pour apprendre le jiu-jitsu! Environnement agréable, enseignement soigné, équipe attentive. Je recommande à toutes et à tous (surtout aux personnes qui, comme moi, ne pensaient jamais pratiquer ce sport de leur vie... me voilà conquise!)</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-14-kevin-pichonot" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">K</span>
+      <div>
+        <div class="review-modal-name">Kevin Pichonot</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Je voudrais remercier Amélie et son dojo pour l'expérience qu'ils m'ont fait vivre. Beaucoup de dojos et gyms gagneraient à s'inspirer de leur méthodologie. Approche ludique, fonctionnelle, sécuritaire, efficace dans un environnement agréable et inclusif, chapeau!</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-15-olivier-belanger-duchesneau" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">O</span>
+      <div>
+        <div class="review-modal-name">Olivier Bélanger-Duchesneau</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Excellent studio de jiu-jitsu brésilien, parfait pour quiconque souhaite s'initier à la discipline (notamment grâce aux cours d'intro et de fondamentaux) ou également poursuivre sa progression grâce à une approche pédagogique qui se distingue des écoles traditionnelles. Ambiance sympathique, compétence et très bon café : je recommande fortement.</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-16-carolann-fortin-chartrand" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">C</span>
+      <div>
+        <div class="review-modal-name">Carolann Fortin-Chartrand</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Je me suis initiée au sport en participant aux cours d'introduction au jiu-jitsu et j'ai ADORÉ! Le gym est vraiment accueillant et la formule des cours est bien pensée! Amélie et Émile ont bien partagé leur passion et ont su rendre la discipline accessible pour les nouveaux apprenants. Je recommande chaudement à toustes sans hésitation.</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-17-nadav-cliff" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">N</span>
+      <div>
+        <div class="review-modal-name">Nadav Cliff</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Beautiful BJJ gym with a very nice owner, don't be shy to contact her with any questions. Clean mats, calm atmosphere and nice vibes. OSSU!</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-18-manuel-buteau" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">M</span>
+      <div>
+        <div class="review-modal-name">Manuel Buteau</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">J'ai eu une expérience vraiment plaisante de jiu-jitsu. L'endroit est accueillant et chaleureux ce qui met immédiatement en confiance. La coach Amélie nous a offert un cours d'introduction très ludique, bien structuré et accessible. Je recommande vivement l'endroit à toute personne souhaitant découvrir cette discipline dans un environnement positif et respectueux.</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-19-sabrina-belval" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">S</span>
+      <div>
+        <div class="review-modal-name">Sabrina Belval</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Si vous pensez à pratiquer un art martial, ou le jiu-jitsu en particulier : vous êtes au meilleur endroit. Dès le premier cours d'intro, tout a changé — l'équipe est accueillante, les coachs sont passionnés et pédagogues, et surtout, l'ambiance est incroyable. Il n'y a pas d'égo, pas de compétition malsaine. Tout le monde s'élève ensemble.</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-20-mark-carras" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">M</span>
+      <div>
+        <div class="review-modal-name">Mark Carras</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">My daughter is loving her jiu-jitsu class — it's a natural way to learn, fun for a kid (not just drills!), and the teacher, Amélie, has been incredibly welcoming. Looking forward to many a class!!</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-21-aurelie-sasias" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">A</span>
+      <div>
+        <div class="review-modal-name">Aurélie Sasias</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Amélie est une super pédagogue, avec les adultes comme les enfants. Les cours sont toujours super intéressants, on se dépense, on a du plaisir et le café est super!</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-22-paul-morgan" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">P</span>
+      <div>
+        <div class="review-modal-name">Paul Morgan</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">Stopped by while visiting Montreal. Wonderful place to train. Everyone very welcoming, and wonderful facility. Would be very happy to come by to train again. 100% recommend.</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<div id="review-23-leo-coulombe" class="modal">
+  <a href="#_" class="modal-backdrop" aria-label="Fermer"></a>
+  <div class="modal-box review-modal-box">
+    <a href="#_" class="modal-close" aria-label="Fermer">✕</a>
+    <div class="review-modal-top">
+      <span class="review-modal-avatar">L</span>
+      <div>
+        <div class="review-modal-name">Léo Coulombe</div>
+        <div class="review-modal-stars">★★★★★</div>
+      </div>
+    </div>
+    <p class="review-modal-text">J'aime l'approche des cours de bjj, car elle permet de découvrir et explorer par nous-même, et aussi de pratiquer beaucoup des concepts particuliers plutôt que juste des techniques.</p>
+    <div class="review-modal-source"><span class="google-badge">G</span><span>Avis Google</span></div>
+  </div>
+</div>
+<script>
+/* Synchronisation avec l'accueil : section 03, avis, pied de page et horaire du Yoga
+   sont relus depuis /index.html à chaque visite. Si la lecture échoue, la copie de secours reste. */
+(function(){
+  "use strict";
+  var JOURS={lun:"Lundi",mar:"Mardi",mer:"Mercredi",jeu:"Jeudi",ven:"Vendredi",sam:"Samedi",dim:"Dimanche"};
+  function tickets(when){
+    var out=[];
+    when.split("\u00b7").forEach(function(g){
+      g=g.trim(); if(!g) return;
+      var m=g.match(/^(.*?)\s*(\d{1,2}h(?:\d{2})?(?:\s*et\s*\d{1,2}h(?:\d{2})?)*)\s*$/i);
+      if(!m || !m[1].trim()){ out.push([g,""]); return; }
+      m[1].split("/").forEach(function(d){ d=d.trim(); out.push([JOURS[d.toLowerCase()]||d, m[2]]); });
+    });
+    return out;
+  }
+  function esc(t){ return String(t).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+  function fixPaths(root){
+    root.querySelectorAll("[src],[href]").forEach(function(el){
+      ["src","href"].forEach(function(a){
+        var v=el.getAttribute(a);
+        if(v && !/^(https?:|mailto:|tel:|#|\/|\.\.\/)/i.test(v)) el.setAttribute(a,"../"+v);
+      });
+    });
+  }
+  /* Fiche de Sophie : relue depuis a-propos.html (même fiche que la page À propos). */
+  function syncCoach(){
+    return fetch("../a-propos.html",{cache:"no-cache"})
+      .then(function(r){ if(!r.ok) throw new Error("a-propos"); return r.text(); })
+      .then(function(html){
+        var doc=new DOMParser().parseFromString(html,"text/html"), found=null;
+        doc.querySelectorAll(".instr-card-wrap").forEach(function(c){
+          var a=c.querySelector(".flip-front .instr-name a, .flip-front .instr-name");
+          if(a && /^sophie/i.test(a.textContent.trim())) found=c;
+        });
+        var grid=document.querySelector("#coach .instr-grid");
+        if(found && grid){
+          var node=document.importNode(found,true); fixPaths(node);
+          node.querySelectorAll('img[src$="sophie.jpg"]').forEach(function(i){ i.setAttribute("src","../photos/yoga-fiche.jpg"); }); grid.innerHTML=""; grid.appendChild(node); balanceCoach();
+        }
+      })
+      .catch(function(){});
+  }
+
+  /* Ordinateur : la marge blanche à droite de la fiche = celle à gauche (distance du bord de l'écran au bord gauche de la fiche). */
+  function balanceCoach(){
+      var g=document.querySelector("#coach .instr-grid"); if(!g) return;
+      g.style.width=""; g.style.marginRight="";
+      var vw=document.documentElement.clientWidth;
+      if(vw<=700) return;
+      var left=g.getBoundingClientRect().left, w=vw-2*left;
+      if(w>=520) g.style.width=w+"px";
+    }
+    window.addEventListener("resize",balanceCoach); window.addEventListener("load",balanceCoach); balanceCoach();
+  function loadSiteData(){
+    var sc=document.createElement("script"); sc.src="../site-data.js"; document.body.appendChild(sc);
+  }
+  fetch("../index.html",{cache:"no-cache"})
+    .then(function(r){ if(!r.ok) throw new Error("index.html"); return r.text(); })
+    .then(function(html){
+      var doc=new DOMParser().parseFromString(html,"text/html");
+      function swap(sel){
+        var n=doc.querySelector(sel), cur=document.querySelector(sel);
+        if(n && cur) cur.replaceWith(document.importNode(n,true));
+      }
+      swap("#communaute"); swap(".footer-reviews"); swap("footer#contact");
+      var ci=document.querySelector("#communaute .index"); if(ci) ci.textContent="04 \u2014 communaut\u00e9";
+      var newModals=doc.querySelectorAll('.modal[id^="review-"]');
+      if(newModals.length){
+        document.querySelectorAll('.modal[id^="review-"]').forEach(function(m){ m.remove(); });
+        var anchor=document.querySelector("body > script");
+        newModals.forEach(function(m){ document.body.insertBefore(document.importNode(m,true),anchor); });
+      }
+      var wanted=null;
+      doc.querySelectorAll("#horaire .ticket").forEach(function(t){
+        var b=t.querySelector(".postit-name-btn"), w=t.querySelector(".when");
+        if(b && w && /^yoga/i.test(b.textContent.trim())) wanted=w.textContent.trim();
+      });
+      if(wanted){
+        var list=tickets(wanted), box=document.querySelector("#horaire .tickets");
+        if(list.length && box) box.innerHTML=list.map(function(x){
+          return '<div class="ticket"><div class="name">'+esc(x[0])+'</div>'+(x[1]?'<div class="when mono">'+esc(x[1])+'</div>':'')+'</div>';
+        }).join("");
+      }
+    })
+    .catch(function(){})
+    .then(syncCoach)
+    .then(loadSiteData);
+})();
+</script>
+</body>
+</html>
