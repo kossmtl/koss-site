@@ -125,8 +125,12 @@
     /* cellulaire : la photo démarre sous les boutons pour qu'on voie bien la tête */
     .hero-media{ margin-top:8px; height:560px; }
     .hero-photo{ object-position:center top; }
-    .hero-media::before{ background:linear-gradient(to bottom, var(--deep) 0%, rgba(56,70,57,0) 14%); }
+    .hero-media::before{ background:linear-gradient(to bottom, var(--deep) 0%, rgba(71,40,51,0) 14%); }
   }
+  /* PALETTE BORDEAUX (page Muay Thaï seulement) : remplace le vert foncé, le sauge et le papier 2 */
+  :root{ --deep:#472833; --sage:#BA9CA4; --paper-2:#E8E1D6; }
+  @media (min-width:701px){ .hero-media::before{ background:linear-gradient(to right, var(--deep) 0%, rgba(71,40,51,0.88) 10%, rgba(71,40,51,0) 38%); } }
+  .announce{ border-top-color:rgba(186,156,164,0.25); }
 </style>
 </head>
 <body>
