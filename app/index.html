@@ -1,6 +1,7 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}  .class-title-info{display:flex;align-items:center;gap:8px;}
-  .info-i{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#B9BCC4;font:italic bold 12px Georgia,serif;color:#2a2c33;flex:none;transform:translateY(-5px);line-height:1;}
-  .class-title-info:hover .info-i{background:#fff;}
+  .info-i{display:inline-block;vertical-align:top;margin-left:5px;color:#B9BCC4;flex:none;transform:translateY(-3px);line-height:0;}
+  .info-i svg{display:block;}
+  .class-title-info:hover .info-i{color:#fff;}
 </style></head><body>
 <title>K-OSS Jiu-Jitsu</title>
 <meta name="robots" content="noindex, nofollow">
@@ -1928,7 +1929,9 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-13-contribution-abonnement-passe';
+  const APP_BUILD = '2026-10-15-icone-info';
+  // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
+  const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
   function pageStampUrl(){ return window.location.origin + window.location.pathname; }
   function showStaleBanner(){
@@ -8062,7 +8065,7 @@
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
-          <h3 data-action="toggle-class-description" class="class-title-info" style="cursor:pointer;">${escapeHtml(c.name)}<span class="info-i" aria-hidden="true">i</span></h3>
+          <h3 data-action="toggle-class-description" class="class-title-info" style="cursor:pointer;">${escapeHtml(c.name)}<span class="info-i" aria-hidden="true">${INFO_ICON_SVG}</span></h3>
           ${classDescOpen(m.payload, c) ? `<p style="font-size:13px;color:var(--chalk-dim);white-space:pre-line;">${escapeHtml(c.description || 'Aucune description disponible pour ce cours.')}</p>` : ''}
           <p class="muted">${formatFullClassDateTime(dateIso, c.time, c.durationMinutes)} · ${payLabel}</p>
           ${c.publicNote ? `<p style="background:rgba(147,180,143,0.14);border:1px solid var(--sage);border-radius:8px;padding:9px 11px;color:var(--chalk);font-size:12.5px;line-height:1.45;">${escapeHtml(c.publicNote)}</p>` : ''}
