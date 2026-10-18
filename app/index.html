@@ -1929,7 +1929,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-15-icone-info';
+  const APP_BUILD = '2026-10-18-places-participants';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -2655,6 +2655,9 @@
   }
   function isClassProgramLike(c){ return !!(c && c.startDate && c.endDate && c.startDate!==c.endDate); }
   function isProgramClass(c){ return !!(c && c.startDate && c.endDate); }
+  // Cours d'intro (programme d'intro au BJJ) : les clients ne voient NI les places restantes NI les participants
+  // (demande d'Amélie, 18 oct. 2026). Les gestionnaires voient tout (voir isManagerContext()).
+  function isIntroClass(c){ return !!(c && (c.category==='intro_bjj' || (isProgramClass(c) && /^\s*intro\b/i.test(c.name||'')))); }
   // Cours à contribution volontaire (Queers & Allies) : gratuit côté crédits, mais l'élève choisit
   // un montant (min 3 $). Sous 5 $ = sur place seulement (minimum de Helcim); dès 5 $ = en ligne ou sur place.
   const CONTRIB_MIN = 3, CONTRIB_ONLINE_MIN = 5;
@@ -5577,9 +5580,13 @@
       dots += `<span class="dot" style="${dotStyle}"></span>`;
     }
     const isProgram = isProgramClass(c);
+    // Cours d'intro : pas de nombre de places ni de pastilles pour les clients (on garde seulement « Complet »).
+    const hideSpots = !isManagerContext() && isIntroClass(c);
     let spotsText;
     if(full){
       spotsText = 'Complet \u00b7 liste d\u2019attente';
+    } else if(hideSpots){
+      spotsText = '';
     } else {
       spotsText = (c.capacity - booked) + ' place(s) restante(s)';
     }
@@ -5602,8 +5609,8 @@
         <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">\u00b7 ${categoryLabel(c.category)}</span> ${isContributionClass(c) ? '<span style="color:var(--sage);">\u00b7 contribution volontaire</span>' : (c.free ? '<span style="color:var(--sage);">\u00b7 gratuit</span>' : '')}</div>
         <div class="class-name" style="color:${nameColor};">${escapeHtml(c.name)}${isProgram ? ` <span style="color:var(--amber);font-size:11px;">\u00b7 ${programOrEventWord(c)}</span>` : ''}</div>
         ${c.publicNote ? `<div style="color:var(--sage);font-size:11px;line-height:1.3;margin-top:2px;">\u{1F4CC} ${escapeHtml(c.publicNote)}</div>` : ''}
-        <div class="class-spots">${spotsText}</div>
-        <div class="dots">${dots}</div>
+        ${spotsText ? `<div class="class-spots">${spotsText}</div>` : ''}
+        ${hideSpots ? '' : `<div class="dots">${dots}</div>`}
       </div>
     `;
     return isRainbow ? `<div class="rainbow-wrap">${tileInner}</div>` : tileInner;
@@ -8053,6 +8060,12 @@
         (b.status==='confirmee' || b.status==='liste_attente')
       ) : [];
 
+      // Participants : jamais pour le cours d'intro (clients); pour les autres cours, seulement une fois
+      // inscrit·e (place confirmée). Les gestionnaires voient toujours la liste.
+      const isIntroCls = isIntroClass(c);
+      const iAmIn = myBookings.some(b=>b.status==='confirmee');
+      const canSeeParticipants = isManagerContext() || (!isIntroCls && iAmIn);
+
       let introBlock = '';
       if(isProgram && !isFirstOcc){
         introBlock = `
@@ -8072,8 +8085,8 @@
           ${introBlock}
           ${c.category==='parents_enfants' ? '<p style="font-size:13px;color:var(--coral);font-weight:700;line-height:1.45;margin:10px 0;">⚠️ Il n’est pas possible d’annuler cette réservation sur la plateforme. Pour toute demande, communiquer avec nous au 438-869-9187.</p>' : ''}
           ${full ? '<p style="color:var(--amber);font-size:13px;">Ce cours est complet — vous pouvez rejoindre la liste d\u2019attente.</p>' : ''}
-          <div class="btn-row" style="margin-top:6px;"><button class="small-btn" data-action="toggle-participants">Voir les participants (${confirmedList.length})</button></div>
-          ${showParticipants ? `<ul class="link-list">${confirmedList.length ? confirmedList.map(b=>`<li>${escapeHtml(formatDisplayName(b.studentName))}</li>`).join('') : '<li style="color:var(--chalk-dim);">Aucun participant confirmé.</li>'}</ul>` : ''}
+          ${canSeeParticipants ? `<div class="btn-row" style="margin-top:6px;"><button class="small-btn" data-action="toggle-participants">Voir les participants (${confirmedList.length})</button></div>` : (isIntroCls ? '' : '<p class="muted" style="margin-top:8px;font-size:12px;">La liste des participants est visible une fois que tu es inscrit·e.</p>')}
+          ${(showParticipants && canSeeParticipants) ? `<ul class="link-list">${confirmedList.length ? confirmedList.map(b=>`<li>${escapeHtml(formatDisplayName(b.studentName))}</li>`).join('') : '<li style="color:var(--chalk-dim);">Aucun participant confirmé.</li>'}</ul>` : ''}
           ${myBookings.length ? `
           <div style="margin-top:10px;padding:10px 12px;background:rgba(232,149,90,0.12);border:1px solid var(--amber);border-radius:8px;">
             <p style="font-size:12.5px;margin:0 0 6px;color:var(--chalk);">Vous avez déjà une place ici :</p>
