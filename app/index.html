@@ -1929,7 +1929,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-18-non-lus';
+  const APP_BUILD = '2026-10-18-non-lus-2';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -4584,17 +4584,17 @@
       localStorage.setItem('koss_msg_seen2_'+role+'_v1', JSON.stringify(mk));
     }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
   }
-  function threadUnseen(role, t, legacySeen){
+  function threadUnseen(role, t, legacySeen, onlyNotes){
     const other = role==='admin' ? 'student' : 'admin';
     const msgs = (t && t.messages) || [];
     const mk = getMsgSeenMarkers(role);
     if(t && Object.prototype.hasOwnProperty.call(mk, t.id)){
       const mid = mk[t.id];
       const idx = mid ? msgs.findIndex(m=>m.id===mid) : -1;
-      if(!mid || idx>=0) return msgs.slice(idx+1).some(m=>m.from===other);
+      if(!mid || idx>=0) return msgs.slice(idx+1).some(m=>m.from===other && (!onlyNotes || m.fromNote));
       // repère introuvable (message supprimé ?) : on retombe sur l'ancienne méthode ci-dessous
     }
-    const ls = msgs.reduce((mx,m)=> m.from===other ? Math.max(mx, m.at||0) : mx, 0);
+    const ls = msgs.reduce((mx,m)=> (m.from===other && (!onlyNotes || m.fromNote)) ? Math.max(mx, m.at||0) : mx, 0);
     return ls > 0 && ls > (((legacySeen||{})[t && t.id])||0);
   }
   function getLocalMsgSeenStudent(){
@@ -4675,7 +4675,9 @@
     const mc = state.mc, seen = getLocalMsgSeenAdmin();
     const all = state.data.messageThreads||[];
     const nUnread = all.filter(t=>mcBox(t)==='inbox' && mcUnseen(t,seen)).length;
-    const nNotes = all.filter(t=>mcBox(t)==='inbox' && (t.messages||[]).some(m=>m.fromNote)).length;
+    // 18 oct. 2026 : le compteur ne montre plus « toutes les conversations qui contiennent une note » (il ne
+    // redescendait jamais) mais seulement celles dont une note transférée n'a pas encore été lue.
+    const nNotes = all.filter(t=>mcBox(t)==='inbox' && threadUnseen('admin', t, seen, true)).length;
     const nav = (k,label,badge)=>`<button class="mc-nav ${mc.box===k?'on':''}" data-action="mc-nav" data-box="${k}"><span>${label}</span>${badge?`<span class="mc-badge">${badge}</span>`:''}</button>`;
     const list = mcVisibleThreads();
     const sel = mc.sel ? findMessageThread(mc.sel) : null;
@@ -11732,7 +11734,12 @@
       // (elle "se déplace" : plus dans les notes reçues). Aucun courriel de notification.
       const item = state.data.sharedItems.find(s=>s.id===id);
       if(!item){ showToast('Note introuvable.'); return; }
-      if(!canTransferItemToMessages(item)){ showToast('Cette note ne peut pas être transférée (anonyme ou expéditeur introuvable).'); return; }
+      // 18 oct. 2026 : un double clic (ou un 2e transfert d'une note déjà archivée) ajoutait le même message deux fois.
+      const _btn = e.currentTarget; if(_btn && _btn.disabled) return; if(_btn) _btn.disabled = true;
+      if(item.status==='archived' && (state.data.messageThreads||[]).some(th=>(th.messages||[]).some(m=>m.fromNoteId===item.id))){
+        showToast('Cette note est déjà dans les messages.'); render(); return;
+      }
+      if(!canTransferItemToMessages(item)){ if(_btn) _btn.disabled = false; showToast('Cette note ne peut pas être transférée (anonyme ou expéditeur introuvable).'); return; }
       const {email, profileId} = parseOwnerKey(item.senderOwnerKey);
       const acct = findStudentAccount(email);
       if(!state.data.messageThreads) state.data.messageThreads = [];
@@ -11743,7 +11750,7 @@
         state.data.messageThreads.push(thread);
       }
       if(!thread.messages) thread.messages = [];
-      const msg = {id: uid(), from:'student', text:(item.text||'').trim(), at: item.createdAt || Date.now(), fromNote:true};
+      const msg = {id: uid(), from:'student', text:(item.text||'').trim(), at: item.createdAt || Date.now(), fromNote:true, fromNoteId:item.id};
       if(profileId){ msg.senderName = getProfileName(acct, profileId); }
       thread.messages.push(msg);
       thread.updatedAt = Date.now();
