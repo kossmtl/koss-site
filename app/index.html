@@ -1929,7 +1929,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-18-places-participants';
+  const APP_BUILD = '2026-10-18-non-lus';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -4566,6 +4566,37 @@
     const e = String(email||'').toLowerCase();
     return (state.data.messageThreads||[]).find(t=>t.studentEmail && t.studentEmail.toLowerCase()===e) || null;
   }
+  // 18 oct. 2026 — « non lu » insensible à l'horloge des appareils. Avant, on comparait l'heure du dernier
+  // message (horloge de CELUI QUI L'A ENVOYÉ) à l'heure de lecture (horloge de CELUI QUI LIT) : si l'horloge de
+  // l'expéditeur avançait de quelques secondes ou minutes, le message restait « non lu » même après lecture.
+  // Maintenant, à la lecture on retient l'IDENTIFIANT du dernier message du fil ; « non lu » = il existe un
+  // message de l'autre personne APRÈS celui-là (ordre du fil, aucune horloge). Sans repère enregistré (fils lus
+  // avant cette mise à jour), on garde l'ancienne comparaison d'heures.
+  function getMsgSeenMarkers(role){
+    try{ return JSON.parse(localStorage.getItem('koss_msg_seen2_'+role+'_v1') || '{}'); }
+    catch(err){ return {}; }
+  }
+  function setMsgSeenMarker(role, thread, seen){
+    try{
+      const mk = getMsgSeenMarkers(role);
+      const msgs = (thread && thread.messages) || [];
+      mk[thread.id] = seen ? ((msgs[msgs.length-1] || {}).id || '') : '';
+      localStorage.setItem('koss_msg_seen2_'+role+'_v1', JSON.stringify(mk));
+    }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
+  }
+  function threadUnseen(role, t, legacySeen){
+    const other = role==='admin' ? 'student' : 'admin';
+    const msgs = (t && t.messages) || [];
+    const mk = getMsgSeenMarkers(role);
+    if(t && Object.prototype.hasOwnProperty.call(mk, t.id)){
+      const mid = mk[t.id];
+      const idx = mid ? msgs.findIndex(m=>m.id===mid) : -1;
+      if(!mid || idx>=0) return msgs.slice(idx+1).some(m=>m.from===other);
+      // repère introuvable (message supprimé ?) : on retombe sur l'ancienne méthode ci-dessous
+    }
+    const ls = msgs.reduce((mx,m)=> m.from===other ? Math.max(mx, m.at||0) : mx, 0);
+    return ls > 0 && ls > (((legacySeen||{})[t && t.id])||0);
+  }
   function getLocalMsgSeenStudent(){
     try{ return JSON.parse(localStorage.getItem('koss_msg_seen_student_v1') || '{}'); }
     catch(err){ return {}; }
@@ -4576,16 +4607,14 @@
       seen[threadId] = ts;
       localStorage.setItem('koss_msg_seen_student_v1', JSON.stringify(seen));
     }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
+    const th = (state.data.messageThreads||[]).find(x=>x.id===threadId);
+    if(th) setMsgSeenMarker('student', th, !!ts);
   }
   function hasUnseenMessagesForStudent(){
     if(!state.studentSession || !state.studentSession.email) return false;
     const t = findMessageThread(state.studentSession.email);
     if(!t || !(t.messages||[]).length) return false;
-    const adminAts = (t.messages||[]).filter(m=>m.from==='admin').map(m=>m.at||0);
-    if(!adminAts.length) return false;
-    const lastAdminMsg = Math.max(...adminAts);
-    const seen = getLocalMsgSeenStudent();
-    return lastAdminMsg > (seen[t.id]||0);
+    return threadUnseen('student', t, getLocalMsgSeenStudent());
   }
   function getLocalMsgSeenAdmin(){
     try{ return JSON.parse(localStorage.getItem('koss_msg_seen_admin_v1') || '{}'); }
@@ -4597,6 +4626,8 @@
       seen[threadId] = ts;
       localStorage.setItem('koss_msg_seen_admin_v1', JSON.stringify(seen));
     }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
+    const th = (state.data.messageThreads||[]).find(x=>x.id===threadId);
+    if(th) setMsgSeenMarker('admin', th, !!ts);
   }
   // ── Centre de messages (gestionnaire) — demande d'Amélie, 7 oct ─────────────────────────────
   // Champs ajoutés sur chaque fil (côté gestionnaire seulement, l'élève ne les voit jamais) :
@@ -4616,8 +4647,7 @@
     return b;
   }
   function mcUnseen(t, seen){
-    const ls = mcLastAt(t,'student');
-    return ls > 0 && ls > ((seen||getLocalMsgSeenAdmin())[t.id]||0);
+    return threadUnseen('admin', t, seen||getLocalMsgSeenAdmin());
   }
   function mcThreadLabel(t){
     const acct = findStudentAccount(t.studentEmail);
@@ -4718,11 +4748,7 @@
   }
   function hasUnseenMessagesForAdmin(){
     const seen = getLocalMsgSeenAdmin();
-    return (state.data.messageThreads||[]).some(t=>{
-      const studentAts = (t.messages||[]).filter(m=>m.from==='student').map(m=>m.at||0);
-      if(!studentAts.length) return false;
-      return Math.max(...studentAts) > (seen[t.id]||0);
-    });
+    return (state.data.messageThreads||[]).some(t=> threadUnseen('admin', t, seen));
   }
 
   function findStudentAccount(email){
@@ -7522,8 +7548,7 @@
             <ul class="link-list" style="max-height:170px;overflow-y:auto;margin-bottom:14px;">
               ${mpThreads.map(t=>{
                 const last = (t.messages||[]).slice().sort((a,b)=>(b.at||0)-(a.at||0))[0];
-                const studentAts = (t.messages||[]).filter(x=>x.from==='student').map(x=>x.at||0);
-                const unseen = studentAts.length && Math.max(...studentAts) > (mpSeenAdmin[t.id]||0);
+                const unseen = threadUnseen('admin', t, mpSeenAdmin);
                 const acctT = findStudentAccount(t.studentEmail);
                 const labelT = acctT ? acctT.name : t.studentEmail;
                 return `<li>
@@ -8086,7 +8111,7 @@
           ${c.category==='parents_enfants' ? '<p style="font-size:13px;color:var(--coral);font-weight:700;line-height:1.45;margin:10px 0;">⚠️ Il n’est pas possible d’annuler cette réservation sur la plateforme. Pour toute demande, communiquer avec nous au 438-869-9187.</p>' : ''}
           ${full ? '<p style="color:var(--amber);font-size:13px;">Ce cours est complet — vous pouvez rejoindre la liste d\u2019attente.</p>' : ''}
           ${canSeeParticipants ? `<div class="btn-row" style="margin-top:6px;"><button class="small-btn" data-action="toggle-participants">Voir les participants (${confirmedList.length})</button></div>` : (isIntroCls ? '' : '<p class="muted" style="margin-top:8px;font-size:12px;">La liste des participants est visible une fois que tu es inscrit·e.</p>')}
-          ${(showParticipants && canSeeParticipants) ? `<ul class="link-list">${confirmedList.length ? confirmedList.map(b=>`<li>${escapeHtml(formatDisplayName(b.studentName))}</li>`).join('') : '<li style="color:var(--chalk-dim);">Aucun participant confirmé.</li>'}</ul>` : ''}
+          ${(showParticipants && canSeeParticipants) ? `<ul class="link-list">${confirmedList.length ? confirmedList.map(b=>`<li>${escapeHtml(formatDisplayName(b.studentName) || 'Participant·e')}</li>`).join('') : '<li style="color:var(--chalk-dim);">Aucun participant confirmé.</li>'}</ul>` : ''}
           ${myBookings.length ? `
           <div style="margin-top:10px;padding:10px 12px;background:rgba(232,149,90,0.12);border:1px solid var(--amber);border-radius:8px;">
             <p style="font-size:12.5px;margin:0 0 6px;color:var(--chalk);">Vous avez déjà une place ici :</p>
