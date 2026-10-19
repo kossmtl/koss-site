@@ -1929,7 +1929,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-18-non-lus-2';
+  const APP_BUILD = '2026-10-19-credit-contribution';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -2677,6 +2677,19 @@
       .filter(m => m.studentEmail && m.studentEmail.toLowerCase()===e && (m.profileId||null)===pid && m.type==='credits' && isMembershipActive(m))
       .sort((a,b)=> (a.endDate||'9999').localeCompare(b.endDate||'9999'));
   }
+  // Crédit de contribution : quand une personne annule un cours à contribution volontaire qu'elle a
+  // réellement payé, elle reçoit un crédit valable pour UN autre cours à contribution volontaire.
+  function contribCreditsFor(email, profileId){
+    const e = (email||'').toLowerCase(), pid = profileId || null;
+    return state.data.memberships.filter(m => m.contributionCredit && m.status==='active' && !m.usedBookingId
+      && m.studentEmail && m.studentEmail.toLowerCase()===e && (m.profileId||null)===pid);
+  }
+  function bookingContributionPaid(b){
+    if(!b || !b.contribution) return false;
+    if(b.paidAmount) return true;
+    const pm = b.paymentMembershipId ? state.data.memberships.find(x=>x.id===b.paymentMembershipId) : null;
+    return !!(pm && pm.paidViaHelcim);
+  }
   function fmtMoney(n){ const v=Math.round(n*100)/100; return (Number.isInteger(v)?String(v):v.toFixed(2).replace('.',','))+' $'; }
   // Un cours à dates fixes dont le début et la fin sont le MÊME jour est un
   // événement ponctuel (une seule journée), pas un programme à plusieurs séances.
@@ -2897,7 +2910,7 @@
     if(contrib && (contrib.mode==='included' || contrib.mode==='pass') && bookedCount(classId,dateIso) < c.capacity){
       membership = state.data.memberships.find(m=>m.id===contrib.membershipId && isMembershipActive(m)) || null;
       if(!membership){ showToast('Abonnement ou passe introuvable.'); return; }
-    } else if(!c.free){
+    } else if(!c.free && !(contrib && contrib.mode==='credit')){
       if(alreadyBooked){
         const candidates = activeMembershipsForEmail(email, c.category, profileId).filter(m=>m.type==='credits');
         if(!candidates.length){
@@ -2952,7 +2965,10 @@
       membershipId: membership ? membership.id : null,
       createdAt: Date.now()
     };
-    if(contrib && !full && contrib.mode==='included'){
+    if(contrib && !full && contrib.mode==='credit'){
+      booking.paidWithContribCredit = true;
+      booking.contribCreditId = contrib.membershipId;
+    } else if(contrib && !full && contrib.mode==='included'){
       booking.includedInMembership = true;
     } else if(contrib && !full && contrib.mode==='pass'){
       booking.paidWithPass = true;
@@ -2961,6 +2977,11 @@
       booking.contributionAmount = contrib.amount;
       if(contrib.mode==='onsite'){ booking.noMembership = true; }
       else if(contrib.membershipId){ booking.paymentMembershipId = contrib.membershipId; }
+    }
+    if(booking.paidWithContribCredit){
+      const cm = state.data.memberships.find(x=>x.id===contrib.membershipId && x.contributionCredit && x.status==='active' && !x.usedBookingId);
+      if(!cm){ showToast('Crédit introuvable.'); return; }
+      cm.status = 'utilise'; cm.usedBookingId = booking.id; cm.usedAt = Date.now();
     }
     state.data.bookings.push(booking);
     if(!full && membership && membership.type==='credits'){
@@ -2972,7 +2993,7 @@
     if(isManagerContext()){
       showToast(full ? 'Ajout\u00e9 \u00e0 la liste d\u2019attente.' : (isDuplicateConfirmed ? 'Deuxi\u00e8me r\u00e9servation confirm\u00e9e !' : 'R\u00e9servation confirm\u00e9e !'));
     } else {
-      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false, contribOnsite: (contrib && contrib.mode==='onsite' && !full) ? contrib.amount : null, contribPaid: (contrib && contrib.mode==='online' && !full) ? contrib.amount : null, contribIncluded: !!(contrib && contrib.mode==='included' && !full), contribPass: !!(contrib && contrib.mode==='pass' && !full)}};
+      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false, contribOnsite: (contrib && contrib.mode==='onsite' && !full) ? contrib.amount : null, contribPaid: (contrib && contrib.mode==='online' && !full) ? contrib.amount : null, contribIncluded: !!(contrib && contrib.mode==='included' && !full), contribCredit: !!(contrib && contrib.mode==='credit' && !full), contribPass: !!(contrib && contrib.mode==='pass' && !full)}};
       render();
     }
   }
@@ -3484,6 +3505,7 @@
 
   function membershipBadge(m){
     const ds = membershipDisplayStatus(m);
+    if(m.contributionCredit) return m.status==='active' ? `<span class="badge badge-confirmed">Crédit</span>` : `<span class="badge badge-expire">Utilisé</span>`;
     if(m.isContribution && m.status==='active') return `<span class="badge badge-confirmed">Contribution</span>`;
     const map = {
       attente_paiement: ['badge-pending','Paiement à faire'],
@@ -3502,6 +3524,7 @@
   }
 
   function membershipDetail(m){
+    if(m.contributionCredit) return '1 cours à contribution volontaire' + (m.planPrice ? ' · valeur '+m.planPrice : '');
     if(m.isContribution) return 'Contribution volontaire' + (m.planPrice ? ' : '+m.planPrice : '');
     if(m.type === 'illimite') return 'jusqu\u2019au ' + m.endDate;
     if(m.type === 'credits') return m.creditsRemaining + ' cours restant(s)' + (m.endDate ? ' \u00b7 expire le ' + m.endDate : '');
@@ -3521,6 +3544,22 @@
   // Refunds a drop-in credit when a confirmed (non-waitlist, non-free) booking is cancelled.
   function refundCreditIfNeeded(b){
     if(!b || b.status !== 'confirmee') return;
+    if(b.paidWithContribCredit){
+      const cm = state.data.memberships.find(x=>x.id===b.contribCreditId);
+      if(cm){ cm.status = 'active'; delete cm.usedBookingId; delete cm.usedAt; }
+      return;
+    }
+    if(bookingContributionPaid(b)){
+      const amt = b.paidAmount || (function(){ const pm = state.data.memberships.find(x=>x.id===b.paymentMembershipId); return pm ? parseFloat(pm.planPrice) : b.contributionAmount; })() || b.contributionAmount || 0;
+      state.data.memberships.push({
+        id: uid(), planId:'contribution-credit', planName:'Crédit contribution', categories:[],
+        studentName:b.studentName, studentEmail:b.studentEmail, profileId:b.profileId||null,
+        type:'credits', status:'active', grantedFree:true, isContribution:true, contributionCredit:true,
+        creditsRemaining:0, planPrice: amt ? Number(amt).toFixed(2)+' $' : '', fromBookingId:b.id, createdAt:Date.now()
+      });
+      b.creditIssued = true;
+      return;
+    }
     const c = state.data.classes.find(cl=>cl.id===b.classId);
     if(!c || (c.free && !b.paidWithPass)) return;
     // Si on sait quel abonnement a servi à réserver (cas normal depuis le 11 sept, utile
@@ -5952,6 +5991,8 @@
         ${pwField('acc-confirm-pw', "Confirmer le nouveau mot de passe", {wrapStyle:'margin-top:8px;'})}
         <div class="btn-row"><button class="btn btn-secondary" data-action="update-account-password">Mettre à jour le mot de passe</button></div>
 
+        ${(()=>{ const cc = state.data.memberships.filter(m=>m.contributionCredit && m.status==='active' && !m.usedBookingId && m.studentEmail.toLowerCase()===email.toLowerCase());
+          return cc.length ? `<div class="ct-box ct-box-acc" style="margin-top:18px;--ct-acc:rgb(147,180,143);--ct-acc-bg:rgba(147,180,143,.12);">💚 <strong>${cc.length} crédit${cc.length>1?'s':''} de contribution</strong> — valable${cc.length>1?'s':''} pour un autre cours à contribution volontaire (Queers &amp; Allies). Tu le verras à la réservation.</div>` : ''; })()}
         <label style="margin-top:18px;">Mes abonnements (et ceux de la famille)</label>
         ${memberships.length ? memberships.map(m=>{
           const ds = membershipDisplayStatus(m);
@@ -9141,6 +9182,7 @@
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Annuler cette réservation ?</h3>
           <p class="muted">${c ? escapeHtml(c.name) + ' · ' + (b?b.dateIso:'') : ''}</p>
+          ${(b && b.status==='confirmee' && (b.paidWithContribCredit || bookingContributionPaid(b))) ? '<p style="font-size:13px;margin:8px 0;">💚 Tu recevras un crédit de contribution, valable pour un autre cours à contribution volontaire.</p>' : ''}
           <div class="btn-row">
             <button class="btn btn-danger" data-action="confirm-cancel-booking-yes" data-id="${id}">Oui, annuler</button>
             <button class="btn btn-secondary" data-action="close-modal">Non</button>
@@ -9169,6 +9211,13 @@
               <button class="btn btn-secondary" data-action="ct-pass" data-mid="${escapeHtml(pm.id)}">🎟️ Utiliser 1 cours de ma passe (${n} restant${n>1?'s':''})</button>
             </div>
             <div class="ct-or"><span>ou contribue</span></div>`; })()}
+          ${(()=>{ const cs = contribCreditsFor(ct.email, ct.profileId); if(!cs.length) return '';
+            return `<div class="ct-pass">
+              <div class="ct-pass-t">💚 Tu as ${cs.length>1?cs.length+' crédits':'un crédit'} de contribution</div>
+              <div class="ct-pass-s">Il vient d’une annulation précédente : tu peux l’utiliser ici sans contribuer de nouveau.</div>
+              <button class="btn btn-secondary" data-action="ct-credit" data-mid="${escapeHtml(cs[0].id)}">💚 Utiliser mon crédit de contribution</button>
+            </div>
+            <div class="ct-or"><span>ou contribue</span></div>`; })()}
           <label>Ma contribution</label>
           <div class="ct-chips">
             ${CT_PRESETS.map(v=>`<button type="button" class="ct-chip${v===20?' on':''}" data-action="ct-chip" data-amt="${v}">${v} $</button>`).join('')}
@@ -9187,6 +9236,7 @@
         ? 'Ce cours est complet. Vous serez inscrit automatiquement si une place se libère.'
         : (bc.contribOnsite ? `À bientôt sur les tapis ! N’oubliez pas votre contribution de <strong>${fmtMoney(bc.contribOnsite)}</strong> à payer sur place. Merci de soutenir nos instructeurs bénévoles 💚`
         : bc.contribIncluded ? 'Ce cours est inclus dans ton abonnement. À bientôt sur les tapis 💚'
+        : bc.contribCredit ? 'Ton crédit de contribution a été utilisé. À bientôt sur les tapis 💚'
         : bc.contribPass ? 'Un cours de ta passe a été utilisé. À bientôt sur les tapis 💚'
         : bc.contribPaid ? `Merci pour votre contribution de <strong>${fmtMoney(bc.contribPaid)}</strong> ! À bientôt sur les tapis 💚`
         : bc.program ? `Vous êtes inscrit aux ${bc.count} séances${bc.waitlistCount ? ' (dont ' + bc.waitlistCount + ' en liste d’attente)' : ''}.` : 'À bientôt sur les tapis !');
@@ -12722,6 +12772,11 @@
     else if(action==='ct-pass'){
       const pl = state.modal.payload;
       await proceedBooking(pl.classId, pl.dateIso, pl.name, pl.email, true, pl.profileId, null, {mode:'pass', membershipId:e.currentTarget.dataset.mid});
+    }
+    else if(action==='ct-credit'){
+      const pl = state.modal.payload;
+      e.currentTarget.disabled = true;
+      await proceedBooking(pl.classId, pl.dateIso, pl.name, pl.email, true, pl.profileId, null, {mode:'credit', membershipId:e.currentTarget.dataset.mid});
     }
     else if(action==='ct-onsite'){
       const amt = ctParseAmount();
