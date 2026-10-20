@@ -1532,6 +1532,19 @@
       state.data.migratedYogaDescPricesV3 = true;
       changed = true;
     }
+    if(!state.data.migratedYogaMonthV4){
+      // Abonnement Yoga d'un mois : 125 $ (les abonnements de 3, 6 et 12 mois n'existent pas pour le Yoga).
+      const plans = state.data.membershipPlans || (state.data.membershipPlans = []);
+      const isYogaOnly = pl => pl.type==='illimite' && (pl.categories||[]).length===1 && pl.categories[0]==='yoga';
+      const yogaMonth = plans.find(pl=>isYogaOnly(pl) && (pl.durationDays||0)<=31);
+      if(yogaMonth){ yogaMonth.price = '125 $'; }
+      else {
+        const tpl = plans.find(pl=>pl.name==='1 Month Adult BJJ');
+        if(tpl){ const np = JSON.parse(JSON.stringify(tpl)); np.id = uid(); np.name = '1 Month Adult Yoga'; np.categories = ['yoga']; np.price = '125 $'; delete np.memberPrice; plans.push(np); }
+      }
+      state.data.migratedYogaMonthV4 = true;
+      changed = true;
+    }
     state.data.classes.forEach(c=>{
       if(!c.durationMinutes){ c.durationMinutes = 60; changed = true; }
     });
@@ -1737,6 +1750,7 @@
       Object.assign(mkC('1 Enfant + 1 Parent', 1, '40 $', []), {memberPrice:'10 $', familyMemberCheck:true}),
       mkI('1 Month Adult All Unlimited', 30, '165 $', ALL),
       mkI('1 Month Adult BJJ', 30, '145 $', A),
+      mkI('1 Month Adult Yoga', 30, '125 $', Y),
       mkI('1 Month Kid (4-13)', 30, '120 $', K),
       mkI('1 Year Adult All Unlimited', 365, '1480 $', ALL),
       mkI('1 Year Adult BJJ', 365, '1245 $', A),
