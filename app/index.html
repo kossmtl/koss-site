@@ -1102,7 +1102,7 @@
     'GI Essentials': "Les concepts essentiels du GI (Avec Kimono), ramenés à leur plus simple expression pour rester clairs, efficaces et applicables. On y développe les principes qui reviennent constamment dans un jeu où les grips, le contrôle, la pression et la précision prennent une place centrale.",
     'GI & NOGI Performance': "Un entraînement qui combine GI et NOGI dans une approche axée sur la performance et la préparation aux compétitions. On y travaille la stratégie, la gestion du stress et les mises en situation de combat, avec une intensité plus élevée que dans les cours réguliers. La participation demande une attitude sérieuse, respectueuse et engagée envers sa progression et celle de l\u2019équipe.",
     'Muay Thaï': "Le Muay Thaï, c'est un sport de combat complet basé sur les poings, les jambes, les genoux et les coudes. Originaire de Thaïlande, il se distingue par son approche directe, son travail de distance et son combat rapproché. Tu y développes ta technique, ton cardio, tes réflexes et ta capacité à rester efficace sous pression.",
-    'Yoga': "Le Yoga d'alignement met l'accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, et restauratrice..",
+    'Yoga': "Le Yoga d'alignement met l'accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, mais exigeante, qui permet de mieux comprendre son corps et de bouger plus efficacement.",
     'Intro au BJJ': "Les cours d\u2019intro ont lieu deux fois par semaine, les lundis et mercredis de 18h à 19h, pour un total de 5 cours. Les classes sont réduites afin de pouvoir accorder à chacun toute l\u2019attention requise, et tous les participants sont des débutants comme toi.\n\nLe but, c\u2019est que tu te sentes à l\u2019aise, que tu puisses t\u2019entraîner sans te sentir jugé et que tu puisses rejoindre les classes régulières en toute confiance à la fin du programme d\u2019intro. C\u2019est une super occasion de découvrir ce sport tout en te familiarisant tranquillement avec notre communauté.\n\nC\u2019est Amélie qui t\u2019enseignera tout ce que tu dois savoir à propos du Jiu-Jitsu. Elle en profitera pour te faire rire (ou pleurer) avec ses meilleures blagues. On ne t\u2019en voudra pas si tu ne les trouves pas drôles, nous non plus d\u2019ailleurs !\n\nOn se voit sur le mat !",
     'Queers & Allies': "QUEERS & ALLIES est un cours de BJJ à contribution volontaire (minimum 3 $) spécialement prévu pour les gens queers et leurs alliés. Ouvert à tous, le respect d\u2019autrui y est primordial et une politique de tolérance zéro sera appliquée envers tout comportement ou commentaire déplacé. Cette politique est d\u2019ailleurs appliquée dans tous nos cours, sans exception.\n\nLe cours se donne en GI et NOGI (come as you are) et est ouvert aux non-initiés une semaine sur deux. Horaire disponible et réservation obligatoire sur l’app K-OSS. Prêt de GI disponible au coût de 5$ (négociable en cas de besoin).",
   };
@@ -1518,10 +1518,18 @@
     if(!state.data.migratedYogaDescV2){
       state.data.classes.forEach(c=>{
         if(c.category==='yoga'){
-          c.description = "Le Yoga d'alignement met l'accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, et restauratrice..";
+          c.description = "Le Yoga d'alignement met l'accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, mais exigeante, qui permet de mieux comprendre son corps et de bouger plus efficacement.";
         }
       });
       state.data.migratedYogaDescV2 = true;
+      changed = true;
+    }
+    if(!state.data.migratedYogaDescPricesV3){
+      const YOGA_DESC = "Le Yoga d'alignement met l'accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, mais exigeante, qui permet de mieux comprendre son corps et de bouger plus efficacement.";
+      state.data.classes.forEach(c=>{ if(c.category==='yoga'){ c.description = YOGA_DESC; } });
+      const YOGA_PRICES = {'Drop-in (Yoga)':'15 $', '3 Classes de Yoga':'40 $', '10 classes Adult (Yoga)':'125 $'};
+      (state.data.membershipPlans||[]).forEach(pl=>{ if(YOGA_PRICES[pl.name]) pl.price = YOGA_PRICES[pl.name]; });
+      state.data.migratedYogaDescPricesV3 = true;
       changed = true;
     }
     state.data.classes.forEach(c=>{
@@ -1651,7 +1659,7 @@
       'GI Essentials': 'Les concepts essentiels du GI (Avec Kimono), ramenés à leur plus simple expression pour rester clairs, efficaces et applicables. On y développe les principes qui reviennent constamment dans un jeu où les grips, le contrôle, la pression et la précision prennent une place centrale.',
       'GI & NOGI Performance': 'Un entraînement qui combine GI et NOGI dans une approche axée sur la performance et la préparation aux compétitions. On y travaille la stratégie, la gestion du stress et les mises en situation de combat, avec une intensité plus élevée que dans les cours réguliers. La participation demande une attitude sérieuse, respectueuse et engagée envers sa progression et celle de l\u2019équipe.',
       'Muay Thaï': 'Le Muay Thaï, c\u2019est un sport de combat complet basé sur les poings, les jambes, les genoux et les coudes. Originaire de Thaïlande, il se distingue par son approche directe, son travail de distance et son combat rapproché. Tu y développes ta technique, ton cardio, tes réflexes et ta capacité à rester efficace sous pression.',
-      'Yoga': 'Le Yoga d\u2019alignement met l\u2019accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, et restauratrice..',
+      'Yoga': 'Le Yoga d\u2019alignement met l\u2019accent sur la précision des postures, la mobilité et la conscience du corps. Chaque mouvement est travaillé avec attention afin de développer force, souplesse, équilibre et contrôle. Une pratique accessible, mais exigeante, qui permet de mieux comprendre son corps et de bouger plus efficacement.',
       'Intro au BJJ': 'Les cours d\u2019intro ont lieu deux fois par semaine, les lundis et mercredis de 18h à 19h, pour un total de 5 cours. Les classes sont réduites afin de pouvoir accorder à chacun toute l\u2019attention requise, et tous les participants sont des débutants comme toi.\n\nLe but, c\u2019est que tu te sentes à l\u2019aise, que tu puisses t\u2019entraîner sans te sentir jugé et que tu puisses rejoindre les classes régulières en toute confiance à la fin du programme d\u2019intro. C\u2019est une super occasion de découvrir ce sport tout en te familiarisant tranquillement avec notre communauté.\n\nC\u2019est Amélie qui t\u2019enseignera tout ce que tu dois savoir à propos du Jiu-Jitsu. Elle en profitera pour te faire rire (ou pleurer) avec ses meilleures blagues. On ne t\u2019en voudra pas si tu ne les trouves pas drôles, nous non plus d\u2019ailleurs !\n\nOn se voit sur le mat !',
       'Queers & Allies': 'QUEERS & ALLIES est un cours de BJJ à contribution volontaire (minimum 3 $) spécialement prévu pour les gens queers et leurs alliés. Ouvert à tous, le respect d\u2019autrui y est primordial et une politique de tolérance zéro sera appliquée envers tout comportement ou commentaire déplacé. Cette politique est d\u2019ailleurs appliquée dans tous nos cours, sans exception.\n\nLe cours se donne en GI et NOGI (come as you are) et est ouvert aux non-initiés une semaine sur deux. Prêt de GI disponible au coût de 5$ (négociable en cas de besoin).',
     };
@@ -1735,19 +1743,19 @@
       mkI('1 Year Kid (4-13)', 365, '1035 $', K),
       mkC('10 classes Adult (BJJ)', 10, '160 $', A),
       mkC('10 classes Adult (Muay Thai)', 10, '160 $', MT),
-      mkC('10 classes Adult (Yoga)', 10, '100 $', Y),
+      mkC('10 classes Adult (Yoga)', 10, '125 $', Y),
       mkC('10 classes Kid', 10, '200 $', K),
       mkC('2 Enfants + 1 Parent', 1, '55 $', []),
       mkC('3 Classes de Jiu-Jitsu', 3, '50 $', A),
       mkC('3 Classes de Muay Thai', 3, '45 $', MT),
-      mkC('3 Classes de Yoga', 3, '30 $', Y),
+      mkC('3 Classes de Yoga', 3, '40 $', Y),
       mkI('3 Months Adult All Unlimited', 90, '420 $', ALL),
       mkI('3 Months Adult BJJ', 90, '360 $', A),
       mkI('3 Months Kid', 90, '300 $', K),
       mkI('6 Months Adult All Unlimited', 180, '780 $', ALL),
       mkI('6 Months Adult BJJ', 180, '655 $', A),
       mkI('6 Months Kid', 180, '545 $', K),
-      Object.assign(mkC('Drop-in (Yoga)', 1, '14 $', Y), {memberPrice:'8 $'}),
+      Object.assign(mkC('Drop-in (Yoga)', 1, '15 $', Y), {memberPrice:'8 $'}),
       Object.assign(mkC('Drop-in (Muay Thai)', 1, '20 $', MT), {memberPrice:'8 $'}),
       Object.assign(mkC('Drop-in Adult', 1, '20 $', A), {memberPrice:'8 $'}),
       mkC('Drop-in Kid', 1, '20 $', K),
@@ -1934,7 +1942,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-20-emprunts';
+  const APP_BUILD = '2026-10-20-yoga';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
