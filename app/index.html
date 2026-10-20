@@ -437,9 +437,9 @@
   .ct-or{display:flex;align-items:center;gap:10px;margin:14px 0 2px;color:var(--chalk-dim);font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;}
 .loan-box{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:12px 0;background:rgba(147,180,143,.10);}
   .loan-box label{display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;font-weight:700;margin:0;}
-  .loan-box input[type=checkbox]{width:auto;margin-top:2px;}
+  .loan-box input[type=radio]{width:auto;margin-top:2px;}
   .loan-sub{font-size:12px;color:var(--chalk-dim);margin:6px 0 0 26px;line-height:1.45;}
-  .loan-warn{font-size:15px;font-weight:800;line-height:1.35;color:var(--coral);border:1px solid var(--coral);background:rgba(226,114,91,.12);border-radius:8px;padding:10px 12px;margin:10px 0;}
+  .loan-warn{border:1px solid #F0A35E;background:rgba(240,163,94,.14);border-radius:8px;padding:12px 14px;font-size:13px;line-height:1.5;color:var(--chalk);margin:10px 0;}
   .ct-or::before,.ct-or::after{content:'';flex:1;height:1px;background:var(--border);}
   .ct-note{font-size:11.5px;color:var(--chalk-dim);margin:10px 0 0;line-height:1.4;}
   .modal .muted{color:var(--chalk-dim);font-size:13px;margin-bottom:14px;}
@@ -2686,7 +2686,7 @@
   // 5 emprunts gratuits par personne (tous cours confondus), ensuite 5 $ l'emprunt ou forfait de 10 à 42,50 $
   // (-15 %, non remboursable ni créditable). L'emprunt est rendu seulement si l'annulation se fait au moins 30 min avant le cours.
   const LOAN_FREE = 5, LOAN_FEE = 5, LOAN_BUNDLE_QTY = 10, LOAN_BUNDLE_PRICE = 42.5, LOAN_CANCEL_MIN = 30;
-  const LOAN_WARN_TEXT = 'Aucun remboursement ni crédit offert si le cours est annulé moins de 30 minutes avant le début de celui-ci';
+  const LOAN_WARN_TEXT = '⚠️ Aucun remboursement ni crédit offert si le cours est annulé moins de 30 minutes avant le début de celui-ci';
   function loanIcon(c){ return (c && c.category==='muay_thai') ? '🥊' : '🥋'; }
   function classAllowsLoan(c){ return !!(c && c.category!=='yoga' && !/no-?\s?gi/i.test(c.name||'')); }
   function loanSame(x, email, pid){ return x.studentEmail && x.studentEmail.toLowerCase()===(email||'').toLowerCase() && (x.profileId||null)===(pid||null); }
@@ -2793,7 +2793,7 @@
       else if(bl>0) sub = 'Tes emprunts gratuits sont utilisés. Il te reste <strong>'+bl+' emprunt'+(bl>1?'s':'')+'</strong> dans ton forfait.';
       else sub = 'Tes '+LOAN_FREE+' emprunts gratuits sont utilisés : cet emprunt coûte <strong>'+LOAN_FEE+' $</strong>.';
     }
-    return `<div class="loan-box"><label><input type="checkbox" id="b-loan"> <span>${loanIcon(c)} J’ai besoin d’emprunter du matériel</span></label><div class="loan-sub">${sub}</div><div class="loan-warn" style="margin:8px 0 0 0;">${LOAN_WARN_TEXT}</div></div>`;
+    return `<div class="loan-box" id="b-loan-box"><div style="font-size:13.5px;font-weight:700;margin-bottom:6px;">${loanIcon(c)} Matériel à emprunter ?</div><label><input type="radio" name="b-loan-choice" value="yes"> <span>J’ai besoin d’emprunter du matériel</span></label><label style="margin-top:6px;"><input type="radio" name="b-loan-choice" value="no"> <span>Je n’ai pas besoin d’emprunter du matériel</span></label><div class="loan-sub" style="margin-left:0;">${sub}</div><div class="loan-warn" style="margin:8px 0 0 0;">${LOAN_WARN_TEXT}</div></div>`;
   }
   // Crédit de contribution : quand une personne annule un cours à contribution volontaire qu'elle a
   // réellement payé, elle reçoit un crédit valable pour UN autre cours à contribution volontaire.
@@ -13025,7 +13025,12 @@
     else if(action==='submit-booking'){
       const classId = e.currentTarget.dataset.class;
       const dateIso = e.currentTarget.dataset.date;
-      { const lb = document.getElementById('b-loan'); state.pendingLoan = (lb && lb.checked) ? {classId, dateIso, wanted:true} : null; }
+      { const anyRadio = document.querySelector('input[name="b-loan-choice"]');
+        if(anyRadio){
+          const chosen = document.querySelector('input[name="b-loan-choice"]:checked');
+          if(!chosen){ const bx = document.getElementById('b-loan-box'); if(bx){ bx.style.borderColor='var(--coral)'; bx.scrollIntoView({block:'center'}); } showToast('Indique si tu as besoin d’emprunter du matériel.'); return; }
+          state.pendingLoan = (chosen.value==='yes') ? {classId, dateIso, wanted:true} : null;
+        } else { state.pendingLoan = null; } }
       if(state.studentSession){
         const sessAcct = findStudentAccount(state.studentSession.email);
         if(!sessAcct){ state.studentSession = null; await clearSessionStorage(); showToast('Session expirée, reconnectez-vous.'); render(); return; }
