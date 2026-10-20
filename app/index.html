@@ -435,6 +435,11 @@
   .ct-pass-s{font-size:12.5px;color:var(--chalk-dim);line-height:1.45;margin-bottom:10px;}
   .ct-pass .btn{width:100%;}
   .ct-or{display:flex;align-items:center;gap:10px;margin:14px 0 2px;color:var(--chalk-dim);font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;}
+.loan-box{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:12px 0;background:rgba(147,180,143,.10);}
+  .loan-box label{display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;font-weight:700;margin:0;}
+  .loan-box input[type=checkbox]{width:auto;margin-top:2px;}
+  .loan-sub{font-size:12px;color:var(--chalk-dim);margin:6px 0 0 26px;line-height:1.45;}
+  .loan-warn{font-size:15px;font-weight:800;line-height:1.35;color:var(--coral);border:1px solid var(--coral);background:rgba(226,114,91,.12);border-radius:8px;padding:10px 12px;margin:10px 0;}
   .ct-or::before,.ct-or::after{content:'';flex:1;height:1px;background:var(--border);}
   .ct-note{font-size:11.5px;color:var(--chalk-dim);margin:10px 0 0;line-height:1.4;}
   .modal .muted{color:var(--chalk-dim);font-size:13px;margin-bottom:14px;}
@@ -1929,7 +1934,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-19-credit-contribution';
+  const APP_BUILD = '2026-10-20-emprunts';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -2677,6 +2682,119 @@
       .filter(m => m.studentEmail && m.studentEmail.toLowerCase()===e && (m.profileId||null)===pid && m.type==='credits' && isMembershipActive(m))
       .sort((a,b)=> (a.endDate||'9999').localeCompare(b.endDate||'9999'));
   }
+  // ===== Emprunt de matériel (20 oct. 2026) =====
+  // 5 emprunts gratuits par personne (tous cours confondus), ensuite 5 $ l'emprunt ou forfait de 10 à 42,50 $
+  // (-15 %, non remboursable ni créditable). L'emprunt est rendu seulement si l'annulation se fait au moins 30 min avant le cours.
+  const LOAN_FREE = 5, LOAN_FEE = 5, LOAN_BUNDLE_QTY = 10, LOAN_BUNDLE_PRICE = 42.5, LOAN_CANCEL_MIN = 30;
+  const LOAN_WARN_TEXT = 'Aucun remboursement ni crédit offert si le cours est annulé moins de 30 minutes avant le début de celui-ci';
+  function loanIcon(c){ return (c && c.category==='muay_thai') ? '🥊' : '🥋'; }
+  function classAllowsLoan(c){ return !!(c && c.category!=='yoga' && !/no-?\s?gi/i.test(c.name||'')); }
+  function loanSame(x, email, pid){ return x.studentEmail && x.studentEmail.toLowerCase()===(email||'').toLowerCase() && (x.profileId||null)===(pid||null); }
+  function loanFreeUsed(email, pid){ return state.data.bookings.filter(b=>b.loan && b.loanKind==='free' && !b.loanReturned && loanSame(b,email,pid)).length; }
+  function loanBundlesFor(email, pid){ return state.data.memberships.filter(m=>m.loanBundle && m.status==='active' && (m.loansRemaining||0)>0 && loanSame(m,email,pid)); }
+  function loanBundleLeft(email, pid){ return loanBundlesFor(email,pid).reduce((n,m)=>n+(m.loansRemaining||0),0); }
+  function loanReturnable(b){
+    if(isManagerContext()) return true;
+    try{
+      const c = getEffectiveClass(state.data.classes.find(cl=>cl.id===b.classId), b.dateIso);
+      const st = studioInstantMs(b.dateIso, c.time||'00:00');
+      return !isNaN(st) && (st - nowMs()) >= LOAN_CANCEL_MIN*60000;
+    }catch(e){ return false; }
+  }
+  function returnLoanIfNeeded(b){
+    if(!b || !b.loan || !b.loanKind || b.loanReturned || b.loanLost) return;
+    if(!loanReturnable(b)){ b.loanLost = true; return; }
+    if(b.loanKind==='free'){ b.loanReturned = true; }
+    else if(b.loanKind==='bundle'){
+      const bd = state.data.memberships.find(x=>x.id===b.loanBundleId);
+      if(bd) bd.loansRemaining = (bd.loansRemaining||0) + 1;
+      b.loanReturned = true;
+    } else if(b.loanKind==='fee'){
+      const paid = b.loanFeeMode==='online' || b.loanFeePaidAt;
+      if(paid){
+        // Jamais de remboursement : un crédit d'emprunt (1 emprunt) est ajouté au compte.
+        state.data.memberships.push({
+          id: uid(), planId:'loan-credit', planName:'Crédit d’emprunt', categories:[],
+          studentName:b.studentName, studentEmail:b.studentEmail, profileId:b.profileId||null,
+          type:'credits', status:'active', grantedFree:true, isContribution:true, loanBundle:true, loanCredit:true,
+          loansRemaining:1, loansTotal:1, creditsRemaining:0, planPrice:'', fromBookingId:b.id, createdAt:Date.now()
+        });
+      } else { b.loanFeeDue = 0; }
+      b.loanReturned = true;
+    }
+  }
+  // Attribue un emprunt à une réservation qui sort de la liste d'attente.
+  function resolveLoanOnPromotion(b){
+    if(!b || !b.loanWanted || b.loanKind) return;
+    if(loanFreeUsed(b.studentEmail, b.profileId) < LOAN_FREE){ b.loan = true; b.loanKind = 'free'; return; }
+    const bd = loanBundlesFor(b.studentEmail, b.profileId)[0];
+    if(bd){ bd.loansRemaining = (bd.loansRemaining||0) - 1; b.loan = true; b.loanKind = 'bundle'; b.loanBundleId = bd.id; return; }
+    b.loan = true; b.loanKind = 'fee'; b.loanFeeMode = 'onsite'; b.loanFeeDue = LOAN_FEE;
+  }
+  async function startLoanPayment(kind, who, btn, after){
+    const isBundle = kind==='bundle';
+    const amt = isBundle ? LOAN_BUNDLE_PRICE : LOAN_FEE;
+    const m = {
+      id: uid(), planId:'contribution', planName: isBundle ? 'Forfait de '+LOAN_BUNDLE_QTY+' emprunts de matériel' : 'Emprunt de matériel', categories:[],
+      studentName: who.name, studentEmail: who.email, profileId: who.profileId||null,
+      type:'credits', status:'attente_paiement', grantedFree:false, isContribution:true,
+      loanBundle: isBundle, loanFee: !isBundle, loansRemaining: 0, loansTotal: isBundle ? LOAN_BUNDLE_QTY : 0,
+      planPrice: amt.toFixed(2)+' $', creditsRemaining:0, createdAt: Date.now()
+    };
+    state.data.memberships.push(m);
+    await persist();
+    const orig = btn ? btn.textContent : ''; if(btn){ btn.disabled = true; btn.textContent = 'Ouverture du paiement sécurisé…'; }
+    const fail = ()=>{ if(btn){ btn.disabled = false; btn.textContent = orig; } };
+    try{
+      const resp = await sb.functions.invoke('koss-init-payment', {body:{membershipId:m.id}});
+      if(resp.error || !resp.data || !resp.data.checkoutToken) throw new Error('init failed');
+      const checkoutToken = resp.data.checkoutToken;
+      startHelcimCheckout(checkoutToken, async (status, transaction)=>{
+        if(status==='SUCCESS'){
+          state.modal = null; closeModalDom(); render();
+          showToast('Paiement reçu, confirmation en cours…');
+          let ok = false;
+          try{
+            const cr = await sb.functions.invoke('koss-confirm-payment', {body:{checkoutToken, transactionId: transaction && transaction.transactionId}});
+            ok = !(cr.error || !cr.data || !cr.data.ok);
+          }catch(err){ console.error('Échec confirmation paiement:', err); }
+          await loadData();
+          const mm = state.data.memberships.find(x=>x.id===m.id);
+          if(mm){
+            mm.isContribution = true; mm.creditsRemaining = 0;
+            if(isBundle){ mm.loanBundle = true; mm.loansRemaining = LOAN_BUNDLE_QTY; mm.loansTotal = LOAN_BUNDLE_QTY; if(ok) mm.status = 'active'; }
+            else { mm.loanFee = true; }
+            if(ok && !mm.paidViaHelcim){ mm.paidViaHelcim = true; mm.paidViaHelcimAt = Date.now(); }
+            await persist();
+          }
+          if(!ok) showToast('Paiement reçu ! Le studio confirmera ton achat sous peu.');
+          try{ await after(m.id, ok); }catch(err){ console.error(err); showToast('Paiement reçu, mais la suite a échoué — contacte le studio.'); }
+        } else if(status==='ABORTED'){
+          fail();
+          const still = state.data.memberships.find(x=>x.id===m.id && x.status==='attente_paiement');
+          if(still){ abandonDraftMembership(still); await persist(); }
+          showToast('Paiement annulé.');
+        } else { fail(); }
+      });
+    }catch(err){
+      console.error('Échec ouverture paiement Helcim:', err);
+      fail();
+      const still = state.data.memberships.find(x=>x.id===m.id && x.status==='attente_paiement');
+      if(still){ abandonDraftMembership(still); await persist(); }
+      showToast('Le paiement en ligne est momentanément indisponible.');
+    }
+  }
+  function loanBoxHtml(c, acct, profileId){
+    if(isManagerContext() || !classAllowsLoan(c)) return '';
+    let sub = 'Les 5 premiers emprunts sont gratuits, ensuite 5 $ par emprunt.';
+    if(acct){
+      const used = loanFreeUsed(acct.email, profileId||null), left = Math.max(0, LOAN_FREE-used), bl = loanBundleLeft(acct.email, profileId||null);
+      if(left>0) sub = 'Il te reste <strong>'+left+' emprunt'+(left>1?'s':'')+' gratuit'+(left>1?'s':'')+'</strong> sur '+LOAN_FREE+'.';
+      else if(bl>0) sub = 'Tes emprunts gratuits sont utilisés. Il te reste <strong>'+bl+' emprunt'+(bl>1?'s':'')+'</strong> dans ton forfait.';
+      else sub = 'Tes '+LOAN_FREE+' emprunts gratuits sont utilisés : cet emprunt coûte <strong>'+LOAN_FEE+' $</strong>.';
+    }
+    return `<div class="loan-box"><label><input type="checkbox" id="b-loan"> <span>${loanIcon(c)} J’ai besoin d’emprunter du matériel</span></label><div class="loan-sub">${sub}</div><div class="loan-warn" style="margin:8px 0 0 0;">${LOAN_WARN_TEXT}</div></div>`;
+  }
   // Crédit de contribution : quand une personne annule un cours à contribution volontaire qu'elle a
   // réellement payé, elle reçoit un crédit valable pour UN autre cours à contribution volontaire.
   function contribCreditsFor(email, profileId){
@@ -2731,6 +2849,7 @@
         const promoted = wl[0];
         promoted.status = 'confirmee';
         promoted.promotedAt = Date.now();
+        resolveLoanOnPromotion(promoted);
         const membership = activeMembershipForEmail(promoted.studentEmail, cls.category, promoted.profileId);
         if(membership && membership.type==='credits'){
           membership.creditsRemaining = Math.max(0, membership.creditsRemaining - 1);
@@ -2958,6 +3077,23 @@
     }
 
     const full = bookedCount(classId,dateIso) >= c.capacity;
+    const PL = (state.pendingLoan && state.pendingLoan.classId===classId && state.pendingLoan.dateIso===dateIso) ? state.pendingLoan : null;
+    let loanInfo = null;
+    if(PL && PL.wanted && classAllowsLoan(c) && !isManagerContext()){
+      if(full){ loanInfo = {wanted:true}; }
+      else if(loanFreeUsed(email,profileId) < LOAN_FREE){ loanInfo = {kind:'free'}; }
+      else {
+        const bd = loanBundlesFor(email,profileId)[0];
+        if(bd){ loanInfo = {kind:'bundle', bundleId:bd.id}; }
+        else if(PL.feeMode==='online' && PL.feeMembershipId){ loanInfo = {kind:'fee', mode:'online', pmId:PL.feeMembershipId}; }
+        else if(PL.feeMode==='onsite'){ loanInfo = {kind:'fee', mode:'onsite'}; }
+        else {
+          state.modal = {type:'loan-fee', payload:{classId, dateIso, name, email, profileId, isDuplicateConfirmed, membershipId}};
+          render();
+          return;
+        }
+      }
+    }
     const booking = {
       id: uid(), classId, dateIso,
       studentName:name, studentEmail:email, profileId: profileId||null,
@@ -2978,6 +3114,22 @@
       if(contrib.mode==='onsite'){ booking.noMembership = true; }
       else if(contrib.membershipId){ booking.paymentMembershipId = contrib.membershipId; }
     }
+    if(loanInfo){
+      booking.loan = true;
+      if(loanInfo.wanted){ booking.loanWanted = true; booking.loan = false; }
+      else {
+        booking.loanKind = loanInfo.kind;
+        if(loanInfo.kind==='bundle'){
+          const bd = state.data.memberships.find(x=>x.id===loanInfo.bundleId);
+          if(bd) bd.loansRemaining = Math.max(0,(bd.loansRemaining||0)-1);
+          booking.loanBundleId = loanInfo.bundleId;
+        } else if(loanInfo.kind==='fee'){
+          booking.loanFeeMode = loanInfo.mode;
+          if(loanInfo.mode==='online') booking.loanFeePaymentMembershipId = loanInfo.pmId;
+          else booking.loanFeeDue = LOAN_FEE;
+        }
+      }
+    }
     if(booking.paidWithContribCredit){
       const cm = state.data.memberships.find(x=>x.id===contrib.membershipId && x.contributionCredit && x.status==='active' && !x.usedBookingId);
       if(!cm){ showToast('Crédit introuvable.'); return; }
@@ -2987,13 +3139,14 @@
     if(!full && membership && membership.type==='credits'){
       membership.creditsRemaining = Math.max(0, membership.creditsRemaining - 1);
     }
+    state.pendingLoan = null;
     await persist();
     state.modal = null; closeModalDom();
     render();
     if(isManagerContext()){
       showToast(full ? 'Ajout\u00e9 \u00e0 la liste d\u2019attente.' : (isDuplicateConfirmed ? 'Deuxi\u00e8me r\u00e9servation confirm\u00e9e !' : 'R\u00e9servation confirm\u00e9e !'));
     } else {
-      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false, contribOnsite: (contrib && contrib.mode==='onsite' && !full) ? contrib.amount : null, contribPaid: (contrib && contrib.mode==='online' && !full) ? contrib.amount : null, contribIncluded: !!(contrib && contrib.mode==='included' && !full), contribCredit: !!(contrib && contrib.mode==='credit' && !full), contribPass: !!(contrib && contrib.mode==='pass' && !full)}};
+      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false, contribOnsite: (contrib && contrib.mode==='onsite' && !full) ? contrib.amount : null, contribPaid: (contrib && contrib.mode==='online' && !full) ? contrib.amount : null, contribIncluded: !!(contrib && contrib.mode==='included' && !full), loanMsg: !loanInfo ? '' : (loanInfo.wanted ? 'Ton emprunt de matériel est noté : il sera confirmé si une place se libère.' : loanInfo.kind==='free' ? 'Emprunt de matériel gratuit noté.' : loanInfo.kind==='bundle' ? 'Emprunt noté : 1 emprunt retiré de ton forfait.' : (loanInfo.mode==='online' ? 'Emprunt noté : 5 $ payés en ligne.' : 'Emprunt noté : 5 $ à payer sur place.')), contribCredit: !!(contrib && contrib.mode==='credit' && !full), contribPass: !!(contrib && contrib.mode==='pass' && !full)}};
       render();
     }
   }
@@ -3505,6 +3658,9 @@
 
   function membershipBadge(m){
     const ds = membershipDisplayStatus(m);
+    if(m.loanCredit) return (m.status==='active' && (m.loansRemaining||0)>0) ? `<span class="badge badge-confirmed">Crédit d’emprunt</span>` : `<span class="badge badge-expire">Utilisé</span>`;
+    if(m.loanBundle) return m.status==='active' ? `<span class="badge badge-confirmed">${m.loansRemaining||0} emprunt${(m.loansRemaining||0)>1?'s':''}</span>` : `<span class="badge badge-pending">Paiement à faire</span>`;
+    if(m.loanFee) return `<span class="badge badge-confirmed">Emprunt</span>`;
     if(m.contributionCredit) return m.status==='active' ? `<span class="badge badge-confirmed">Crédit</span>` : `<span class="badge badge-expire">Utilisé</span>`;
     if(m.isContribution && m.status==='active') return `<span class="badge badge-confirmed">Contribution</span>`;
     const map = {
@@ -3524,6 +3680,8 @@
   }
 
   function membershipDetail(m){
+    if(m.loanBundle) return 'Forfait d’emprunts : '+(m.loansRemaining||0)+' / '+(m.loansTotal||10)+' restants · '+(m.planPrice||'');
+    if(m.loanFee) return 'Emprunt de matériel : '+(m.planPrice||'');
     if(m.contributionCredit) return '1 cours à contribution volontaire' + (m.planPrice ? ' · valeur '+m.planPrice : '');
     if(m.isContribution) return 'Contribution volontaire' + (m.planPrice ? ' : '+m.planPrice : '');
     if(m.type === 'illimite') return 'jusqu\u2019au ' + m.endDate;
@@ -3544,6 +3702,7 @@
   // Refunds a drop-in credit when a confirmed (non-waitlist, non-free) booking is cancelled.
   function refundCreditIfNeeded(b){
     if(!b || b.status !== 'confirmee') return;
+    returnLoanIfNeeded(b);
     if(b.paidWithContribCredit){
       const cm = state.data.memberships.find(x=>x.id===b.contribCreditId);
       if(cm){ cm.status = 'active'; delete cm.usedBookingId; delete cm.usedAt; }
@@ -5993,6 +6152,8 @@
 
         ${(()=>{ const cc = state.data.memberships.filter(m=>m.contributionCredit && m.status==='active' && !m.usedBookingId && m.studentEmail.toLowerCase()===email.toLowerCase());
           return cc.length ? `<div class="ct-box ct-box-acc" style="margin-top:18px;--ct-acc:rgb(147,180,143);--ct-acc-bg:rgba(147,180,143,.12);">💚 <strong>${cc.length} crédit${cc.length>1?'s':''} de contribution</strong> — valable${cc.length>1?'s':''} pour un autre cours à contribution volontaire (Queers &amp; Allies). Tu le verras à la réservation.</div>` : ''; })()}
+        ${(()=>{ if(!acct) return ''; const used = loanFreeUsed(email,null), left = Math.max(0,LOAN_FREE-used), bl = loanBundleLeft(email,null);
+          return `<div class="ct-box ct-box-acc" style="margin-top:18px;--ct-acc:rgb(147,180,143);--ct-acc-bg:rgba(147,180,143,.12);">🥋🥊 <strong>Emprunts de matériel</strong><br>${left>0 ? left+' emprunt'+(left>1?'s':'')+' gratuit'+(left>1?'s':'')+' sur '+LOAN_FREE : 'Emprunts gratuits utilisés'}${bl>0 ? ' · '+bl+' emprunt'+(bl>1?'s':'')+' dans ton forfait' : ''}<div style="margin-top:8px;"><button class="small-btn" data-action="loan-bundle-buy-account">Acheter un forfait de ${LOAN_BUNDLE_QTY} emprunts (${fmtMoney(LOAN_BUNDLE_PRICE)})</button></div><div style="font-size:11.5px;color:var(--chalk-dim);margin-top:6px;">Rabais de 15 %. Non remboursable ni créditable, en aucun cas.</div></div>`; })()}
         <label style="margin-top:18px;">Mes abonnements (et ceux de la famille)</label>
         ${memberships.length ? memberships.map(m=>{
           const ds = membershipDisplayStatus(m);
@@ -8203,6 +8364,7 @@
             ${pwField('b-password', "Créez-en un si c'est votre 1re visite")}
             <p style="font-size:11px;color:var(--chalk-dim);margin-top:4px;">Ce mot de passe protège votre compte, et vous resterez connecté pour vos prochaines réservations.</p>
           `}
+          ${(acct || m.payload.authChoice) ? loanBoxHtml(c, acct, m.payload.selectedProfileId||null) : ''}
           ${(acct || m.payload.authChoice) ? `
           <div class="btn-row">
             <button class="btn btn-primary" data-action="submit-booking" data-class="${classId}" data-date="${dateIso}">
@@ -8819,6 +8981,8 @@
             <span style="display:flex;gap:6px;">${classPayBtnHtml(b)}${owed ? `<button class="small-btn" style="border-color:var(--coral);color:var(--coral);" data-action="open-onsite-paid" data-id="${owed.id}">Marquer payé</button>` : ''}<button class="small-btn" data-action="cancel-booking" data-id="${b.id}">Retirer</button></span>`;
             })()}
           </div>
+          ${b.loanWanted && !b.loan ? '<div style="font-size:12px;color:var(--amber);">${loanIcon(c)} Emprunt demandé</div>' : ''}
+          ${b.loan && b.loanKind ? `<div style="display:flex;align-items:center;gap:8px;font-size:12px;"><span style="background:rgba(147,180,143,.25);border-radius:5px;padding:1px 7px;">${loanIcon(c)} Emprunt${b.loanKind==='free'?' (gratuit)':b.loanKind==='bundle'?' (forfait)':b.loanFeeMode==='online'?' (5 $ payés en ligne)':''}</span>${(b.loanKind==='fee' && b.loanFeeMode==='onsite') ? (b.loanFeeDue ? `<span style="color:var(--coral);font-weight:700;">5 $ à payer sur place</span><button class="small-btn" style="border-color:var(--coral);color:var(--coral);" data-action="loan-fee-paid" data-id="${b.id}">Marquer payé</button>` : '<span style="color:var(--sage);">5 $ payés</span>') : ''}</div>` : ''}
           <div style="display:flex;gap:6px;width:100%;">
             <input id="att-note-${b.id}" value="${escapeHtml(b.attendanceNoteArchived ? '' : (b.attendanceNote||''))}" placeholder="Note rapide sur cet étudiant..." style="flex:1;font-size:12px;padding:5px 8px;">
             <button class="small-btn" data-action="save-attendance-note" data-id="${b.id}">Noter</button>
@@ -9182,6 +9346,7 @@
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Annuler cette réservation ?</h3>
           <p class="muted">${c ? escapeHtml(c.name) + ' · ' + (b?b.dateIso:'') : ''}</p>
+          ${(b && b.loan && b.loanKind && b.status==='confirmee') ? `<p style="font-size:13px;margin:8px 0;">${loanIcon(c)} Tu as un emprunt de matériel sur cette réservation.</p>${(b.loanKind==='fee' && (b.loanFeeMode==='online' || b.loanFeePaidAt)) ? '<p style="font-size:13px;margin:6px 0;">Si tu annules au moins 30 minutes avant, ton emprunt de 5 $ te revient sous forme de crédit pour un prochain emprunt.</p>' : ''}<div class="loan-warn">${LOAN_WARN_TEXT}</div>` : ''}
           ${(b && b.status==='confirmee' && (b.paidWithContribCredit || bookingContributionPaid(b))) ? '<p style="font-size:13px;margin:8px 0;">💚 Tu recevras un crédit de contribution, valable pour un autre cours à contribution volontaire.</p>' : ''}
           <div class="btn-row">
             <button class="btn btn-danger" data-action="confirm-cancel-booking-yes" data-id="${id}">Oui, annuler</button>
@@ -9189,6 +9354,27 @@
           </div>
         </div>
       `;
+    } else if(m.type === 'loan-fee'){
+      const lf = m.payload;
+      const lc = state.data.classes.find(cl=>cl.id===lf.classId);
+      html = `
+        <div class="modal ct-modal" style="--ct-acc:rgb(147,180,143);--ct-acc-bg:rgba(147,180,143,.12);">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>${loanIcon(lc)} Emprunt de matériel</h3>
+          <p class="muted">${lc ? escapeHtml(lc.name)+' · ' : ''}Tes ${LOAN_FREE} emprunts gratuits sont utilisés. Cet emprunt coûte <strong>${LOAN_FEE} $</strong>.</p>
+          <div class="loan-warn">${LOAN_WARN_TEXT}</div>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="loan-fee-online">🔒 Payer ${LOAN_FEE} $ en ligne</button>
+            <button class="btn btn-secondary" data-action="loan-fee-onsite">💵 Payer ${LOAN_FEE} $ sur place</button>
+          </div>
+          <div class="ct-or"><span>ou</span></div>
+          <div class="ct-pass">
+            <div class="ct-pass-t">Forfait de ${LOAN_BUNDLE_QTY} emprunts : ${fmtMoney(LOAN_BUNDLE_PRICE)}</div>
+            <div class="ct-pass-s">15 % de rabais. Chaque emprunt réduit ton forfait. <strong>Non remboursable ni créditable, en aucun cas.</strong></div>
+            <button class="btn btn-secondary" data-action="loan-bundle-buy">Acheter le forfait en ligne (${fmtMoney(LOAN_BUNDLE_PRICE)})</button>
+          </div>
+          <p style="margin-top:12px;"><button class="small-btn" data-action="loan-fee-skip">Réserver sans emprunter</button></p>
+        </div>`;
     } else if(m.type === 'contribution'){
       const ct = m.payload;
       const cc = state.data.classes.find(cl=>cl.id===ct.classId);
@@ -9248,6 +9434,7 @@
           ${when ? `<p class="muted">${when}</p>` : ''}
           ${bc.name ? `<p class="muted">Pour : ${escapeHtml(bc.name)}</p>` : ''}
           <p style="font-size:13px;margin-top:10px;">${sub}</p>
+          ${bc.loanMsg ? `<p style="font-size:13px;margin-top:6px;">${loanIcon(cc)} ${bc.loanMsg}</p><div class="loan-warn">${LOAN_WARN_TEXT}</div>` : ''}
           <div class="btn-row">
             ${bc.waitlist ? '' : `<button class="btn btn-primary" data-action="open-add-to-calendar" data-class="${escapeHtml(bc.classId)}" data-date="${escapeHtml(bc.dateIso)}">📅 Ajouter au calendrier</button>`}
             <button class="btn btn-secondary" data-action="close-modal">Fermer</button>
@@ -12773,6 +12960,50 @@
       const pl = state.modal.payload;
       await proceedBooking(pl.classId, pl.dateIso, pl.name, pl.email, true, pl.profileId, null, {mode:'pass', membershipId:e.currentTarget.dataset.mid});
     }
+    else if(action==='loan-fee-paid'){
+      const b = state.data.bookings.find(bk=>bk.id===id);
+      if(b && b.loanFeeDue){
+        e.currentTarget.disabled = true;
+        state.data.memberships.push({
+          id: uid(), planId:'contribution', planName:'Emprunt de matériel (sur place)', categories:[],
+          studentName:b.studentName, studentEmail:b.studentEmail, profileId:b.profileId||null,
+          type:'credits', status:'active', grantedFree:false, isContribution:true, loanFee:true, creditsRemaining:0,
+          planPrice: b.loanFeeDue.toFixed(2)+' $', fromBookingId:b.id, createdAt: Date.now()
+        });
+        b.loanFeePaidAt = Date.now(); b.loanFeeDue = 0;
+        await persist(); render();
+        showToast('Emprunt de 5 $ payé, ajouté aux ventes.');
+      }
+    }
+    else if(action==='loan-fee-onsite'){
+      const pl = state.modal.payload;
+      state.pendingLoan = {classId:pl.classId, dateIso:pl.dateIso, wanted:true, feeMode:'onsite'};
+      await proceedBooking(pl.classId, pl.dateIso, pl.name, pl.email, pl.isDuplicateConfirmed, pl.profileId, pl.membershipId||null);
+    }
+    else if(action==='loan-fee-skip'){
+      const pl = state.modal.payload;
+      state.pendingLoan = null;
+      await proceedBooking(pl.classId, pl.dateIso, pl.name, pl.email, pl.isDuplicateConfirmed, pl.profileId, pl.membershipId||null);
+    }
+    else if(action==='loan-fee-online'){
+      const pl = state.modal.payload;
+      await startLoanPayment('fee', {name:pl.name, email:pl.email, profileId:pl.profileId}, e.currentTarget, async (mid)=>{
+        state.pendingLoan = {classId:pl.classId, dateIso:pl.dateIso, wanted:true, feeMode:'online', feeMembershipId:mid};
+        await proceedBooking(pl.classId, pl.dateIso, pl.name, pl.email, pl.isDuplicateConfirmed, pl.profileId, pl.membershipId||null);
+      });
+    }
+    else if(action==='loan-bundle-buy'){
+      const pl = state.modal.payload;
+      await startLoanPayment('bundle', {name:pl.name, email:pl.email, profileId:pl.profileId}, e.currentTarget, async ()=>{
+        state.pendingLoan = {classId:pl.classId, dateIso:pl.dateIso, wanted:true};
+        await proceedBooking(pl.classId, pl.dateIso, pl.name, pl.email, pl.isDuplicateConfirmed, pl.profileId, pl.membershipId||null);
+      });
+    }
+    else if(action==='loan-bundle-buy-account'){
+      const acctL = state.studentSession ? findStudentAccount(state.studentSession.email) : null;
+      if(!acctL) return;
+      await startLoanPayment('bundle', {name:acctL.name, email:acctL.email, profileId:null}, e.currentTarget, async ()=>{ showToast('Forfait d’emprunts ajouté à ton compte.'); render(); });
+    }
     else if(action==='ct-credit'){
       const pl = state.modal.payload;
       e.currentTarget.disabled = true;
@@ -12794,6 +13025,7 @@
     else if(action==='submit-booking'){
       const classId = e.currentTarget.dataset.class;
       const dateIso = e.currentTarget.dataset.date;
+      { const lb = document.getElementById('b-loan'); state.pendingLoan = (lb && lb.checked) ? {classId, dateIso, wanted:true} : null; }
       if(state.studentSession){
         const sessAcct = findStudentAccount(state.studentSession.email);
         if(!sessAcct){ state.studentSession = null; await clearSessionStorage(); showToast('Session expirée, reconnectez-vous.'); render(); return; }
