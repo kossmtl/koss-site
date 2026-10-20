@@ -528,11 +528,11 @@
   function sharedItemContentFromEntry(entry){
     const base = {kind: entry.kind, category: entry.category||''};
     if(entry.kind === 'text'){
-      Object.assign(base, {text:entry.text, fontFamily:entry.fontFamily, color:entry.color, hAlign:entry.hAlign});
+      Object.assign(base, {text:entry.text, fontFamily:entry.fontFamily, fontSize:entry.fontSize, color:entry.color, hAlign:entry.hAlign});
     } else if(entry.kind === 'sticker'){
       Object.assign(base, {stickerId:entry.stickerId});
     } else {
-      Object.assign(base, {text:entry.text, color:entry.color, photo:entry.photo||null});
+      Object.assign(base, {text:entry.text, fontSize:entry.fontSize, color:entry.color, photo:entry.photo||null});
     }
     return base;
   }
@@ -568,10 +568,13 @@
       }, 400);
     });
   }
-  async function persistManagerMeta(){
-    if(!state.managerCode || !state.managerData) return;
-    const res = await rpcManagerAction(state.managerCode, 'save_meta', state.managerData.meta);
-    if(!res || !res.ok) showToast('Erreur de sauvegarde.');
+  // Actions ciblées sur la fiche « meta » (supprimer un bug, nom, code gestionnaire).
+  // Le serveur ne modifie que la partie concernée : un partage ou un bug arrivé entre-temps n'est jamais écrasé.
+  async function rpcManagerMetaAction(action, payload){
+    if(!state.managerCode) return {ok:false, error:'Non connecté.'};
+    const {data, error} = await sb.rpc('cvm_manager_meta_action', {p_code:state.managerCode, p_action:action, p_payload:payload});
+    if(error){ console.error(error); return {ok:false, error:'Erreur de connexion.'}; }
+    return data || {ok:false};
   }
 
   // ---------- Rendu ----------
@@ -776,7 +779,7 @@
             ${filtered.map(n=> n.kind==='text' ? `
               <div class="postit" style="background:transparent;box-shadow:none;border:1px dashed var(--border);font-family:${textnoteFontCss(n.fontFamily)};color:${n.color||TEXTNOTE_INK_COLORS[0]};">
                 <div class="postit-cat" style="color:var(--chalk-dim);">${escapeHtml(n.category)}</div>
-                <div class="postit-text">${escapeHtml(n.text)}</div>
+                <div class="postit-text" style="font-size:${n.fontSize||15}px;">${escapeHtml(n.text)}</div>
                 <div class="postit-actions">
                   <button data-action="goto-notebook-page" data-page="${n.page||1}">Page ${n.page||1}</button>
                   <button data-action="edit-entry" data-id="${n.id}">Modifier</button>
@@ -797,7 +800,7 @@
             })() : `
               <div class="postit" style="background:${n.color};">
                 <div class="postit-cat">${escapeHtml(n.category)}</div>
-                <div class="postit-text">${escapeHtml(n.text)}</div>
+                <div class="postit-text" style="font-size:${n.fontSize||15}px;">${escapeHtml(n.text)}</div>
                 ${n.photo ? `<img src="${n.photo}">` : ''}
                 ${fromTagHtml(n)}
                 <div class="postit-actions">
@@ -837,7 +840,7 @@
             return `
             <div class="postit postit-free ${n.id===state.notebookSelectedEntry?'selected':''} ${n.id===state.notebookTextSelectId?'text-select-mode':''}" data-id="${n.id}" style="left:${n.x||0}%;top:${n.y||0}%;transform:rotate(${n.rotation||0}deg);background:${n.color};width:${pSize}px;min-height:${Math.round(110*pScale)}px;">
               <div class="postit-cat" style="font-size:${(10*pScale).toFixed(1)}px;">${escapeHtml(n.category)}</div>
-              <div class="postit-text" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="font-size:${(15*pScale).toFixed(1)}px;">${escapeHtml(n.text)}</div>
+              <div class="postit-text" ${n.id===state.notebookTextSelectId?'contenteditable="true"':''} data-id="${n.id}" style="font-size:${((n.fontSize||15)*pScale).toFixed(1)}px;">${escapeHtml(n.text)}</div>
               ${n.photo ? `<img src="${n.photo}">` : ''}
               ${fromTagHtml(n)}
               ${state.notebookEditMode && n.id===state.notebookSelectedEntry ? `
@@ -1208,6 +1211,8 @@
             ${POSTIT_COLORS.map(c=>`<span class="sq-swatch" data-action="pick-postit-color" data-color="${c}" style="background:${c};border-color:${postitSwatchBorder(c,color===c)};"></span>`).join('')}
           </div>
           <input type="hidden" id="postit-color-value" value="${color}">
+          <label style="margin-top:10px;">Taille de la police (px)</label>
+          <input id="postit-fontsize" type="number" min="8" max="40" value="${entry ? (entry.fontSize||15) : 15}" style="width:90px;">
           ${entry ? `<label style="margin-top:10px;">Page (1 à ${maxPage})</label><input id="postit-page" type="number" min="1" max="${maxPage}" value="${currentPage}">` : ''}
           <label style="margin-top:10px;">Photo (optionnel)</label>
           <input type="file" id="postit-photo-file" accept="image/*">
@@ -1228,6 +1233,7 @@
       const paletteColors = textnotePaletteColors(paletteKey);
       const color = entry ? (entry.color||paletteColors[0]) : paletteColors[0];
       const hAlign = entry ? (entry.hAlign||'left') : 'left';
+      const fontSizeVal = entry ? (entry.fontSize||16) : 16;
       const currentPage = entry ? (entry.page||1) : (state.notebookActivePage||1);
       html = `
         <div class="modal">
@@ -1242,6 +1248,8 @@
           <select id="textnote-font">
             ${TEXTNOTE_FONTS.map(f=>`<option value="${f.key}" style="font-family:${f.css};" ${fontFamily===f.key?'selected':''}>${escapeHtml(f.label)}</option>`).join('')}
           </select>
+          <label style="margin-top:10px;">Taille de la police (px)</label>
+          <input id="textnote-fontsize" type="number" min="8" max="60" value="${fontSizeVal}" style="width:90px;">
           <label style="margin-top:10px;">Palette de couleurs</label>
           <div class="btn-row" id="textnote-palette-row" style="margin-top:0;">
             ${TEXTNOTE_PALETTES.map(p=>`<button type="button" class="small-btn textnote-palette-btn ${p.key===paletteKey?'active':''}" data-palette="${p.key}">${escapeHtml(p.label)}</button>`).join('')}
@@ -1838,7 +1846,7 @@
             wrap.style.width = pendingSize+'px';
             wrap.style.minHeight = Math.round(110*scale)+'px';
             const cat = wrap.querySelector('.postit-cat'); if(cat) cat.style.fontSize = (10*scale).toFixed(1)+'px';
-            const txt = wrap.querySelector('.postit-text'); if(txt) txt.style.fontSize = (15*scale).toFixed(1)+'px';
+            const txt = wrap.querySelector('.postit-text'); if(txt) txt.style.fontSize = ((entry.fontSize||15)*scale).toFixed(1)+'px';
           }
           else wrap.style.fontSize = pendingSize+'px';
         }
@@ -2179,18 +2187,19 @@
       const text = document.getElementById('postit-text').value.trim();
       const category = document.getElementById('postit-category-input').value.trim();
       const color = document.getElementById('postit-color-value').value;
+      const fontSize = Math.max(8, Math.min(40, parseInt(document.getElementById('postit-fontsize').value,10) || 15));
       if(!text){ markInvalid('postit-text'); showToast('La note ne peut pas être vide.'); return; }
       if(!category){ markInvalid('postit-category-input'); showToast('Choisis ou tape une catégorie.'); return; }
       if(id){
         const entry = state.data.entries.find(n=>n.id===id);
         if(entry){
-          entry.text=text; entry.category=category; entry.color=color;
+          entry.text=text; entry.category=category; entry.color=color; entry.fontSize=fontSize;
           if(pendingPostitPhoto) entry.photo = pendingPostitPhoto;
           const pageInput = document.getElementById('postit-page');
           if(pageInput){ const maxPage = nb.pageCount||1; entry.page = Math.max(1, Math.min(maxPage, parseInt(pageInput.value,10)||1)); }
         }
       } else {
-        state.data.entries.push({id:uid(), notebookId:nb.id, kind:'postit', page:state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), text, category, color, photo:pendingPostitPhoto||null, createdAt:Date.now()});
+        state.data.entries.push({id:uid(), notebookId:nb.id, kind:'postit', page:state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), text, category, color, fontSize, photo:pendingPostitPhoto||null, createdAt:Date.now()});
       }
       pendingPostitPhoto = null;
       await persist();
@@ -2216,18 +2225,19 @@
       const fontFamily = document.getElementById('textnote-font').value;
       const color = document.getElementById('textnote-color-value').value;
       const hAlign = document.getElementById('textnote-halign-value').value || 'left';
+      const fontSize = Math.max(8, Math.min(60, parseInt(document.getElementById('textnote-fontsize').value,10) || 16));
       const inkPalette = document.getElementById('textnote-palette-value').value || 'pastel';
       if(!text){ markInvalid('textnote-text'); showToast('La note ne peut pas être vide.'); return; }
       if(!category){ markInvalid('textnote-category-input'); showToast('Choisis ou tape une catégorie.'); return; }
       if(id){
         const entry = state.data.entries.find(n=>n.id===id);
         if(entry){
-          entry.text=text; entry.category=category; entry.fontFamily=fontFamily; entry.color=color; entry.hAlign=hAlign;
+          entry.text=text; entry.category=category; entry.fontFamily=fontFamily; entry.fontSize=fontSize; entry.color=color; entry.hAlign=hAlign;
           const pageInput = document.getElementById('textnote-page');
           if(pageInput){ const maxPage = nb.pageCount||1; entry.page = Math.max(1, Math.min(maxPage, parseInt(pageInput.value,10)||1)); }
         }
       } else {
-        state.data.entries.push({id:uid(), notebookId:nb.id, kind:'text', page:state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), text, category, fontFamily, fontSize:16, rotation:0, color, hAlign, createdAt:Date.now()});
+        state.data.entries.push({id:uid(), notebookId:nb.id, kind:'text', page:state.notebookActivePage||1, x:10+Math.round(Math.random()*40), y:10+Math.round(Math.random()*40), text, category, fontFamily, fontSize, rotation:0, color, hAlign, createdAt:Date.now()});
       }
       nb.inkPalette = inkPalette;
       await persist();
@@ -2295,7 +2305,7 @@
         id: uid(), notebookId: nb.id, page: state.notebookActivePage||1,
         x: 10+Math.round(Math.random()*40), y: 10+Math.round(Math.random()*40),
         size: item.kind==='sticker' ? 60 : undefined, rotation: 0,
-        fontSize: item.kind==='text' ? 16 : undefined, createdAt: Date.now(), shareId: item.id,
+        fontSize: item.fontSize || (item.kind==='text' ? 16 : undefined), createdAt: Date.now(), shareId: item.id,
       });
       delete entry.anonymous; delete entry.recipientType; delete entry.recipientName; delete entry.status; delete entry.decidedAt; delete entry.inappropriate;
       if(item.anonymous) delete entry.senderName; // une note anonyme reste anonyme
@@ -2626,10 +2636,12 @@
 
     // ---- Bugs ----
     if(action==='delete-bug'){
-      const md = state.managerData;
-      md.meta.bugReports = (md.meta.bugReports||[]).filter(b=>b.id!==id);
-      await persistManagerMeta();
-      render(); return;
+      const res = await rpcManagerMetaAction('delete_bug', {id});
+      if(res && res.ok){
+        state.managerData.meta.bugReports = (state.managerData.meta.bugReports||[]).filter(b=>b.id!==id);
+        render();
+      } else showToast((res&&res.error)||'Erreur de suppression.');
+      return;
     }
     if(action==='open-my-notebook'){
       showToast('Ouverture de ton carnet...');
@@ -2653,7 +2665,7 @@
         id: uid(), notebookId: nb.id, page: 1,
         x: 10+Math.round(Math.random()*40), y: 10+Math.round(Math.random()*40),
         size: item.kind==='sticker' ? 60 : undefined, rotation: 0,
-        fontSize: item.kind==='text' ? 16 : undefined, createdAt: Date.now(), shareId: item.id,
+        fontSize: item.fontSize || (item.kind==='text' ? 16 : undefined), createdAt: Date.now(), shareId: item.id,
       });
       delete entry.anonymous; delete entry.recipientType; delete entry.recipientName; delete entry.status; delete entry.decidedAt; delete entry.inappropriate;
       if(item.anonymous) delete entry.senderName;
@@ -2669,17 +2681,18 @@
     }
     if(action==='save-manager-name'){
       const nm = document.getElementById('mgr-name').value.trim();
+      const res = await rpcManagerMetaAction('set_manager_name', {name: nm});
+      if(!(res && res.ok)){ showToast((res&&res.error)||'Erreur de sauvegarde.'); return; }
       state.managerData.meta.managerName = nm;
-      await persistManagerMeta();
       showToast(nm ? 'Nom enregistré : tes notes seront signées « '+nm+' ».' : 'Nom retiré : tes notes seront signées « Prof ».');
       return;
     }
     if(action==='change-manager-code'){
       const newCode = document.getElementById('new-mgr-code').value.trim();
       if(!newCode){ markInvalid('new-mgr-code'); return; }
-      const md = state.managerData;
-      md.meta.managerCode = newCode;
-      await persistManagerMeta();
+      const res = await rpcManagerMetaAction('set_manager_code', {code: newCode});
+      if(!(res && res.ok)){ showToast((res&&res.error)||'Erreur : le code n’a pas été changé.'); return; }
+      state.managerData.meta.managerCode = newCode;
       state.managerCode = newCode; storeManagerCode(newCode);
       showToast('Code gestionnaire changé.');
       return;
