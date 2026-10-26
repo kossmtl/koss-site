@@ -1956,7 +1956,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-10-20-yoga';
+  const APP_BUILD = '2026-10-26-sante';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -5650,6 +5650,151 @@
       pendingPayAttempted = true;
       setTimeout(()=>{ maybeResumePendingPayment(); }, 0);
     }
+
+    ensureHealthGate();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // MESSAGE SANTÉ OBLIGATOIRE (26 oct. 2026, demande d'Amélie) — maladies de peau / contagion.
+  // S'affiche à l'ouverture de l'app, par-dessus tout, SANS bouton pour fermer. Pour continuer :
+  // (1) envoyer le message dans la boîte courriel de la personne (fonction Supabase
+  // koss-send-health-notice, via Resend), (2) cocher les 2 cases. Une seule fois par personne :
+  // mémorisé dans localStorage (appareil) ET sur le compte élève (healthNoticeV/At/Email) quand
+  // une session est active. Pour obliger tout le monde à le relire (texte modifié) : monter
+  // HEALTH_NOTICE_VERSION. L'overlay est un élément indépendant de render() (pas dans state.modal),
+  // donc un re-rendu ne le détruit pas et ne fait pas perdre le courriel en cours de saisie.
+  const HEALTH_NOTICE_VERSION = 1;
+  const HEALTH_LS_KEY = 'koss_health_notice_v';
+  function healthNoticeAccepted(){
+    try{ if(Number(localStorage.getItem(HEALTH_LS_KEY)) >= HEALTH_NOTICE_VERSION) return true; }catch(err){}
+    if(state.studentSession && state.data && state.data.studentAccounts){
+      const a = findStudentAccount(state.studentSession.email);
+      if(a && Number(a.healthNoticeV) >= HEALTH_NOTICE_VERSION) return true;
+    }
+    return false;
+  }
+  const HEALTH_NOTICE_BODY_HTML = `
+    <p>Bonjour à tous,</p>
+    <p>Comme vous avez pu tous déjà le constater, au BJJ, on partage tout : le contact, les tatamis, la sueur et l’air de la salle. C’est ce qui rend la pratique si belle, mais ça veut aussi dire que les <b>maladies de peau et autres infections</b> (teigne, impétigo, gale, molluscum, verrues, herpès, staph/SARM) ainsi que les virus (grippe, COVID, gastro, etc.) se transmettent facilement… <b>TRÈS FACILEMENT.</b></p>
+    <p>Afin d’éviter que le gym ne devienne un incubateur infectieux, voici ce qu’on te demande :</p>
+    <ul>
+      <li>Si tu as une lésion, une rougeur, des plaques ou un bouton suspect : <b>ne viens pas</b> et consulte.</li>
+      <li>Si tu es malade (fièvre, toux, gastro…) : reste chez toi.</li>
+      <li>Vêtements propres avant chaque cours; ongles courts.</li>
+      <li>Conserve une bonne hygiène en tout temps.</li>
+      <li>Avise-moi dès que tu as un diagnostic (ou même juste un doute) contagieux : je le garde confidentiel, mais je dois pouvoir protéger les autres.</li>
+    </ul>
+    <div class="hg-warn">
+      <div class="hg-wt"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E2725B" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M12 3L2 21h20L12 3z"/><path d="M12 10v5M12 18h.01"/></svg>Important</div>
+      Mon bébé se promène sur les tatamis et interagit avec tout le monde. Je compte sur ton bon sens : si tu as le moindre doute, ne viens pas et avise-moi. Merci de la protéger, elle aussi.
+    </div>
+    <p>Je pense que tu peux comprendre que ces mesures ne sont pas optionnelles. Elles sont obligatoires pour toi ou pour ton enfant (si c’est lui qui s’entraîne avec nous).</p>
+    <p>Merci de ta collaboration,<br><b>Amélie</b> · K-OSS</p>`;
+  const HEALTH_GATE_CSS = `
+    #health-gate{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.86);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 12px 28px;}
+    #health-gate .hg-panel{max-width:480px;margin:0 auto;background:#3C2F30;border:3px solid #AB4E45;border-radius:16px;padding:22px 18px;color:var(--chalk);font-family:var(--font-b);}
+    #health-gate h3{font-family:var(--font-d);font-size:23px;margin:0 0 4px;color:var(--chalk);}
+    #health-gate .hg-sub{color:#D4BDBA;font-size:13px;margin-bottom:14px;}
+    #health-gate p{font-size:14.5px;line-height:1.55;margin:0 0 12px;}
+    #health-gate ul{margin:0 0 12px;padding-left:20px;font-size:14.5px;line-height:1.55;}
+    #health-gate .hg-warn{background:rgba(226,114,91,.14);border:1.5px solid var(--coral);border-radius:10px;padding:12px;font-size:14px;line-height:1.5;margin:14px 0;}
+    #health-gate .hg-wt{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-family:var(--font-d);font-size:17px;font-weight:600;color:var(--coral);}
+    #health-gate .hg-box{background:rgba(0,0,0,.2);border:1px solid #5C4443;border-radius:12px;padding:14px;margin-top:16px;}
+    #health-gate .hg-box h4{font-family:var(--font-d);font-size:16px;margin:0 0 8px;font-weight:600;color:var(--amber);}
+    #health-gate input[type=email]{width:100%;box-sizing:border-box;background:#2A2A2A;border:1px solid #5C4443;border-radius:8px;padding:11px;color:var(--chalk);font-size:16px;font-family:inherit;}
+    #health-gate input[type=email]:read-only{opacity:.75;}
+    #health-gate .hg-send{margin-top:10px;width:100%;box-sizing:border-box;padding:11px;border-radius:8px;border:1px solid var(--amber);background:transparent;color:var(--amber);font-family:var(--font-d);font-size:14px;cursor:pointer;}
+    #health-gate .hg-send:disabled{opacity:.5;cursor:default;}
+    #health-gate .hg-msg{font-size:12.5px;margin-top:8px;min-height:16px;}
+    #health-gate .hg-msg.ok{color:#93B48F;} #health-gate .hg-msg.err{color:#E2725B;}
+    #health-gate label.hg-c{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.45;margin-top:12px;cursor:pointer;}
+    #health-gate label.hg-c input{position:absolute;opacity:0;pointer-events:none;}
+    #health-gate .hg-cb{flex:0 0 22px;height:22px;border:2px solid var(--amber);border-radius:5px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#28292E;}
+    #health-gate label.hg-c input:checked + .hg-cb{background:var(--amber);}
+    #health-gate label.hg-c input:checked + .hg-cb::after{content:"✓";}
+    #health-gate label.hg-c input:focus-visible + .hg-cb{outline:2px solid #fff;outline-offset:2px;}
+    #health-gate .hg-go{margin-top:18px;width:100%;box-sizing:border-box;padding:14px;border-radius:10px;border:0;font-family:var(--font-d);font-size:16px;letter-spacing:.03em;background:#4A3D3D;color:#a38a86;cursor:default;}
+    #health-gate .hg-go.ready{background:var(--amber);color:#28292E;cursor:pointer;}
+    #health-gate .hg-hint{text-align:center;color:#D4BDBA;font-size:11.5px;margin-top:8px;}`;
+  function ensureHealthGate(){
+    const existing = document.getElementById('health-gate');
+    const needed = !!state.data && !ADMIN_URL_FLAG && !state.adminUnlocked && !healthNoticeAccepted();
+    if(!needed){
+      if(existing){ existing.remove(); document.body.style.overflow = ''; }
+      return;
+    }
+    if(existing) return; // déjà affiché : on ne touche à rien (garde le courriel en cours de saisie)
+    if(!document.getElementById('health-gate-css')){
+      const st = document.createElement('style'); st.id = 'health-gate-css'; st.textContent = HEALTH_GATE_CSS;
+      document.head.appendChild(st);
+    }
+    const g = document.createElement('div');
+    g.id = 'health-gate';
+    g.setAttribute('role','dialog'); g.setAttribute('aria-modal','true'); g.setAttribute('aria-labelledby','hg-title');
+    const prefill = state.studentSession ? state.studentSession.email : '';
+    g.innerHTML = `
+      <div class="hg-panel">
+        <h3 id="hg-title">Un mot sur la santé de nos tatamis</h3>
+        <div class="hg-sub">Message important · à lire en entier pour continuer</div>
+        ${HEALTH_NOTICE_BODY_HTML}
+        <div class="hg-box">
+          <h4>Reçois une copie de ce message</h4>
+          <p style="font-size:13px;margin-bottom:10px;">Pour continuer, ce message doit être envoyé dans ta boîte courriel. Entre ton adresse :</p>
+          <input type="email" id="hg-email" autocomplete="email" inputmode="email" placeholder="ton.courriel@exemple.com" value="${escapeHtml(prefill)}">
+          <button type="button" class="hg-send" id="hg-send">Envoyer le message à cette adresse</button>
+          <div class="hg-msg" id="hg-msg" aria-live="polite"></div>
+        </div>
+        <label class="hg-c"><input type="checkbox" id="hg-c1"><span class="hg-cb"></span><span>Je comprends les risques de contagion liés à la pratique de ce sport.</span></label>
+        <label class="hg-c"><input type="checkbox" id="hg-c2"><span class="hg-cb"></span><span>Je comprends que je dois aviser Amélie en cas de maladie contagieuse, de toute forme, qui aurait pu être transmise aux autres participants, et je comprends que cette information sera gérée de façon confidentielle.</span></label>
+        <button type="button" class="hg-go" id="hg-go" disabled>J’AI LU ET JE CONTINUE</button>
+        <div class="hg-hint" id="hg-hint">Le bouton s’active quand le courriel est envoyé et que les 2 cases sont cochées.</div>
+      </div>`;
+    document.body.appendChild(g);
+    document.body.style.overflow = 'hidden';
+    g.scrollTop = 0;
+
+    const emailEl = g.querySelector('#hg-email'), sendBtn = g.querySelector('#hg-send'), msgEl = g.querySelector('#hg-msg');
+    const c1 = g.querySelector('#hg-c1'), c2 = g.querySelector('#hg-c2'), goBtn = g.querySelector('#hg-go');
+    let sentTo = '';
+    const setMsg = (txt, cls)=>{ msgEl.textContent = txt; msgEl.className = 'hg-msg' + (cls ? ' '+cls : ''); };
+    const refresh = ()=>{
+      const ready = !!sentTo && sentTo === emailEl.value.trim().toLowerCase() && c1.checked && c2.checked;
+      goBtn.disabled = !ready; goBtn.classList.toggle('ready', ready);
+    };
+    emailEl.addEventListener('input', ()=>{
+      if(sentTo && sentTo !== emailEl.value.trim().toLowerCase()){ sentTo = ''; setMsg('', ''); }
+      refresh();
+    });
+    c1.addEventListener('change', refresh); c2.addEventListener('change', refresh);
+    sendBtn.addEventListener('click', async ()=>{
+      const email = emailEl.value.trim().toLowerCase();
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){ setMsg('Entre une adresse courriel valide.', 'err'); emailEl.focus(); return; }
+      sendBtn.disabled = true; setMsg('Envoi en cours…', '');
+      try{
+        const { data, error } = await sb.functions.invoke('koss-send-health-notice', { body: { email } });
+        if(error || !data || data.ok !== true) throw (error || new Error('réponse invalide'));
+        sentTo = email;
+        setMsg('✓ Message envoyé à ' + email + ' (vérifie aussi tes courriels indésirables).', 'ok');
+      }catch(err){
+        console.error('Échec envoi du message santé:', err);
+        sentTo = '';
+        setMsg('L’envoi a échoué. Vérifie l’adresse et ta connexion, puis réessaie.', 'err');
+      }
+      sendBtn.disabled = false; refresh();
+    });
+    goBtn.addEventListener('click', ()=>{
+      if(goBtn.disabled) return;
+      const email = sentTo;
+      try{ localStorage.setItem(HEALTH_LS_KEY, String(HEALTH_NOTICE_VERSION)); }catch(err){}
+      if(state.studentSession && state.data){
+        const a = findStudentAccount(state.studentSession.email);
+        if(a){
+          a.healthNoticeV = HEALTH_NOTICE_VERSION; a.healthNoticeAt = Date.now(); a.healthNoticeEmail = email;
+          try{ persist(); }catch(err){ console.error('Échec enregistrement acceptation message santé:', err); }
+        }
+      }
+      g.remove(); document.body.style.overflow = '';
+    });
   }
 
   // Nom court pour le coin en haut à droite de l'en-tête (demande explicite d'Amélie, S28) :
