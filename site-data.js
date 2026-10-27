@@ -96,7 +96,35 @@
     "classes", "instructeurs", "prix", "a-propos"
   ];
 
-  function cleanHashUrl() {
+  // CORRECTIF (27 oct. 2026) : quand on ARRIVE sur une page avec un # (clic du menu depuis une
+  // autre page, ou /prix/, /instructeurs/… qui redirigent vers a-propos.html#prix), cleanHashUrl()
+  // retirait le # de l'adresse AVANT que le navigateur fasse son défilement automatique vers la
+  // section — résultat : la page restait tout en haut. (Sur la même page, le clic marchait, car le
+  // navigateur défile avant la réécriture.) On défile donc nous-mêmes vers la section après le
+  // chargement, une seconde fois peu après (les images/vidéos peuvent décaler la mise en page), et
+  // seulement si la personne n'a pas déjà commencé à défiler.
+  function scrollToSectionAfterLoad(slug) {
+    var userMoved = false;
+    var mark = function () { userMoved = true; };
+    ["wheel", "touchstart", "keydown", "mousedown"].forEach(function (ev) {
+      window.addEventListener(ev, mark, { passive: true, once: true });
+    });
+    var go = function () {
+      if (userMoved) return;
+      var el = document.getElementById(slug);
+      if (!el) return;
+      var root = document.documentElement, prev = root.style.scrollBehavior;
+      root.style.scrollBehavior = "auto";
+      el.scrollIntoView({ block: "start" });
+      root.style.scrollBehavior = prev;
+    };
+    if (document.readyState === "complete") { go(); }
+    else { window.addEventListener("load", go); }
+    window.addEventListener("load", function () { setTimeout(go, 500); });
+    setTimeout(go, 1500);
+  }
+
+  function cleanHashUrl(isInitial) {
     // Pages dans un sous-dossier (ex. /muaythai/) : on ne réécrit pas l'adresse,
     // « #horaire » y désigne la section de CETTE page, pas la page /horaire.
     if (document.documentElement.hasAttribute("data-no-clean-hash")) return;
@@ -105,10 +133,11 @@
     var cleanPath = "/" + slug;
     if (window.location.pathname === cleanPath) return;
     window.history.replaceState(null, "", cleanPath + window.location.search);
+    if (isInitial === true) scrollToSectionAfterLoad(slug);
   }
 
-  cleanHashUrl();
-  window.addEventListener("hashchange", cleanHashUrl);
+  cleanHashUrl(true);
+  window.addEventListener("hashchange", function () { cleanHashUrl(false); });
 
   // data.txt est toujours à la racine du site, même si cette page est dans un sous-dossier.
   var DATA_URL = "data.txt";
