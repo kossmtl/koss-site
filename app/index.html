@@ -383,6 +383,14 @@
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th{text-align:left;color:var(--chalk-dim);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--border);font-family:var(--font-d);font-size:12px;}
   td{padding:8px;border-bottom:1px solid var(--border);}
+  /* Cellulaire (2 nov. 2026) : les tableaux admin d\u00e9passaient du cadre. Ils restent dans leur carte
+     et d\u00e9filent lat\u00e9ralement si n\u00e9cessaire; cellules plus serr\u00e9es pour qu'ils tiennent le plus souvent. */
+  @media (max-width:640px){
+    table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;font-size:12.5px;}
+    th{padding:6px 5px;}
+    td{padding:7px 5px;}
+    td .small-btn, td .btn{white-space:nowrap;}
+  }
   .badge{
     display:inline-block;
     padding:2px 8px;
