@@ -2989,6 +2989,56 @@
     }
   }
 
+  // ===== R\u00e9servation r\u00e9p\u00e9t\u00e9e (2 nov. 2026, demande d'Am\u00e9lie) =====
+  // Un parent peut r\u00e9server le m\u00eame cours pour les N semaines suivantes (max REPEAT_MAX).
+  // La premi\u00e8re date passe par proceedBooking normalement (consentement, abonnement, emprunt);
+  // les suivantes sont cr\u00e9\u00e9es au m\u00eame endroit (une seule persist) avec le m\u00eame abonnement.
+  const REPEAT_MAX = 8;
+  function repeatEligible(c){
+    return !!(c && !isManagerContext() && !isProgramClass(c) && !isContributionClass(c) && c.category!=='parents_enfants');
+  }
+  function repeatDates(dateIso, n){
+    const out = [];
+    for(let k=1;k<=n;k++) out.push(addDaysIsoFrom(dateIso, 7*k));
+    return out;
+  }
+  function repeatPreviewHtml(c, dateIso, n){
+    if(!(n>=1)) return '';
+    return repeatDates(dateIso, n).map(d=>{
+      const eff = getEffectiveClass(c, d);
+      return eff.cancelled
+        ? '<span class="no" style="color:var(--coral);">\u2717</span> '+formatShortDate(d)+' <span style="color:var(--chalk-dim);">(annul\u00e9)</span>'
+        : '<span style="color:var(--sage);">\u2713</span> '+formatShortDate(d);
+    }).join(' \u00b7 ');
+  }
+  function applyRepeatBookings(c, firstBooking, membership, rep){
+    const results = [{dateIso:firstBooking.dateIso, status: firstBooking.status==='liste_attente'?'wait':'ok'}];
+    let creditsStopped = false;
+    for(const d of repeatDates(firstBooking.dateIso, rep.n)){
+      const eff = getEffectiveClass(c, d);
+      if(eff.cancelled){ results.push({dateIso:d, status:'skip', reason:'cours annul\u00e9'}); continue; }
+      const dup = state.data.bookings.some(b=> b.classId===c.id && b.dateIso===d &&
+        b.studentEmail.toLowerCase()===firstBooking.studentEmail.toLowerCase() &&
+        (b.profileId||null)===(firstBooking.profileId||null) && ACTIVE_STATUSES.includes(b.status));
+      if(dup){ results.push({dateIso:d, status:'skip', reason:'d\u00e9j\u00e0 r\u00e9serv\u00e9'}); continue; }
+      if(membership && membership.endDate && membership.endDate < d){ results.push({dateIso:d, status:'skip', reason:'abonnement expir\u00e9'}); continue; }
+      const full = bookedCount(c.id, d) >= (eff.capacity||c.capacity);
+      if(!full && membership && membership.type==='credits' && membership.creditsRemaining <= 0){
+        creditsStopped = true; results.push({dateIso:d, status:'skip', reason:'plus de cr\u00e9dits'}); continue;
+      }
+      state.data.bookings.push({
+        id: uid(), classId:c.id, dateIso:d,
+        studentName:firstBooking.studentName, studentEmail:firstBooking.studentEmail, profileId:firstBooking.profileId||null,
+        status: full ? 'liste_attente' : 'confirmee',
+        membershipId: membership ? membership.id : null,
+        createdAt: Date.now()
+      });
+      if(!full && membership && membership.type==='credits') membership.creditsRemaining = Math.max(0, membership.creditsRemaining-1);
+      results.push({dateIso:d, status: full?'wait':'ok'});
+    }
+    return {results, creditsLeft: (membership && membership.type==='credits') ? membership.creditsRemaining : null, creditsStopped};
+  }
+
   async function proceedBooking(classId, dateIso, name, email, isDuplicateConfirmed, profileId, membershipId, contrib){
     const c = state.data.classes.find(cl=>cl.id===classId);
     if(!c){ showToast('Ce cours n\u2019existe plus.'); return; }
@@ -3162,13 +3212,19 @@
       membership.creditsRemaining = Math.max(0, membership.creditsRemaining - 1);
     }
     state.pendingLoan = null;
+    let repeatInfo = null;
+    { const rep = state.pendingRepeat;
+      state.pendingRepeat = null;
+      if(rep && rep.classId===classId && rep.dateIso===dateIso && rep.n>=1 && repeatEligible(c) && !isManagerContext()){
+        repeatInfo = applyRepeatBookings(c, booking, membership, rep);
+      } }
     await persist();
     state.modal = null; closeModalDom();
     render();
     if(isManagerContext()){
       showToast(full ? 'Ajout\u00e9 \u00e0 la liste d\u2019attente.' : (isDuplicateConfirmed ? 'Deuxi\u00e8me r\u00e9servation confirm\u00e9e !' : 'R\u00e9servation confirm\u00e9e !'));
     } else {
-      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false, contribOnsite: (contrib && contrib.mode==='onsite' && !full) ? contrib.amount : null, contribPaid: (contrib && contrib.mode==='online' && !full) ? contrib.amount : null, contribIncluded: !!(contrib && contrib.mode==='included' && !full), loanMsg: !loanInfo ? '' : (loanInfo.wanted ? 'Ton emprunt de matériel est noté : il sera confirmé si une place se libère.' : loanInfo.kind==='free' ? 'Emprunt de matériel gratuit noté.' : loanInfo.kind==='bundle' ? 'Emprunt noté : 1 emprunt retiré de ton forfait.' : (loanInfo.mode==='online' ? 'Emprunt noté : 5 $ payés en ligne.' : 'Emprunt noté : 5 $ à payer sur place.')), contribCredit: !!(contrib && contrib.mode==='credit' && !full), contribPass: !!(contrib && contrib.mode==='pass' && !full)}};
+      state.modal = {type:'booking-confirmed', payload:{classId, dateIso, name, waitlist: !!full, program:false, contribOnsite: (contrib && contrib.mode==='onsite' && !full) ? contrib.amount : null, contribPaid: (contrib && contrib.mode==='online' && !full) ? contrib.amount : null, contribIncluded: !!(contrib && contrib.mode==='included' && !full), loanMsg: !loanInfo ? '' : (loanInfo.wanted ? 'Ton emprunt de matériel est noté : il sera confirmé si une place se libère.' : loanInfo.kind==='free' ? 'Emprunt de matériel gratuit noté.' : loanInfo.kind==='bundle' ? 'Emprunt noté : 1 emprunt retiré de ton forfait.' : (loanInfo.mode==='online' ? 'Emprunt noté : 5 $ payés en ligne.' : 'Emprunt noté : 5 $ à payer sur place.')), contribCredit: !!(contrib && contrib.mode==='credit' && !full), contribPass: !!(contrib && contrib.mode==='pass' && !full), repeatInfo}};
       render();
     }
   }
@@ -8532,10 +8588,23 @@
             <p style="font-size:11px;color:var(--chalk-dim);margin-top:4px;">Ce mot de passe protège votre compte, et vous resterez connecté pour vos prochaines réservations.</p>
           `}
           ${(acct || m.payload.authChoice) ? loanBoxHtml(c, acct, m.payload.selectedProfileId||null) : ''}
+          ${(acct && repeatEligible(c) && !(myBookings.length)) ? (()=>{
+            const rOn = !!m.payload.repeatOn;
+            const rN = Math.min(REPEAT_MAX, Math.max(1, parseInt(m.payload.repeatN,10)||4));
+            const dn = DAYS[c.dayOfWeek].toLowerCase()+'s';
+            return `<div class="loan-box" id="b-repeat-box">
+              <label style="display:flex;gap:10px;align-items:center;cursor:pointer;font-size:13.5px;font-weight:700;margin:0;"><input type="checkbox" id="b-repeat-on" style="width:auto;" ${rOn?'checked':''}> Répéter cette réservation</label>
+              <div id="b-repeat-more" style="${rOn?'':'display:none;'}">
+                <div style="display:flex;align-items:center;gap:8px;margin:10px 0 0 26px;font-size:13.5px;">Pour les <input id="b-repeat-n" type="number" min="1" max="${REPEAT_MAX}" value="${rN}" inputmode="numeric" style="width:64px;text-align:center;"> ${dn} suivants</div>
+                <div id="b-repeat-dates" style="margin:8px 0 0 26px;font-size:12.5px;line-height:1.7;">${repeatPreviewHtml(c, dateIso, rN)}</div>
+                <div class="loan-sub">Maximum ${REPEAT_MAX} semaines. Les cours annulés sont sautés, un cours complet te met sur la liste d’attente pour cette date. ${acct ? '' : ''}Chaque cours utilise 1 crédit si tu as une passe.</div>
+              </div>
+            </div>`;
+          })() : ''}
           ${(acct || m.payload.authChoice) ? `
           <div class="btn-row">
-            <button class="btn btn-primary" data-action="submit-booking" data-class="${classId}" data-date="${dateIso}">
-              ${full ? 'Rejoindre la liste d\u2019attente' : 'Réserver ma place'}
+            <button class="btn btn-primary" id="b-submit-btn" data-action="submit-booking" data-class="${classId}" data-date="${dateIso}">
+              ${full ? 'Rejoindre la liste d\u2019attente' : ((m.payload.repeatOn && repeatEligible(c) && acct) ? 'Réserver '+(1+Math.min(REPEAT_MAX, Math.max(1, parseInt(m.payload.repeatN,10)||4)))+' places' : 'Réserver ma place')}
             </button>
             <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
           </div>
@@ -9584,7 +9653,10 @@
       const bc = m.payload;
       const cc = state.data.classes.find(cl=>cl.id===bc.classId);
       const when = cc ? formatFullClassDateTime(bc.dateIso, cc.time, cc.durationMinutes) : '';
-      const head = bc.waitlist ? '⏳ Vous êtes sur la liste d’attente' : (bc.program ? '✅ Votre inscription est confirmée' : '✅ Votre réservation est confirmée');
+      const ri = bc.repeatInfo;
+      const riOk = ri ? ri.results.filter(x=>x.status==='ok').length : 0;
+      const riWait = ri ? ri.results.filter(x=>x.status==='wait').length : 0;
+      const head = ri ? (riOk ? '✅ '+riOk+' réservation'+(riOk>1?'s':'')+' confirmée'+(riOk>1?'s':'') : '⏳ Liste d’attente') : bc.waitlist ? '⏳ Vous êtes sur la liste d’attente' : (bc.program ? '✅ Votre inscription est confirmée' : '✅ Votre réservation est confirmée');
       const sub = bc.waitlist
         ? 'Ce cours est complet. Vous serez inscrit automatiquement si une place se libère.'
         : (bc.contribOnsite ? `À bientôt sur les tapis ! N’oubliez pas votre contribution de <strong>${fmtMoney(bc.contribOnsite)}</strong> à payer sur place. Merci de soutenir nos instructeurs bénévoles 💚`
@@ -9598,8 +9670,17 @@
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>${head}</h3>
           ${cc ? `<p style="font-size:15px;font-weight:700;margin:6px 0 2px;">${escapeHtml(cc.name)}</p>` : ''}
-          ${when ? `<p class="muted">${when}</p>` : ''}
-          ${bc.name ? `<p class="muted">Pour : ${escapeHtml(bc.name)}</p>` : ''}
+          ${when && !ri ? `<p class="muted">${when}</p>` : ''}
+          ${bc.name ? `<p class="muted">Pour : ${escapeHtml(bc.name)}${ri && cc ? ' · tous les '+DAYS[cc.dayOfWeek].toLowerCase()+'s, '+escapeHtml(cc.time) : ''}</p>` : ''}
+          ${ri ? `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:10px 0;font-size:13px;line-height:1.7;">${ri.results.map(x=>{
+              const d = new Date(x.dateIso+'T12:00:00');
+              const lbl = DAYS[(d.getDay()+6)%7].slice(0,3)+'. '+formatShortDate(x.dateIso);
+              return x.status==='ok' ? '<span style="color:var(--sage);">✓</span> '+lbl
+                : x.status==='wait' ? '<span style="color:var(--amber);">⏳</span> '+lbl+' <span style="color:var(--chalk-dim);">— liste d’attente</span>'
+                : '<span style="color:var(--coral);">✗</span> '+lbl+' <span style="color:var(--chalk-dim);">— '+escapeHtml(x.reason||'sauté')+'</span>';
+            }).join('<br>')}</div>
+            ${ri.creditsLeft!=null ? `<p style="font-size:13px;">${ri.creditsLeft} cours restant${ri.creditsLeft>1?'s':''} sur ta passe.</p>` : ''}
+            ${ri.creditsStopped ? '<p style="font-size:13px;color:var(--coral);">Ta passe n’avait pas assez de crédits pour toutes les dates. Tu peux en acheter une nouvelle pour réserver le reste.</p>' : ''}` : ''}
           <p style="font-size:13px;margin-top:10px;">${sub}</p>
           ${bc.loanMsg ? `<p style="font-size:13px;margin-top:6px;">${loanIcon(cc)} ${bc.loanMsg}</p><div class="loan-warn">${LOAN_WARN_TEXT}</div>` : ''}
           <div class="btn-row">
@@ -13198,9 +13279,16 @@
           if(!chosen){ const bx = document.getElementById('b-loan-box'); if(bx){ bx.style.borderColor='var(--coral)'; bx.scrollIntoView({block:'center'}); } showToast('Indique si tu as besoin d’emprunter du matériel.'); return; }
           state.pendingLoan = (chosen.value==='yes') ? {classId, dateIso, wanted:true} : null;
         } else { state.pendingLoan = null; } }
+      state.pendingRepeat = null;
       if(state.studentSession){
         const sessAcct = findStudentAccount(state.studentSession.email);
         if(!sessAcct){ state.studentSession = null; await clearSessionStorage(); showToast('Session expirée, reconnectez-vous.'); render(); return; }
+        { const rOnEl = document.getElementById('b-repeat-on');
+          if(rOnEl && rOnEl.checked){
+            const rn = parseInt((document.getElementById('b-repeat-n')||{}).value,10);
+            if(!(rn>=1 && rn<=REPEAT_MAX)){ markInvalid('b-repeat-n'); showToast('Choisis un nombre de semaines entre 1 et '+REPEAT_MAX+'.'); return; }
+            state.pendingRepeat = {classId, dateIso, n:rn};
+          } }
         const profileSelect = document.getElementById('b-profile');
         const profileId = profileSelect ? (profileSelect.value || null) : null;
         const cForCheck = state.data.classes.find(cl=>cl.id===classId);
@@ -16031,6 +16119,26 @@
   document.addEventListener('keydown', (e)=>{
     if(e.key==='Enter' && e.target && e.target.id==='mc-search'){ e.preventDefault(); const b = document.querySelector('[data-action="mc-search"]'); if(b) b.click(); }
   });
+  // R\u00e9servation r\u00e9p\u00e9t\u00e9e : mise \u00e0 jour en direct des dates et du bouton (d\u00e9l\u00e9gu\u00e9, survit aux re-rendus).
+  function repeatUiSync(){
+    try{
+      const m = state.modal;
+      if(!m || m.type!=='book-class') return;
+      const on = document.getElementById('b-repeat-on'); if(!on) return;
+      const nEl = document.getElementById('b-repeat-n');
+      let n = parseInt(nEl && nEl.value,10);
+      m.payload.repeatOn = on.checked;
+      if(n>=1) m.payload.repeatN = Math.min(REPEAT_MAX, n);
+      const more = document.getElementById('b-repeat-more'); if(more) more.style.display = on.checked ? '' : 'none';
+      const c = getEffectiveClass(state.data.classes.find(cl=>cl.id===m.payload.classId), m.payload.dateIso);
+      const dEl = document.getElementById('b-repeat-dates');
+      if(dEl) dEl.innerHTML = (n>=1 && n<=REPEAT_MAX) ? repeatPreviewHtml(c, m.payload.dateIso, n) : '<span style="color:var(--coral);">Entre un nombre entre 1 et '+REPEAT_MAX+'.</span>';
+      const btn = document.getElementById('b-submit-btn');
+      if(btn && !btn.textContent.includes('attente')) btn.textContent = (on.checked && n>=1 && n<=REPEAT_MAX) ? 'Réserver '+(1+n)+' places' : 'Réserver ma place';
+    }catch(err){}
+  }
+  document.addEventListener('input', (e)=>{ if(e.target && (e.target.id==='b-repeat-n')) repeatUiSync(); });
+  document.addEventListener('change', (e)=>{ if(e.target && (e.target.id==='b-repeat-on' || e.target.id==='b-repeat-n')) repeatUiSync(); });
   document.addEventListener('click', (e)=>{
     let changed = false;
     if((state.accountMenuOpen || state.managerMenuOpen || state.headerMembershipMenuOpen) && !e.target.closest('.account-corner')){
