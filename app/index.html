@@ -1563,12 +1563,17 @@
     // déclencher l'annulation normale, et il ne doit pas s'afficher comme "Paiement à faire".
     {
       const cutoff = Date.now() - 2*60*60*1000;
-      const before = state.data.memberships.length;
-      // Une demande envoyée par une gestionnaire (adminRequest) n'est PAS un brouillon : elle reste
-      // 30 jours. Seuls les brouillons ouverts par l'élève (Helcim) sont nettoyés après 2 h.
+      // 3 nov. 2026 : on ne SUPPRIME plus ces brouillons (un paiement Helcim r\u00e9ussi dont la
+      // confirmation a \u00e9chou\u00e9 disparaissait sans laisser de trace : pay\u00e9 chez Helcim, absent des ventes).
+      // On les marque annul\u00e9s et masqu\u00e9s (abandonDraftMembership) : ils restent retrouvables dans
+      // \u00ab Afficher les abonnements masqu\u00e9s \u00bb (drapeau staleDraft).
+      // Une demande envoy\u00e9e par une gestionnaire (adminRequest) n'est PAS un brouillon : elle reste 30 jours.
       const cutoffAdmin = Date.now() - 30*24*60*60*1000;
-      state.data.memberships = state.data.memberships.filter(m=> !(m.status==='attente_paiement' && (m.createdAt||0) < (m.adminRequest ? cutoffAdmin : cutoff)));
-      if(state.data.memberships.length !== before) changed = true;
+      state.data.memberships.forEach(m=>{
+        if(m.status==='attente_paiement' && (m.createdAt||0) < (m.adminRequest ? cutoffAdmin : cutoff)){
+          abandonDraftMembership(m); m.staleDraft = true; changed = true;
+        }
+      });
     }
     if(!state.data.migratedFreeClassesV1){
       state.data.classes.forEach(c=>{
@@ -1964,7 +1969,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-11-02-repeter-anonyme';
+  const APP_BUILD = '2026-11-03-paiement-recu';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -9066,6 +9071,20 @@
           <label style="margin-top:14px;">Date de début (facultatif)</label>
           <input type="date" id="g-start" style="max-width:220px;">
           <p id="g-start-hint" style="font-size:11px;color:var(--chalk-dim);margin:6px 0 0;">Laissez vide pour commencer aujourd\u2019hui. <strong>Date passée permise</strong> : la période (durée de la formule, ou 1 an pour une passe de cours) est calculée à partir de cette date. Avec une date future, l\u2019abonnement reste invisible pour l\u2019étudiant et s\u2019active ce jour-là ; s\u2019il est payant, la demande de paiement est envoyée par courriel ce jour-là (pas avant). Les passes de cours expirent 1 an après leur début ; les cours non utilisés ne sont ni remboursés ni crédités.</p>
+          <div style="border:1px solid var(--sage);background:rgba(147,180,143,.10);border-radius:10px;padding:11px 12px;margin-top:14px;">
+            <label style="display:flex;align-items:flex-start;gap:8px;margin:0;cursor:pointer;">
+              <input type="checkbox" id="g-received" style="width:auto;margin:3px 0 0;" onchange="document.getElementById('g-received-wrap').style.display=this.checked?'block':'none'; var pd=document.getElementById('g-paid'); if(pd){ if(this.checked){ pd.checked=false; pd.onchange&&pd.onchange(); } pd.disabled=this.checked; }">
+              <span><strong>Paiement déjà reçu (Helcim, comptant…)</strong><br><span style="font-size:12px;color:var(--chalk-dim);">Enregistre l’achat dans les ventes. Aucun courriel n’est envoyé.</span></span>
+            </label>
+            <div id="g-received-wrap" style="display:none;">
+              <label>Montant reçu ($)</label>
+              <input type="number" id="g-received-amount" step="0.01" min="0" placeholder="Ex. : 25.00" style="max-width:160px;">
+              <label>Date du paiement</label>
+              <input type="date" id="g-received-date" value="${todayIso()}" max="${todayIso()}" style="max-width:200px;">
+              <label>Mode de paiement</label>
+              <select id="g-received-mode" style="max-width:220px;"><option value="helcim">Helcim (en ligne)</option><option value="cash">Comptant / sur place</option></select>
+            </div>
+          </div>
           <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
             <input type="checkbox" id="g-paid" style="width:auto;margin:0;" onchange="document.getElementById('g-amount-wrap').style.display=this.checked?'block':'none';">
             <span>Payant (montant personnalis\u00e9) \u2014 envoie une demande de paiement au client</span>
@@ -9140,7 +9159,7 @@
                 return `
                   <tr>
                     <td${studentNameStyleAttr(mm.studentEmail, mm.profileId)}>${(function(){const _e=escapeHtml(mm.studentEmail||''),_n=escapeHtml(mm.studentName||'');return mm.profileId ? `<button class="small-btn" data-action="open-child-detail" data-parent-email="${_e}" data-member-id="${escapeHtml(mm.profileId)}" style="padding:0;border:none;background:none;text-decoration:underline;color:inherit;font-weight:bold;cursor:pointer;">${_n}</button>` : `<button class="small-btn" data-action="open-student-detail" data-email="${_e}" style="padding:0;border:none;background:none;text-decoration:underline;color:inherit;font-weight:bold;cursor:pointer;">${_n}</button>`;})()}</td>
-                    <td>${escapeHtml(mm.planName)}</td>
+                    <td>${escapeHtml(mm.planName)}${mm.manualPayment ? ' <span style="font-size:10.5px;background:var(--sage);color:var(--ink);border-radius:5px;padding:1px 6px;white-space:nowrap;">enregistré à la main</span>' : ''}</td>
                     <td>${escapeHtml(amountStr)}</td>
                     <td>${mm.paidViaHelcim ? '<span style="color:var(--sage);">✅ Oui</span>' : '<span style="color:var(--chalk-dim);">— Non</span>'}</td>
                     <td style="font-size:12px;color:var(--chalk-dim);">${new Date(mm.createdAt).toLocaleDateString('fr-CA')}</td>
@@ -15382,6 +15401,29 @@
       const plan = state.data.membershipPlans.find(p=>p.id===planId);
       if(!name || !email){ showToast('Choisissez d\u2019abord un étudiant via la recherche.'); return; }
       if(!plan){ showToast('Créez d\u2019abord une formule.'); return; }
+      // 3 nov. 2026 : « Paiement déjà reçu » — enregistre à la main un achat réellement payé (ex. paiement
+      // Helcim dont la confirmation automatique a échoué). Abonnement ACTIF, compté dans les ventes avec
+      // le vrai montant et la date du paiement (createdAt), aucun courriel.
+      { const recEl = document.getElementById('g-received');
+        if(recEl && recEl.checked){
+          const rawAmt = (document.getElementById('g-received-amount')||{}).value || '';
+          const amt = parseFloat(rawAmt);
+          if(!rawAmt.trim() || isNaN(amt) || amt < 0){ showToast('Entre le montant reçu.'); return; }
+          const dateVal = (document.getElementById('g-received-date')||{}).value || todayIso();
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(dateVal) || dateVal > todayIso()){ showToast('Date de paiement invalide.'); return; }
+          const mode = (document.getElementById('g-received-mode')||{}).value === 'cash' ? 'cash' : 'helcim';
+          const price = amt.toFixed(2).replace(/\.00$/,'') + ' $';
+          const mr = activatePlanForStudent(plan, name, email, false, profileId, price);
+          activateMembership(mr);                       // actif d'aujourd'hui (utilisable tout de suite)
+          mr.createdAt = new Date(dateVal+'T12:00:00').getTime();   // les ventes se classent par date d'achat
+          mr.manualPayment = true; mr.manualPaymentMode = mode; mr.manualPaymentBy = (currentManager()||{}).name || null;
+          if(mode==='helcim'){ mr.paidViaHelcim = true; mr.paidViaHelcimAt = mr.createdAt; }
+          await persist();
+          state.modal = null; closeModalDom();
+          render();
+          showToast('Paiement enregistré : abonnement actif, compté dans les ventes.');
+          return;
+        } }
       // NOUVEAU (S47) : option « Payant (montant personnalisé) » — au lieu d'activer
       // gratuitement, on crée l'abonnement en « Paiement à faire » avec le montant saisi, et
       // on avertit le client par courriel qu'il doit payer sur Helcim pour l'activer (le client
