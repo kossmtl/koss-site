@@ -1969,7 +1969,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-11-09-date-intro';
+  const APP_BUILD = '2026-11-09-console-intro';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -6454,6 +6454,114 @@
     `;
   }
 
+  // ===== Console « Programme d'intro » (9 nov. 2026) =====
+  // Une « session » = une paire (date de début, date de fin) partagée par les cours d'intro (ex. dim. + mer.).
+  // Participants = achats avec introStart/introEnd (payés ou à payer) + personnes inscrites à la main aux cours de la session.
+  function introIsIntroMembership(m){
+    if(m.introStart) return true;
+    const cats = m.categories || [];
+    return cats.length>0 && cats.every(c=>c==='intro_bjj');
+  }
+  function introMembershipStatusLabel(m){
+    if(m.grantedFree) return 'Offert';
+    if(m.status==='attente_paiement') return 'Paiement à faire';
+    if(membershipOwesOnSite(m)) return 'À payer sur place';
+    return 'Payé';
+  }
+  function introSessions(){
+    const map = {};
+    const key = (a,b)=>a+'|'+b;
+    state.data.classes.filter(c=>isProgramClass(c) && isIntroClass(c)).forEach(c=>{
+      const k = key(c.startDate,c.endDate);
+      (map[k] = map[k] || {start:c.startDate, end:c.endDate, classIds:[], classes:[], people:{}}).classIds.push(c.id);
+      map[k].classes.push(c);
+    });
+    state.data.memberships.forEach(m=>{
+      if(!m.introStart || !m.introEnd) return;
+      const k = key(m.introStart,m.introEnd);
+      if(!map[k]) map[k] = {start:m.introStart, end:m.introEnd, classIds:[], classes:[], people:{}};
+    });
+    const sessions = Object.values(map);
+    sessions.forEach(se=>{
+      const add = (email,name,status,profileId)=>{
+        if(!email) return;
+        const pk = email.toLowerCase()+'::'+(profileId||'');
+        if(!se.people[pk]) se.people[pk] = {email, name: name||email, status, profileId:profileId||null};
+        else if(status && se.people[pk].status==='Inscrit') se.people[pk].status = status;
+      };
+      state.data.memberships.forEach(m=>{
+        if(m.introStart!==se.start || m.introEnd!==se.end) return;
+        if(m.status==='annulee') return;
+        add(m.studentEmail, m.studentName, introMembershipStatusLabel(m), m.profileId);
+      });
+      state.data.bookings.forEach(b=>{
+        if(!se.classIds.includes(b.classId) || b.status!=='confirmee') return;
+        add(b.studentEmail, b.studentName, 'Inscrit', b.profileId);
+      });
+    });
+    sessions.sort((a,b)=> a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+    return sessions;
+  }
+  function introSessionLabel(se){
+    const d = iso=>new Date(iso+'T12:00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'long'});
+    return 'Session du '+d(se.start)+' au '+d(se.end);
+  }
+  function introTabs(){
+    const today = todayIso();
+    const all = introSessions();
+    const upcoming = all.filter(se=>se.start>=today);
+    const inProg = all.filter(se=>se.start<today && se.end>=today);
+    const past = all.filter(se=>se.end<today);
+    const shortD = iso=>new Date(iso+'T12:00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'short'});
+    const rowsOf = se=>Object.values(se.people).sort((a,b)=>String(a.name).localeCompare(String(b.name),'fr'));
+    const tabs = [];
+    if(inProg.length) tabs.push({id:'inprog', label:'En cours', sessions:inProg});
+    if(upcoming[0]) tabs.push({id:'next', label: upcoming[0].start===today ? 'Commence ce soir' : 'Prochaine · '+shortD(upcoming[0].start), sessions:[upcoming[0]]});
+    else tabs.push({id:'next', label:'Prochaine', sessions:[]});
+    tabs.push({id:'prev', label: past.length ? 'Terminée · '+shortD(past[past.length-1].start) : 'Terminée', sessions: past.length ? [past[past.length-1]] : []});
+    tabs.push({id:'after', label: upcoming[1] ? 'Suivante · '+shortD(upcoming[1].start) : 'Suivante', sessions: upcoming[1] ? [upcoming[1]] : []});
+    tabs.push({id:'later', label:'Ultérieures', sessions: upcoming.slice(2)});
+    // Sans suite : a participé à une session terminée et n'a rien acheté d'autre que l'intro.
+    const lastSession = {};
+    past.forEach(se=>Object.values(se.people).forEach(pp=>{
+      if(pp.status==='Paiement à faire') return;
+      lastSession[pp.email.toLowerCase()] = {p:pp, se};
+    }));
+    const noFollow = Object.keys(lastSession).filter(em=>{
+      return !state.data.memberships.some(m=>
+        m.studentEmail && m.studentEmail.toLowerCase()===em && m.status!=='annulee' && m.status!=='attente_paiement'
+        && !m.isContribution && !m.contributionCredit && !introIsIntroMembership(m));
+    }).map(em=>({email:lastSession[em].p.email, name:lastSession[em].p.name, status:'Intro du '+shortD(lastSession[em].se.start)}))
+      .sort((a,b)=>String(a.name).localeCompare(String(b.name),'fr'));
+    tabs.push({id:'nofollow', label:'Sans suite', sessions:[], flat:noFollow});
+    tabs.forEach(t=>{
+      t.groups = t.flat ? [{title:null, rows:t.flat}] : t.sessions.map(se=>({title:introSessionLabel(se), se, rows:rowsOf(se)}));
+      // un même courriel (parent avec 2 enfants) n'est compté/copié qu'une fois
+      const seen = {}; t.emails = [];
+      t.groups.forEach(g=>g.rows.forEach(r=>{ const e=r.email.toLowerCase(); if(!seen[e]){ seen[e]=1; t.emails.push(r.email); } }));
+      t.count = t.emails.length;
+    });
+    return tabs;
+  }
+  function introCardHtml(){
+    const tabs = introTabs();
+    let cur = state.introTab;
+    if(!tabs.some(t=>t.id===cur)) cur = (tabs.find(t=>t.id==='next')||tabs[0]).id;
+    const t = tabs.find(x=>x.id===cur);
+    const pill = tb=>`<button type="button" data-action="intro-tab" data-tab="${tb.id}" style="border:1px solid ${tb.id===cur?'var(--sage)':'var(--border)'};background:${tb.id===cur?'var(--sage)':'transparent'};color:${tb.id===cur?'var(--ink,#28292E)':'var(--chalk)'};font-weight:${tb.id===cur?'700':'400'};border-radius:999px;padding:6px 12px;font-size:12.5px;cursor:pointer;white-space:nowrap;">${escapeHtml(tb.label)}${tb.count?` <span style="background:${tb.id===cur?'var(--ink,#28292E)':'var(--coral)'};color:${tb.id===cur?'var(--sage)':'#fff'};border-radius:9px;padding:0 6px;font-size:11px;margin-left:3px;">${tb.count}</span>`:''}</button>`;
+    const tagColor = s=> s==='Payé' ? 'background:var(--sage);color:var(--ink,#28292E);' : (s==='Paiement à faire'||s==='À payer sur place') ? 'background:var(--coral);color:#fff;' : 'background:#4A4B52;color:var(--chalk);';
+    const body = t.groups.length && t.count ? t.groups.map(g=>`
+      ${g.title ? `<p style="margin:12px 0 4px;font-size:13px;"><strong style="color:var(--chalk);">${escapeHtml(g.title)}</strong> <span style="color:var(--chalk-dim);">· ${g.rows.length} participant${g.rows.length>1?'s':''}</span></p>` : ''}
+      <table style="margin-top:4px;"><tr><th>Nom</th><th>Courriel</th><th>${t.id==='nofollow'?'Programme':'Statut'}</th></tr>
+        ${g.rows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td style="word-break:break-all;">${escapeHtml(r.email)}</td><td><span style="font-size:11px;border-radius:5px;padding:1px 7px;white-space:nowrap;${t.id==='nofollow'?'background:#4A4B52;color:var(--chalk);':tagColor(r.status)}">${escapeHtml(r.status)}</span></td></tr>`).join('')}
+      </table>`).join('') : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucune personne dans cette liste pour le moment.</p>';
+    return `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 12px;">${tabs.map(pill).join('')}</div>
+      ${t.id==='nofollow' ? '<p style="font-size:12.5px;color:var(--chalk-dim);margin:0 0 6px;">A participé à un programme d’intro terminé et n’a rien acheté d’autre depuis.</p>' : ''}
+      ${t.count ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;"><button class="btn btn-primary small-btn" data-action="intro-copy" data-tab="${t.id}">\u{1F4CB} Copier ${t.count>1?'les '+t.count+' courriels':'le courriel'}</button><button class="btn btn-secondary small-btn" data-action="intro-mailto" data-tab="${t.id}">✉️ Écrire à tous</button></div>` : ''}
+      ${body}`;
+  }
+
   function adminCard(key, title, contentHtml, titleColor, borderColor, defaultOpen){
     if(!state.expandedAdminCards) state.expandedAdminCards = {};
     if(state.expandedAdminCards[key] === undefined) state.expandedAdminCards[key] = (defaultOpen === undefined ? false : defaultOpen);   // 2 nov. 2026 : tout ferm\u00e9 \u00e0 l'ouverture
@@ -7684,6 +7792,7 @@
         return out;
       })()}
 
+      ${adminCard('intro-program', 'Programme d\u2019intro', introCardHtml())}
       ${adminCard('students', 'Étudiants', `
         <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
           <button class="btn btn-secondary" data-action="manage-memberships">Gérer les abonnements</button>
@@ -14123,6 +14232,21 @@
     else if(action==='mc-new'){
       state.msgPickerQuery = ''; state.msgPickerTried = false;
       state.modal = {type:'admin-message-picker'}; render();
+    }
+    else if(action==='intro-tab'){
+      state.introTab = e.currentTarget.dataset.tab; render();
+    }
+    else if(action==='intro-copy' || action==='intro-mailto'){
+      const tb = introTabs().find(x=>x.id===e.currentTarget.dataset.tab);
+      if(!tb || !tb.emails.length){ showToast('Aucun courriel dans cette liste.'); return; }
+      if(action==='intro-mailto'){
+        window.location.href = 'mailto:?bcc=' + encodeURIComponent(tb.emails.join(','));
+        return;
+      }
+      const txt = tb.emails.join(', ');
+      const okMsg = tb.emails.length+' courriel'+(tb.emails.length>1?'s':'')+' copié'+(tb.emails.length>1?'s':'')+' !';
+      const fallback = ()=>{ const ta=document.createElement('textarea'); ta.value=txt; ta.style.cssText='position:fixed;opacity:0;'; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); showToast(okMsg); }catch(err){ showToast('Copie impossible : sélectionne et copie à la main.'); } ta.remove(); };
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(()=>showToast(okMsg)).catch(fallback); } else fallback();
     }
     else if(action==='mc-mark-all-read'){
       (state.data.messageThreads||[]).forEach(t=>{ if(mcBox(t)==='inbox' && mcUnseen(t)) setLocalMsgSeenAdmin(t.id, Date.now()); });
