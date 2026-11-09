@@ -1969,7 +1969,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-11-03-paiement-recu';
+  const APP_BUILD = '2026-11-09-messages-lus';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -4875,10 +4875,25 @@
       mk[thread.id] = seen ? ((msgs[msgs.length-1] || {}).id || '') : '';
       localStorage.setItem('koss_msg_seen2_'+role+'_v1', JSON.stringify(mk));
     }catch(err){ /* stockage local indisponible — tant pis, juste un confort visuel */ }
+    // 9 nov. 2026 : le « lu » côté gestionnaire est AUSSI enregistré sur le fil lui-même (adminSeenId), donc
+    // il survit si le stockage local de l'appareil est bloqué/vidé (cause des 4 messages « non lus » éternels)
+    // et il est partagé entre appareils. '' = marqué non lu.
+    if(role==='admin' && thread){
+      try{
+        const msgs = thread.messages || [];
+        const v = seen ? ((msgs[msgs.length-1] || {}).id || '') : '';
+        if(thread.adminSeenId !== v){ thread.adminSeenId = v; persist(); }
+      }catch(err){}
+    }
   }
   function threadUnseen(role, t, legacySeen, onlyNotes){
     const other = role==='admin' ? 'student' : 'admin';
     const msgs = (t && t.messages) || [];
+    if(role==='admin' && t && typeof t.adminSeenId === 'string'){
+      const sid = t.adminSeenId;
+      const sidx = sid ? msgs.findIndex(m=>m.id===sid) : -1;
+      if(!sid || sidx>=0) return msgs.slice(sidx+1).some(m=>m.from===other && (!onlyNotes || m.fromNote));
+    }
     const mk = getMsgSeenMarkers(role);
     if(t && Object.prototype.hasOwnProperty.call(mk, t.id)){
       const mid = mk[t.id];
@@ -4887,7 +4902,7 @@
       // repère introuvable (message supprimé ?) : on retombe sur l'ancienne méthode ci-dessous
     }
     const ls = msgs.reduce((mx,m)=> (m.from===other && (!onlyNotes || m.fromNote)) ? Math.max(mx, m.at||0) : mx, 0);
-    return ls > 0 && ls > (((legacySeen||{})[t && t.id])||0);
+    return Math.min(ls, Date.now()) > 0 && Math.min(ls, Date.now()) > (((legacySeen||{})[t && t.id])||0);
   }
   function getLocalMsgSeenStudent(){
     try{ return JSON.parse(localStorage.getItem('koss_msg_seen_student_v1') || '{}'); }
@@ -5023,6 +5038,7 @@
         <div class="mc-side">
           <h3 style="font-size:18px;padding:0 6px 10px;">✉️ Messages</h3>
           <button class="btn btn-primary" style="width:100%;margin-bottom:8px;" data-action="mc-new">＋ Nouveau message</button>
+          ${nUnread ? '<button class="small-btn" style="width:100%;margin-bottom:8px;" data-action="mc-mark-all-read">✓ Tout marquer comme lu</button>' : ''}
           ${nav('inbox','Boîte de réception',nUnread)}${nav('unread','Non lus',nUnread)}${nav('notes','Notes reçues',nNotes)}${nav('archive','Archivés')}${nav('trash','Corbeille')}
           <div class="mc-sep">Filtrer par importance</div>
           ${Object.keys(MC_IMP).map(k=>`<button class="mc-fl ${mc.imp===k?'on':''}" data-action="mc-imp-filter" data-imp="${k}"><span class="mc-dot" style="background:${MC_IMP[k].color}"></span>${MC_IMP[k].label}</button>`).join('')}
@@ -5042,7 +5058,7 @@
   }
   function hasUnseenMessagesForAdmin(){
     const seen = getLocalMsgSeenAdmin();
-    return (state.data.messageThreads||[]).some(t=> threadUnseen('admin', t, seen));
+    return (state.data.messageThreads||[]).some(t=> mcBox(t)==='inbox' && threadUnseen('admin', t, seen));
   }
 
   function findStudentAccount(email){
@@ -14101,6 +14117,11 @@
     else if(action==='mc-new'){
       state.msgPickerQuery = ''; state.msgPickerTried = false;
       state.modal = {type:'admin-message-picker'}; render();
+    }
+    else if(action==='mc-mark-all-read'){
+      (state.data.messageThreads||[]).forEach(t=>{ if(mcBox(t)==='inbox' && mcUnseen(t)) setLocalMsgSeenAdmin(t.id, Date.now()); });
+      showToast('Tous les messages sont marqués comme lus.');
+      render();
     }
     else if(action==='mc-select'){
       if(e.target && e.target.tagName==='INPUT') return;           // la case à cocher a son propre action
