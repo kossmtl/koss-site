@@ -2075,7 +2075,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-11-09-offres-intro';
+  const APP_BUILD = '2026-11-09-offres-intro2';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -14545,7 +14545,17 @@
         const resp = await sb.functions.invoke('koss-send-intro-email', {body:{template:mp.tpl, recipients:recips, soon:mp.soon}});
         if(resp.error || !resp.data || !resp.data.ok){
           const failedN = resp.data && resp.data.failed ? resp.data.failed.length : 0;
-          throw new Error(failedN ? failedN+' courriel(s) n’ont pas pu partir.' : ((resp.data && resp.data.error) || 'Envoi impossible pour l’instant.'));
+          // Une réponse d'erreur (403, 404, 500...) arrive dans resp.error.context : on lit la vraie raison.
+          let detail = '';
+          try{
+            const ctx = resp.error && resp.error.context;
+            if(ctx){
+              let body = ''; try{ body = await ctx.text(); }catch(e2){}
+              let j = null; try{ j = JSON.parse(body); }catch(e3){}
+              detail = '(code '+(ctx.status||'?')+') '+((j && (j.error||j.message)) || body.slice(0,160) || '');
+            } else if(resp.error && resp.error.message){ detail = resp.error.message; }
+          }catch(e4){}
+          throw new Error(failedN ? failedN+' courriel(s) n’ont pas pu partir.' : ((resp.data && resp.data.error) || detail || 'Envoi impossible pour l’instant.'));
         }
         if(isTest){
           showToast('Test envoyé à ton adresse !');
