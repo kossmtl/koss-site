@@ -2075,7 +2075,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-11-09-offres-intro2';
+  const APP_BUILD = '2026-11-09-offres-intro3';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -6643,6 +6643,22 @@
     try{ const a = JSON.parse(localStorage.getItem(INTRO_EXTRA_LS)||'[]'); return Array.isArray(a) ? a.filter(x=>x && typeof x.email==='string') : []; }catch(e){ return []; }
   }
   function introExtraSave(a){ try{ localStorage.setItem(INTRO_EXTRA_LS, JSON.stringify(a)); }catch(e){} }
+  // Adresses retirées de la liste « Anciens + intéressé·es » (même appareil seulement) : elles n'y apparaissent plus
+  // et ne reçoivent plus l'Offre du jour. « Les remettre » les ramène toutes.
+  const INTRO_EXCL_LS = 'koss_intro_excluded';
+  function introExcludedList(){
+    try{ const a = JSON.parse(localStorage.getItem(INTRO_EXCL_LS)||'[]'); return Array.isArray(a) ? a.filter(x=>typeof x==='string') : []; }catch(e){ return []; }
+  }
+  function introExcludedSave(a){ try{ localStorage.setItem(INTRO_EXCL_LS, JSON.stringify(a)); }catch(e){} }
+  // « Compte sans abonnement » = aucun abonnement actif (hors contribution) et pas d'inscription à une Intro en cours ou à venir.
+  function introAccountHasNoPlan(email){
+    const e = (email||'').toLowerCase(); const today = todayIso();
+    return !state.data.memberships.some(m=>{
+      if((m.studentEmail||'').toLowerCase()!==e || m.status==='annulee' || m.contributionCredit || m.isContribution) return false;
+      if(m.introEnd && m.introEnd >= today) return true;
+      return isMembershipActive(m);
+    });
+  }
   function introSendLog(){ try{ const a = JSON.parse(localStorage.getItem(INTRO_SENDLOG_LS)||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
   function introSendLogAdd(entry){ try{ const a = introSendLog(); a.push(entry); localStorage.setItem(INTRO_SENDLOG_LS, JSON.stringify(a.slice(-60))); }catch(e){} }
   function introFirstName(r){
@@ -6693,10 +6709,15 @@
     }).map(em=>({email:lastSession[em].p.email, name:lastSession[em].p.name, status:'Intro du '+shortD(lastSession[em].se.start)}))
       .sort((a,b)=>String(a.name).localeCompare(String(b.name),'fr'));
     // + adresses ajoutées à la main (intéressé·es qui n'ont jamais fait l'intro)
-    const nfSeen = {}; noFollow.forEach(x=>{ nfSeen[x.email.toLowerCase()] = 1; });
-    const extras = introExtraList().filter(x=>!nfSeen[x.email.toLowerCase()])
-      .map(x=>({email:x.email, name:'—', status:'Ajouté à la main', manual:true}));
-    tabs.push({id:'nofollow', label:'Anciens + intéressé·es', sessions:[], flat:noFollow.concat(extras)});
+    const excl = {}; introExcludedList().forEach(x=>{ excl[x.toLowerCase()] = 1; });
+    const nfAll = noFollow;
+    const nfVisible = nfAll.filter(x=>!excl[x.email.toLowerCase()]);
+    const nfSeen = {}; nfAll.forEach(x=>{ nfSeen[x.email.toLowerCase()] = 1; });
+    const extrasAll = introExtraList().filter(x=>!nfSeen[x.email.toLowerCase()]);
+    const extras = extrasAll.filter(x=>!excl[x.email.toLowerCase()])
+      .map(x=>({email:x.email, name:'—', status:x.source==='compte' ? 'Compte sans abonnement' : 'Ajouté à la main', manual:true}));
+    const hiddenN = (nfAll.length-nfVisible.length) + (extrasAll.length-extras.length);
+    tabs.push({id:'nofollow', label:'Anciens + intéressé·es', sessions:[], flat:nfVisible.concat(extras), hiddenN});
     tabs.forEach(t=>{
       t.tpl = INTRO_TAB_TPL[t.id] || null;
       t.groups = t.flat ? [{title:null, rows:t.flat}] : t.sessions.map(se=>({title:introSessionLabel(se), se, rows:rowsOf(se)}));
@@ -6716,14 +6737,15 @@
     const tagColor = s=> s==='Payé' ? 'background:var(--sage);color:var(--ink,#28292E);' : (s==='Paiement à faire'||s==='À payer sur place') ? 'background:var(--coral);color:#fff;' : 'background:#4A4B52;color:var(--chalk);';
     const body = t.groups.length && t.count ? t.groups.map(g=>`
       ${g.title ? `<p style="margin:12px 0 4px;font-size:13px;"><strong style="color:var(--chalk);">${escapeHtml(g.title)}</strong> <span style="color:var(--chalk-dim);">· ${g.rows.length} participant${g.rows.length>1?'s':''}</span></p>` : ''}
-      <table style="margin-top:4px;"><tr><th>Nom</th><th>Courriel</th><th>${t.id==='nofollow'?'Programme':'Statut'}</th></tr>
-        ${g.rows.map(r=>`<tr><td>${escapeHtml(r.name)}${r.disc?`<br><span style="color:var(--amber);font-size:11.5px;">\u{1F381} Rabais ${r.disc.pct} % ${r.disc.pct===20 ? '('+escapeHtml(introOfferDeclaredText(r.disc.declared))+')' : '(dit n\u2019avoir jamais essay\u00e9)'}</span>`:''}</td><td style="word-break:break-all;">${escapeHtml(r.email)}</td><td><span style="font-size:11px;border-radius:5px;padding:1px 7px;white-space:nowrap;${t.id==='nofollow'?'background:#4A4B52;color:var(--chalk);':tagColor(r.status)}">${escapeHtml(r.status)}</span>${r.manual?` <button type="button" class="small-btn" data-action="intro-extra-del" data-email="${escapeHtml(r.email)}" title="Retirer de la liste" style="padding:0 6px;margin-left:4px;">✕</button>`:''}</td></tr>`).join('')}
+      <table style="margin-top:4px;"><tr>${t.id==='nofollow'?'<th style="width:28px;"><input type="checkbox" data-action="intro-chk-all" title="Tout sélectionner"></th>':''}<th>Nom</th><th>Courriel</th><th>${t.id==='nofollow'?'Programme':'Statut'}</th></tr>
+        ${g.rows.map(r=>`<tr>${t.id==='nofollow'?`<td><input type="checkbox" class="intro-chk" value="${escapeHtml(r.email)}"></td>`:''}<td>${escapeHtml(r.name)}${r.disc?`<br><span style="color:var(--amber);font-size:11.5px;">\u{1F381} Rabais ${r.disc.pct} % ${r.disc.pct===20 ? '('+escapeHtml(introOfferDeclaredText(r.disc.declared))+')' : '(dit n\u2019avoir jamais essay\u00e9)'}</span>`:''}</td><td style="word-break:break-all;">${escapeHtml(r.email)}</td><td><span style="font-size:11px;border-radius:5px;padding:1px 7px;white-space:nowrap;${t.id==='nofollow'?'background:#4A4B52;color:var(--chalk);':tagColor(r.status)}">${escapeHtml(r.status)}</span>${r.manual?` <button type="button" class="small-btn" data-action="intro-extra-del" data-email="${escapeHtml(r.email)}" title="Retirer de la liste" style="padding:0 6px;margin-left:4px;">✕</button>`:''}</td></tr>`).join('')}
       </table>`).join('') : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucune personne dans cette liste pour le moment.</p>';
     return `
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 12px;">${tabs.map(pill).join('')}</div>
       ${t.id==='nofollow' ? `<p style="font-size:12.5px;color:var(--chalk-dim);margin:0 0 6px;">A participé à un programme d’intro terminé et n’a rien acheté d’autre depuis, plus les adresses ajoutées à la main.</p>
         <div style="margin:6px 0 10px;"><textarea id="intro-extra-input" rows="2" placeholder="Ajouter des adresses : colle-en une ou plusieurs (séparées par des virgules ou des retours à la ligne)" style="width:100%;box-sizing:border-box;"></textarea>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="btn btn-secondary small-btn" data-action="intro-extra-add">+ Ajouter à la liste</button><span style="font-size:11.5px;color:var(--chalk-dim);">Gardées sur cet appareil seulement.</span></div></div>` : ''}
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="btn btn-secondary small-btn" data-action="intro-extra-add">+ Ajouter à la liste</button><button class="btn btn-secondary small-btn" data-action="intro-add-accounts">+ Tous les comptes sans abonnement</button><span style="font-size:11.5px;color:var(--chalk-dim);">Gardées sur cet appareil seulement.</span></div></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px;"><button class="btn btn-secondary small-btn" data-action="intro-remove-selected">\u{1F5D1} Retirer la sélection</button>${t.hiddenN?`<span style="font-size:12px;color:var(--chalk-dim);">${t.hiddenN} adresse${t.hiddenN>1?'s':''} retirée${t.hiddenN>1?'s':''} · <a href="#" data-action="intro-restore-hidden" style="color:var(--sage);">les remettre</a></span>`:''}</div>` : ''}
       ${t.count ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;">${t.tpl ? `<button class="btn btn-primary small-btn" data-action="intro-send-open" data-tab="${t.id}">\u{1F4E8} Envoyer « ${escapeHtml(INTRO_TPL_NAMES[t.tpl])} »</button>` : ''}<button class="btn btn-secondary small-btn" data-action="intro-copy" data-tab="${t.id}">\u{1F4CB} Copier ${t.count>1?'les '+t.count+' courriels':'le courriel'}</button><button class="btn btn-secondary small-btn" data-action="intro-mailto" data-tab="${t.id}">✉️ Écrire à tous</button></div>` : ''}
       ${body}`;
   }
@@ -14498,17 +14520,60 @@
       const parts = raw.split(/[\s,;]+/).map(x=>x.trim().toLowerCase()).filter(Boolean);
       if(!parts.length){ showToast('Colle d’abord une ou plusieurs adresses.'); return; }
       const list = introExtraList();
-      const have = {}; list.forEach(x=>{ have[x.email.toLowerCase()] = 1; });
+      const inList = {}; list.forEach(x=>{ inList[x.email.toLowerCase()] = 1; });
+      const excl = introExcludedList(); const exclSet = {}; excl.forEach(x=>{ exclSet[x.toLowerCase()] = 1; });
+      const have = Object.assign({}, inList);
       introTabs().forEach(tb=>{ if(tb.id==='nofollow') tb.emails.forEach(em=>{ have[em.toLowerCase()] = 1; }); });
-      let added = 0, dup = 0, bad = 0;
+      let added = 0, dup = 0, bad = 0, unhid = false;
       parts.forEach(em=>{
         if(!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(em)){ bad++; return; }
+        if(exclSet[em]){                       // adresse retir\u00e9e plus t\u00f4t : la rajouter la ram\u00e8ne
+          delete exclSet[em]; unhid = true;
+          if(!inList[em]){ list.push({email:em, addedAt:Date.now()}); inList[em] = 1; }
+          have[em] = 1; added++; return;
+        }
         if(have[em]){ dup++; return; }
         have[em] = 1; list.push({email:em, addedAt:Date.now()}); added++;
       });
+      if(unhid) introExcludedSave(excl.filter(x=>exclSet[x.toLowerCase()]));
       introExtraSave(list);
       render();
       showToast(added+' adresse'+(added>1?'s':'')+' ajoutée'+(added>1?'s':'')+(dup?' · '+dup+' déjà dans la liste':'')+(bad?' · '+bad+' invalide'+(bad>1?'s':''):'')+'.');
+    }
+    else if(action==='intro-chk-all'){
+      const on = e.currentTarget.checked;
+      document.querySelectorAll('input.intro-chk').forEach(c=>{ c.checked = on; });
+    }
+    else if(action==='intro-remove-selected'){
+      const picked = Array.from(document.querySelectorAll('input.intro-chk:checked')).map(c=>String(c.value||'').toLowerCase()).filter(Boolean);
+      if(!picked.length){ showToast('Coche d\u2019abord les adresses \u00e0 retirer.'); return; }
+      const excl = introExcludedList(); const have = {}; excl.forEach(x=>{ have[x.toLowerCase()] = 1; });
+      picked.forEach(x=>{ if(!have[x]){ excl.push(x); have[x] = 1; } });   // masqu\u00e9es (\u00ab les remettre \u00bb les ram\u00e8ne)
+      introExcludedSave(excl);
+      render();
+      showToast(picked.length+' adresse'+(picked.length>1?'s':'')+' retir\u00e9e'+(picked.length>1?'s':'')+'.');
+    }
+    else if(action==='intro-restore-hidden'){
+      e.preventDefault();
+      introExcludedSave([]);
+      render();
+      showToast('Les adresses retir\u00e9es sont de retour dans la liste.');
+    }
+    else if(action==='intro-add-accounts'){
+      const list = introExtraList();
+      const have = {}; list.forEach(x=>{ have[x.email.toLowerCase()] = 1; });
+      const tb = introTabs().find(x=>x.id==='nofollow'); if(tb) tb.emails.forEach(x=>{ have[x.toLowerCase()] = 1; });
+      introExcludedList().forEach(x=>{ have[x.toLowerCase()] = 1; });     // une adresse retir\u00e9e \u00e0 la main ne revient pas toute seule
+      let added = 0;
+      (state.data.studentAccounts||[]).forEach(a=>{
+        const em = String(a.email||'').trim().toLowerCase();
+        if(!em || have[em] || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(em)) return;
+        if(!introAccountHasNoPlan(em)) return;
+        have[em] = 1; list.push({email:em, addedAt:Date.now(), source:'compte'}); added++;
+      });
+      introExtraSave(list);
+      render();
+      showToast(added ? added+' compte'+(added>1?'s':'')+' sans abonnement ajout\u00e9'+(added>1?'s':'')+'. Tu peux en retirer avec les cases.' : 'Aucun nouveau compte sans abonnement \u00e0 ajouter.');
     }
     else if(action==='intro-extra-del'){
       const em = (e.currentTarget.dataset.email||'').toLowerCase();
