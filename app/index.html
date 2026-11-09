@@ -2075,7 +2075,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-11-09-offres-intro3';
+  const APP_BUILD = '2026-11-09-participants';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -2204,9 +2204,13 @@
   // reprise automatique du paiement qu'une seule fois par chargement de page, jamais en boucle
   // à chaque render() suivant.
   let pendingPayAttempted = false;
-  async function refreshFromRemote(){
+  async function refreshFromRemote(opts){
+    // 9 nov. 2026 : opts.force = true juste après une réservation (voir proceedBooking) : le serveur ne révèle
+    // les noms des autres participants qu'une fois NOTRE place enregistrée, or la copie locale a été
+    // téléchargée avant. On ignore alors la garde « fenêtre ouverte » et la comparaison de version.
+    const force = !!(opts && opts.force);
     checkPageFreshness(); // garde-fou « page périmée » (limité à 1 vérification/minute)
-    if(state.modal) return; // on ne dérange pas une saisie en cours
+    if(state.modal && !force) return; // on ne dérange pas une saisie en cours
     // Vérifie d'abord si quelque chose a vraiment changé côté serveur avant de retélécharger
     // tout le bloc JSON du studio. Échec ouvert : toute erreur ici (réseau, etc.) fait
     // simplement retomber sur l'ancien comportement (chargement complet), jamais de blocage
@@ -2233,7 +2237,7 @@
       const { data: v, error: vErr } = await sb.rpc('koss_data_version');
       if(!vErr) freshVersion = v;
     }catch(e){}
-    if(freshVersion && lastKnownDataVersion && freshVersion === lastKnownDataVersion){
+    if(!force && freshVersion && lastKnownDataVersion && freshVersion === lastKnownDataVersion){
       return; // rien de neuf depuis la dernière fois : zéro appel réseau de plus
     }
     try{
@@ -2272,7 +2276,7 @@
         showToast('Ce compte a été supprimé. Vous avez été déconnecté·e.');
         return;
       }
-      if(changed && !state.modal) render();
+      if(changed && (force || !state.modal)) render();
     }catch(e){
       // silencieux : on réessaiera au prochain intervalle
     }
@@ -3341,6 +3345,7 @@
         repeatInfo = applyRepeatBookings(c, booking, membership, rep);
       } }
     await persist();
+    if(!isManagerContext()){ try{ await refreshFromRemote({force:true}); }catch(_e){} } // noms des participants (9 nov.)
     state.modal = null; closeModalDom();
     render();
     if(isManagerContext()){
@@ -3444,6 +3449,7 @@
     });
 
     await persist();
+    if(!isManagerContext()){ try{ await refreshFromRemote({force:true}); }catch(_e){} } // noms des participants (9 nov.)
     state.modal = null; closeModalDom();
     render();
     if(!isManagerContext()){
