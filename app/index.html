@@ -1181,6 +1181,112 @@
     return INTRO_PROGRAMS.filter(p=>p.end >= today);
   }
 
+  // ----- Rabais Intro (9 nov. 2026) : boutons du courriel « Offre du jour » -----
+  // Lien : ?intro=AAAA-MM-JJ&rabais=20|15.  20 % = a déjà fait l'Intro (on demande mois/année + 5 ou 8 cours,
+  // déclaratif : Amélie vérifie sur place et charge la différence au besoin) ; 15 % = jamais essayé.
+  // Valable pour CE programme seulement, jusqu'à 18 h 05 le jour du début (heure de Montréal), un seul usage
+  // par personne. Le rabais suit le lien, pas l'adresse. Le prix est figé à l'achat (planPrice), comme le rabais
+  // « réservation hâtive » : rien à changer côté Helcim. Aucun arrondi : 99 $ -> 79,20 $ (20 %) ou 84,15 $ (15 %).
+  const INTRO_OFFER_LS = 'koss_intro_offer';
+  const FR_MONTHS = ['janvier','f\u00e9vrier','mars','avril','mai','juin','juillet','ao\u00fbt','septembre','octobre','novembre','d\u00e9cembre'];
+  function introOfferExpiryMs(start){ return studioInstantMs(start, '18:05'); }
+  function introOfferValid(o){
+    return !!(o && (o.pct===15 || o.pct===20) && typeof o.start==='string' && INTRO_PROGRAMS.some(p=>p.start===o.start) && nowMs() <= introOfferExpiryMs(o.start));
+  }
+  function introOfferLoad(){
+    try{ const o = JSON.parse(localStorage.getItem(INTRO_OFFER_LS)||'null'); return introOfferValid(o) ? o : null; }catch(e){ return null; }
+  }
+  function introOfferSave(o){
+    try{ if(o) localStorage.setItem(INTRO_OFFER_LS, JSON.stringify(o)); else localStorage.removeItem(INTRO_OFFER_LS); }catch(e){}
+  }
+  // Un rabais est « utilis\u00e9 » d\u00e8s qu'un abonnement qui le porte n'est plus un simple brouillon de paiement.
+  function introOfferUsed(email){
+    const em = (email||'').toLowerCase();
+    return state.data.memberships.some(m=>m.introDiscount && (m.studentEmail||'').toLowerCase()===em
+      && m.status!=='attente_paiement' && m.status!=='annulee' && !m.staleDraft);
+  }
+  // Rabais utilisable par cette personne (valide, pas d\u00e9j\u00e0 utilis\u00e9) ou null.
+  function currentIntroOffer(email){
+    if(!email) return null;
+    let o = (state.introOffer && introOfferValid(state.introOffer)) ? state.introOffer : null;
+    if(!o){ const a = findStudentAccount(email); if(a && introOfferValid(a.introOffer)) o = a.introOffer; }
+    if(!o || introOfferUsed(email)) return null;
+    return o;
+  }
+  function introOfferPrice(program, pct){
+    return (Math.round(computeIntroPrice(program).price*(100-pct))/100).toFixed(2);
+  }
+  function introOfferDeclaredText(d){
+    if(!d) return '';
+    const mo = FR_MONTHS[(parseInt(d.month,10)||1)-1] || '';
+    return 'a d\u00e9j\u00e0 fait l\u2019Intro vers '+mo+' '+d.year+' ('+d.format+' cours)';
+  }
+  // Marque l'abonnement (visible c\u00f4t\u00e9 admin) si le prix pay\u00e9 est bien le prix rabaiss\u00e9.
+  function applyIntroDiscountMeta(m, email, introStart, introPrice){
+    const o = currentIntroOffer(email);
+    if(!o || o.start!==introStart || (o.pct===20 && !o.declared)) return;
+    const prog = INTRO_PROGRAMS.find(p=>p.start===introStart);
+    if(!prog || String(introPrice)!==introOfferPrice(prog, o.pct)) return;
+    m.introDiscount = {pct:o.pct, at:Date.now(), declared:o.declared||null};
+  }
+  function introOfferBannerHtml(){
+    if(state.view==='admin' || state.view==='attendance' || state.view==='admin-login') return '';
+    const email = state.studentSession ? state.studentSession.email : null;
+    const o = email ? currentIntroOffer(email) : (introOfferValid(state.introOffer) ? state.introOffer : null);
+    if(!o) return '';
+    const dFr = new Date(o.start+'T12:00:00').toLocaleDateString('fr-CA',{weekday:'long',day:'numeric',month:'long'});
+    const box = (inner)=>`<div style="margin:0 0 12px;border:1px solid var(--sage);background:rgba(147,180,143,0.12);border-radius:8px;padding:10px 12px;">${inner}</div>`;
+    if(!email) return box(`<p style="font-size:13px;margin:0;color:var(--chalk);">\u{1F381} <strong>Rabais de ${o.pct} %</strong> sur l\u2019Intro qui commence le ${escapeHtml(dFr)}. Connecte-toi ou cr\u00e9e ton compte pour en profiter (valable jusqu\u2019\u00e0 18 h 05, un seul usage).</p>`);
+    return box(`<p style="font-size:13px;margin:0 0 8px;color:var(--chalk);">\u{1F381} <strong>Rabais de ${o.pct} %</strong> sur l\u2019Intro qui commence le ${escapeHtml(dFr)}. Valable jusqu\u2019\u00e0 18 h 05, un seul usage.</p><button class="small-btn" data-action="intro-offer-open" style="background:var(--sage);border-color:var(--sage);color:var(--ink,#28292E);">Utiliser mon rabais</button>`);
+  }
+  function startIntroOffer(){
+    if(!state.studentSession) return;
+    const email = state.studentSession.email;
+    const o = currentIntroOffer(email);
+    if(!o){
+      showToast(introOfferValid(state.introOffer) && introOfferUsed(email) ? 'Tu as d\u00e9j\u00e0 utilis\u00e9 ton rabais.' : 'Ce rabais n\u2019est plus valable.');
+      return;
+    }
+    const plan = state.data.membershipPlans.find(pl=>pl.isIntroProgram);
+    const acct = findStudentAccount(email);
+    if(!plan || !acct){ showToast('Inscription \u00e0 l\u2019Intro indisponible pour le moment.'); return; }
+    if(o.pct===20 && !o.declared){ state.modal = {type:'intro-offer-declare', payload:{}}; render(); return; }
+    state.modal = {type:'choose-intro-program', payload:{plan, name:acct.name, email:acct.email, profileId:null}};
+    render();
+  }
+  async function introOfferSyncToAccount(email){
+    // Copie le rabais dans le compte (visible depuis un autre appareil). Au mieux : localStorage reste la source principale.
+    try{
+      const a = findStudentAccount(email); const o = state.introOffer;
+      if(a && introOfferValid(o) && JSON.stringify(a.introOffer||null)!==JSON.stringify(o)){ a.introOffer = o; await persist(); }
+    }catch(err){ console.error('Rabais intro: synchro compte impossible:', err); }
+  }
+  // Courriel « Confirmation » (What a move !) \u2014 best-effort : ne bloque jamais l'inscription. La version « m\u00eame jour »
+  // (avec l'encadr\u00e9 IMPORTANT : porte de devant, souliers...) est choisie par la fonction selon la date de d\u00e9but.
+  function sendIntroConfirmationEmail(name, email, start, end){
+    try{
+      if(!email || !start || !end) return;
+      const acct = findStudentAccount(email);
+      const first = (acct && (acct.firstName || String(acct.name||'').split(' ')[0])) || String(name||'').split(' ')[0] || '';
+      const p = sb.functions.invoke('koss-send-intro-email', {body:{template:'confirmation', recipients:[{email, firstName:first, start, end}]}});
+      if(p && p.catch) p.catch(err=>console.error('Courriel de confirmation intro non envoy\u00e9:', err));
+    }catch(err){ console.error('Courriel de confirmation intro non envoy\u00e9:', err); }
+  }
+  let introOfferAttempted = false;
+  async function maybeResumeIntroOffer(){
+    if(!state.studentSession) return;
+    const email = state.studentSession.email;
+    try{
+      const a = findStudentAccount(email);
+      if(a && a.introOffer && !introOfferValid(a.introOffer)){ delete a.introOffer; await persist(); }   // le rabais p\u00e9rim\u00e9 s'efface du compte
+    }catch(err){}
+    if(state.introOfferFromLink){
+      state.introOfferFromLink = false;
+      await introOfferSyncToAccount(email);
+      startIntroOffer();
+    }
+  }
+
   function addMinutesToTime(time, minutes){
     const [h,m] = time.split(':').map(Number);
     let total = h*60+m+minutes;
@@ -1969,7 +2075,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-11-09-console-intro';
+  const APP_BUILD = '2026-11-09-offres-intro';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -3373,7 +3479,14 @@
   // le compte de l'\u00e9l\u00e8ve et dans la liste d'abonnements de l'admin.
   function introDateNote(m){
     if(!m || !m.introStart) return '';
-    return ' <span style="color:var(--sage);font-size:12px;white-space:nowrap;">\u00b7 \u{1F4C5} Programme du '+escapeHtml(fmtScheduledDate(m.introStart))+(m.introEnd && m.introEnd!==m.introStart ? ' au '+escapeHtml(fmtScheduledDate(m.introEnd)) : '')+'</span>';
+    return ' <span style="color:var(--sage);font-size:12px;white-space:nowrap;">\u00b7 \u{1F4C5} Programme du '+escapeHtml(fmtScheduledDate(m.introStart))+(m.introEnd && m.introEnd!==m.introStart ? ' au '+escapeHtml(fmtScheduledDate(m.introEnd)) : '')+'</span>'
+      + introDiscountNote(m);
+  }
+  // Rabais intro (courriel « Offre du jour ») : visible pour v\u00e9rifier \u00e0 l'arriv\u00e9e (et charger la diff\u00e9rence au besoin).
+  function introDiscountNote(m){
+    if(!m || !m.introDiscount) return '';
+    const d = m.introDiscount;
+    return ' <span style="color:var(--amber);font-size:12px;">\u00b7 \u{1F381} Rabais '+d.pct+' % '+(d.pct===20 ? '('+escapeHtml(introOfferDeclaredText(d.declared))+')' : '(dit n\u2019avoir jamais essay\u00e9)')+'</span>';
   }
   function fmtScheduledDate(iso){
     try{ return new Date(iso+'T12:00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'long',year:'numeric'}); }
@@ -5664,6 +5777,7 @@
     }
 
     inner += '<div class="content">';
+    inner += introOfferBannerHtml();
     if(state.view === 'gate') inner += renderGate();
     else if(state.view === 'welcome') inner += renderWelcome();
     else if(state.view === 'student') inner += renderStudent();
@@ -5743,6 +5857,13 @@
     if(!pendingPayAttempted && state.pendingPayMembershipId && state.studentSession){
       pendingPayAttempted = true;
       setTimeout(()=>{ maybeResumePendingPayment(); }, 0);
+    }
+
+    // 9 nov. 2026 : rabais Intro arriv\u00e9 par le lien du courriel (?intro=...&rabais=...) \u2014 d\u00e8s qu'une session
+    // \u00e9l\u00e8ve existe (d\u00e9j\u00e0 connect\u00e9e, ou apr\u00e8s connexion / cr\u00e9ation de compte), on ouvre l'inscription une seule fois.
+    if(!introOfferAttempted && state.studentSession){
+      introOfferAttempted = true;
+      setTimeout(()=>{ maybeResumeIntroOffer(); }, 0);
     }
 
     ensureHealthGate();
@@ -6483,16 +6604,17 @@
     });
     const sessions = Object.values(map);
     sessions.forEach(se=>{
-      const add = (email,name,status,profileId)=>{
+      const add = (email,name,status,profileId,disc)=>{
         if(!email) return;
         const pk = email.toLowerCase()+'::'+(profileId||'');
         if(!se.people[pk]) se.people[pk] = {email, name: name||email, status, profileId:profileId||null};
         else if(status && se.people[pk].status==='Inscrit') se.people[pk].status = status;
+        if(disc) se.people[pk].disc = disc;
       };
       state.data.memberships.forEach(m=>{
         if(m.introStart!==se.start || m.introEnd!==se.end) return;
         if(m.status==='annulee') return;
-        add(m.studentEmail, m.studentName, introMembershipStatusLabel(m), m.profileId);
+        add(m.studentEmail, m.studentName, introMembershipStatusLabel(m), m.profileId, m.introDiscount||null);
       });
       state.data.bookings.forEach(b=>{
         if(!se.classIds.includes(b.classId) || b.status!=='confirmee') return;
@@ -6505,6 +6627,43 @@
   function introSessionLabel(se){
     const d = iso=>new Date(iso+'T12:00:00').toLocaleDateString('fr-CA',{day:'numeric',month:'long'});
     return 'Session du '+d(se.start)+' au '+d(se.end);
+  }
+  // ----- Envoi des courriels d'intro (9 nov. 2026) -----
+  // Chaque liste a son courriel : prochaine session = Rappel ; suivante/ultérieures = Date de début ;
+  // terminée = « You did it like a boss ! » ; anciens + intéressé·es = Offre du jour (rabais 20 % / 15 %).
+  // (La « Confirmation » part toute seule à l'inscription.) L'envoi passe par la fonction Supabase
+  // koss-send-intro-email, réservée aux gestionnaires.
+  const INTRO_TAB_TPL = {inprog:null, next:'rappel', prev:'merci_suite', after:'date_debut', later:'date_debut', nofollow:'offre_du_jour'};
+  const INTRO_TPL_NAMES = {rappel:'Rappel', date_debut:'Date de début', merci_suite:'You did it like a boss !', offre_du_jour:'Offre du jour', confirmation:'Confirmation'};
+  const INTRO_EXTRA_LS = 'koss_intro_extra_emails';
+  const INTRO_SENDLOG_LS = 'koss_intro_send_log';
+  // Adresses ajoutées à la main (gens intéressés qui n'ont jamais fait l'intro). Gardées sur CET appareil
+  // seulement : volontairement pas dans les données partagées de l'app, que les élèves peuvent lire.
+  function introExtraList(){
+    try{ const a = JSON.parse(localStorage.getItem(INTRO_EXTRA_LS)||'[]'); return Array.isArray(a) ? a.filter(x=>x && typeof x.email==='string') : []; }catch(e){ return []; }
+  }
+  function introExtraSave(a){ try{ localStorage.setItem(INTRO_EXTRA_LS, JSON.stringify(a)); }catch(e){} }
+  function introSendLog(){ try{ const a = JSON.parse(localStorage.getItem(INTRO_SENDLOG_LS)||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+  function introSendLogAdd(entry){ try{ const a = introSendLog(); a.push(entry); localStorage.setItem(INTRO_SENDLOG_LS, JSON.stringify(a.slice(-60))); }catch(e){} }
+  function introFirstName(r){
+    if(r.manual) return '';
+    const acct = findStudentAccount(r.email);
+    if(acct){ const f = acct.firstName || String(acct.name||'').split(' ')[0]; if(f) return f; }
+    const n = String(r.name||'').trim();
+    return (n && n.indexOf('@')<0 && n!=='—') ? n.split(/\s+/)[0] : '';
+  }
+  function introSoon(){
+    const today = todayIso();
+    const se = introSessions().find(x=>x.start>=today);
+    return se ? {start:se.start, end:se.end} : null;
+  }
+  function introRecipients(tb){
+    const seen = {}; const out = [];
+    tb.groups.forEach(g=>g.rows.forEach(r=>{
+      const k = r.email.toLowerCase(); if(seen[k]) return; seen[k] = 1;
+      out.push({email:r.email, firstName:introFirstName(r), start: g.se ? g.se.start : undefined, end: g.se ? g.se.end : undefined});
+    }));
+    return out;
   }
   function introTabs(){
     const today = todayIso();
@@ -6533,8 +6692,13 @@
         && !m.isContribution && !m.contributionCredit && !introIsIntroMembership(m));
     }).map(em=>({email:lastSession[em].p.email, name:lastSession[em].p.name, status:'Intro du '+shortD(lastSession[em].se.start)}))
       .sort((a,b)=>String(a.name).localeCompare(String(b.name),'fr'));
-    tabs.push({id:'nofollow', label:'Sans suite', sessions:[], flat:noFollow});
+    // + adresses ajoutées à la main (intéressé·es qui n'ont jamais fait l'intro)
+    const nfSeen = {}; noFollow.forEach(x=>{ nfSeen[x.email.toLowerCase()] = 1; });
+    const extras = introExtraList().filter(x=>!nfSeen[x.email.toLowerCase()])
+      .map(x=>({email:x.email, name:'—', status:'Ajouté à la main', manual:true}));
+    tabs.push({id:'nofollow', label:'Anciens + intéressé·es', sessions:[], flat:noFollow.concat(extras)});
     tabs.forEach(t=>{
+      t.tpl = INTRO_TAB_TPL[t.id] || null;
       t.groups = t.flat ? [{title:null, rows:t.flat}] : t.sessions.map(se=>({title:introSessionLabel(se), se, rows:rowsOf(se)}));
       // un même courriel (parent avec 2 enfants) n'est compté/copié qu'une fois
       const seen = {}; t.emails = [];
@@ -6553,12 +6717,14 @@
     const body = t.groups.length && t.count ? t.groups.map(g=>`
       ${g.title ? `<p style="margin:12px 0 4px;font-size:13px;"><strong style="color:var(--chalk);">${escapeHtml(g.title)}</strong> <span style="color:var(--chalk-dim);">· ${g.rows.length} participant${g.rows.length>1?'s':''}</span></p>` : ''}
       <table style="margin-top:4px;"><tr><th>Nom</th><th>Courriel</th><th>${t.id==='nofollow'?'Programme':'Statut'}</th></tr>
-        ${g.rows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td style="word-break:break-all;">${escapeHtml(r.email)}</td><td><span style="font-size:11px;border-radius:5px;padding:1px 7px;white-space:nowrap;${t.id==='nofollow'?'background:#4A4B52;color:var(--chalk);':tagColor(r.status)}">${escapeHtml(r.status)}</span></td></tr>`).join('')}
+        ${g.rows.map(r=>`<tr><td>${escapeHtml(r.name)}${r.disc?`<br><span style="color:var(--amber);font-size:11.5px;">\u{1F381} Rabais ${r.disc.pct} % ${r.disc.pct===20 ? '('+escapeHtml(introOfferDeclaredText(r.disc.declared))+')' : '(dit n\u2019avoir jamais essay\u00e9)'}</span>`:''}</td><td style="word-break:break-all;">${escapeHtml(r.email)}</td><td><span style="font-size:11px;border-radius:5px;padding:1px 7px;white-space:nowrap;${t.id==='nofollow'?'background:#4A4B52;color:var(--chalk);':tagColor(r.status)}">${escapeHtml(r.status)}</span>${r.manual?` <button type="button" class="small-btn" data-action="intro-extra-del" data-email="${escapeHtml(r.email)}" title="Retirer de la liste" style="padding:0 6px;margin-left:4px;">✕</button>`:''}</td></tr>`).join('')}
       </table>`).join('') : '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucune personne dans cette liste pour le moment.</p>';
     return `
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 12px;">${tabs.map(pill).join('')}</div>
-      ${t.id==='nofollow' ? '<p style="font-size:12.5px;color:var(--chalk-dim);margin:0 0 6px;">A participé à un programme d’intro terminé et n’a rien acheté d’autre depuis.</p>' : ''}
-      ${t.count ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;"><button class="btn btn-primary small-btn" data-action="intro-copy" data-tab="${t.id}">\u{1F4CB} Copier ${t.count>1?'les '+t.count+' courriels':'le courriel'}</button><button class="btn btn-secondary small-btn" data-action="intro-mailto" data-tab="${t.id}">✉️ Écrire à tous</button></div>` : ''}
+      ${t.id==='nofollow' ? `<p style="font-size:12.5px;color:var(--chalk-dim);margin:0 0 6px;">A participé à un programme d’intro terminé et n’a rien acheté d’autre depuis, plus les adresses ajoutées à la main.</p>
+        <div style="margin:6px 0 10px;"><textarea id="intro-extra-input" rows="2" placeholder="Ajouter des adresses : colle-en une ou plusieurs (séparées par des virgules ou des retours à la ligne)" style="width:100%;box-sizing:border-box;"></textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="btn btn-secondary small-btn" data-action="intro-extra-add">+ Ajouter à la liste</button><span style="font-size:11.5px;color:var(--chalk-dim);">Gardées sur cet appareil seulement.</span></div></div>` : ''}
+      ${t.count ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;">${t.tpl ? `<button class="btn btn-primary small-btn" data-action="intro-send-open" data-tab="${t.id}">\u{1F4E8} Envoyer « ${escapeHtml(INTRO_TPL_NAMES[t.tpl])} »</button>` : ''}<button class="btn btn-secondary small-btn" data-action="intro-copy" data-tab="${t.id}">\u{1F4CB} Copier ${t.count>1?'les '+t.count+' courriels':'le courriel'}</button><button class="btn btn-secondary small-btn" data-action="intro-mailto" data-tab="${t.id}">✉️ Écrire à tous</button></div>` : ''}
       ${body}`;
   }
 
@@ -9036,9 +9202,58 @@
           <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Annuler</button></div>
         </div>
       `;
+    } else if(m.type === 'intro-offer-declare'){
+      const yNow = parseInt(todayIso().slice(0,4),10);
+      const years = []; for(let y=yNow; y>=2022; y--) years.push(y);
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Rabais de 20 % pour les anciens</h3>
+          <p class="muted">Dis-nous approximativement quand tu as fait l’Intro. C’est juste pour que je sache à qui je parle.</p>
+          <label>Mois (obligatoire)</label>
+          <select id="io-month"><option value="">Choisir…</option>${FR_MONTHS.map((n,i)=>`<option value="${i+1}">${n.charAt(0).toUpperCase()+n.slice(1)}</option>`).join('')}</select>
+          <label>Année (obligatoire)</label>
+          <select id="io-year"><option value="">Choisir…</option>${years.map(y=>`<option value="${y}">${y}</option>`).join('')}</select>
+          <label>Quel programme as-tu fait ? (obligatoire)</label>
+          <div style="display:flex;gap:18px;margin:6px 0 4px;">
+            <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="io-format" value="8"> 8 cours</label>
+            <label style="display:flex;align-items:center;gap:6px;"><input type="radio" name="io-format" value="5"> 5 cours</label>
+          </div>
+          <div class="btn-row"><button class="btn btn-primary" data-action="intro-offer-declare-submit">Continuer</button></div>
+        </div>
+      `;
+    } else if(m.type === 'intro-send'){
+      const {tpl, recipients, soon, tab} = m.payload;
+      const nm = INTRO_TPL_NAMES[tpl] || tpl;
+      const lastSent = introSendLog().filter(x=>x.tpl===tpl).slice(-1)[0];
+      const dFr = iso=>new Date(iso+'T12:00:00').toLocaleDateString('fr-CA',{weekday:'long',day:'numeric',month:'long'});
+      let progLine = '';
+      if(soon && (tpl==='date_debut' || tpl==='offre_du_jour')){
+        const diff = Math.round((new Date(soon.start+'T12:00:00') - new Date(todayIso()+'T12:00:00'))/86400000);
+        const rel = diff===0 ? 'ce soir' : diff===1 ? 'demain' : diff>1 ? 'dans '+diff+' jours' : '';
+        progLine = `<p style="font-size:13px;margin:8px 0;">Programme mis de l’avant : <strong>${escapeHtml(dFr(soon.start))}</strong>${rel?' ('+rel+')':''}.</p>`;
+        if(tpl==='offre_du_jour' && diff!==0) progLine += `<p style="font-size:12.5px;color:var(--amber);margin:4px 0;">Ce courriel est fait pour être envoyé <strong>le jour du début</strong> (rabais valable jusqu’à 18 h 05 ce jour-là).</p>`;
+      }
+      html = `
+        <div class="modal">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>Envoyer « ${escapeHtml(nm)} »</h3>
+          <p class="muted">${recipients.length} destinataire${recipients.length>1?'s':''}. Chaque personne reçoit son propre courriel (personne ne voit les autres adresses). Les réponses arrivent dans ton Gmail.</p>
+          ${progLine}
+          ${lastSent ? `<p style="font-size:12.5px;color:var(--amber);margin:6px 0;">Déjà envoyé le ${escapeHtml(new Date(lastSent.at).toLocaleDateString('fr-CA',{day:'numeric',month:'long'}))} à ${lastSent.count} personne${lastSent.count>1?'s':''}.</p>` : ''}
+          <div style="max-height:150px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.6;word-break:break-all;margin:8px 0;">${recipients.map(r=>escapeHtml(r.email)).join('<br>')}</div>
+          <div class="btn-row" style="flex-wrap:wrap;gap:8px;">
+            <button class="btn btn-secondary" data-action="intro-send-test">Envoyer un test à moi-même</button>
+            <button class="btn btn-primary" data-action="intro-send-go">Envoyer à ${recipients.length} personne${recipients.length>1?'s':''}</button>
+          </div>
+          <p style="font-size:11.5px;color:var(--chalk-dim);margin-top:8px;">Le test t’arrive à ton adresse de connexion, avec le même contenu.</p>
+        </div>
+      `;
     } else if(m.type === 'choose-intro-program'){
       const {plan, name, email, isNewAccount, profileId} = m.payload;
       const programs = upcomingIntroPrograms();
+      const ioffer = currentIntroOffer(email);
+      const ioOk = !!(ioffer && (ioffer.pct===15 || ioffer.declared));
       html = `
         <div class="modal">
           <button class="close-x" data-action="close-modal">✕</button>
@@ -9046,10 +9261,13 @@
           <p class="muted">Le programme Intro au BJJ doit être associé à une date de début précise.</p>
           <ul class="link-list">
             ${programs.map(p=>{
-              const {price, isEarly} = computeIntroPrice(p);
+              const base = computeIntroPrice(p);
+              const useOffer = ioOk && p.start===ioffer.start;
+              const price = useOffer ? introOfferPrice(p, ioffer.pct) : base.price;
+              const isEarly = base.isEarly;
               return `
                 <li>
-                  <span><strong>${formatShortDate(p.start)} au ${formatShortDate(p.end)}</strong><br><span style="color:var(--chalk-dim);font-size:12px;">${price} $${isEarly?' (rabais réservation hâtive)':''}</span></span>
+                  <span><strong>${formatShortDate(p.start)} au ${formatShortDate(p.end)}</strong><br><span style="color:var(--chalk-dim);font-size:12px;">${useOffer ? '<s>'+base.price+' $</s> <strong style="color:var(--sage);">'+price+' $</strong> · rabais '+ioffer.pct+' % (jusqu\u2019\u00e0 18 h 05)' : price+' $'+(isEarly?' (rabais réservation hâtive)':'')}</span></span>
                   <button class="small-btn" style="background:var(--amber);border-color:var(--amber);color:var(--ink);" data-action="pick-intro-program" data-start="${p.start}" data-end="${p.end}" data-price="${price}" data-plan="${plan.id}" data-name="${escapeHtml(name)}" data-email="${escapeHtml(email)}" data-new="${isNewAccount?'1':''}" data-profile="${profileId||''}">Choisir</button>
                 </li>
               `;
@@ -13799,7 +14017,7 @@
       if(!m || m.planId !== plan.id || (m.profileId||null)!==(profileId||null)){
         m = activatePlanForStudent(plan, name, email, false, profileId, introStart && introPrice ? (introPrice+' $') : null);
       }
-      if(introStart){ m.introStart = introStart; m.introEnd = introEnd; if(introPrice) m.planPrice = introPrice+' $'; }
+      if(introStart){ m.introStart = introStart; m.introEnd = introEnd; if(introPrice) m.planPrice = introPrice+' $'; applyIntroDiscountMeta(m, email, introStart, introPrice); }
       await persist();
 
       btn.disabled = true;
@@ -13839,6 +14057,11 @@
                 confirmedM.paidViaHelcimAt = Date.now();
                 await persist();
               }
+              // Rabais intro utilis\u00e9 : on l'efface (un seul usage par personne).
+              if(confirmedM && confirmedM.introDiscount){
+                state.introOffer = null; introOfferSave(null);
+                try{ const aa = findStudentAccount(email); if(aa && aa.introOffer){ delete aa.introOffer; await persist(); } }catch(err){}
+              }
               // Nettoie les « Paiement à faire » laissés par des essais ratés de la même formule.
               if(cancelSupersededDrafts(m, plan, email, profileId)) await persist();
               // Facture automatique par courriel — best-effort, ne bloque jamais l'activation.
@@ -13873,6 +14096,7 @@
                   });
                   if(bookedAny) await persist();
                 }
+                sendIntroConfirmationEmail(name, email, introStart, introEnd);
               }
             }
             render();
@@ -13962,6 +14186,7 @@
       m.status = 'paiement_declare';
       if(introStart){
         m.introStart = introStart; m.introEnd = introEnd; m.planPrice = introPrice+' $';
+        applyIntroDiscountMeta(m, email, introStart, introPrice);
         const introClass = state.data.classes.find(c=>c.category==='intro_bjj' && c.startDate===introStart && c.endDate===introEnd);
         if(introClass){
           const occ = getProgramOccurrences(introClass);
@@ -13986,6 +14211,7 @@
         }
       }
       await persist();
+      if(introStart) sendIntroConfirmationEmail(name, email, introStart, introEnd);
       state.modal = {type:'pay-onsite-info', payload:{email, isNew, introStart: !!introStart}};
       closeModalDom();
       render();
@@ -14247,6 +14473,94 @@
       const okMsg = tb.emails.length+' courriel'+(tb.emails.length>1?'s':'')+' copié'+(tb.emails.length>1?'s':'')+' !';
       const fallback = ()=>{ const ta=document.createElement('textarea'); ta.value=txt; ta.style.cssText='position:fixed;opacity:0;'; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); showToast(okMsg); }catch(err){ showToast('Copie impossible : sélectionne et copie à la main.'); } ta.remove(); };
       if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(()=>showToast(okMsg)).catch(fallback); } else fallback();
+    }
+    else if(action==='intro-offer-open'){
+      startIntroOffer();
+    }
+    else if(action==='intro-offer-declare-submit'){
+      const mo = parseInt((document.getElementById('io-month')||{}).value, 10);
+      const yr = parseInt((document.getElementById('io-year')||{}).value, 10);
+      const fmEl = document.querySelector('input[name="io-format"]:checked');
+      if(!mo || !yr || !fmEl){ showToast('Choisis le mois, l’année et le programme (5 ou 8 cours).'); return; }
+      const nowD = new Date(todayIso()+'T12:00:00');
+      if(yr > nowD.getFullYear() || (yr===nowD.getFullYear() && mo > nowD.getMonth()+1)){ showToast('Cette date est dans le futur : choisis quand tu as fait l’Intro.'); return; }
+      const o = state.introOffer && introOfferValid(state.introOffer) ? state.introOffer : (state.studentSession ? currentIntroOffer(state.studentSession.email) : null);
+      if(!o){ state.modal = null; closeModalDom(); render(); showToast('Ce rabais n’est plus valable.'); return; }
+      o.declared = {month:mo, year:yr, format:fmEl.value};
+      state.introOffer = o; introOfferSave(o);
+      if(state.studentSession) await introOfferSyncToAccount(state.studentSession.email);
+      state.modal = null; closeModalDom();
+      startIntroOffer();
+    }
+    else if(action==='intro-extra-add'){
+      const ta = document.getElementById('intro-extra-input');
+      const raw = ta ? ta.value : '';
+      const parts = raw.split(/[\s,;]+/).map(x=>x.trim().toLowerCase()).filter(Boolean);
+      if(!parts.length){ showToast('Colle d’abord une ou plusieurs adresses.'); return; }
+      const list = introExtraList();
+      const have = {}; list.forEach(x=>{ have[x.email.toLowerCase()] = 1; });
+      introTabs().forEach(tb=>{ if(tb.id==='nofollow') tb.emails.forEach(em=>{ have[em.toLowerCase()] = 1; }); });
+      let added = 0, dup = 0, bad = 0;
+      parts.forEach(em=>{
+        if(!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(em)){ bad++; return; }
+        if(have[em]){ dup++; return; }
+        have[em] = 1; list.push({email:em, addedAt:Date.now()}); added++;
+      });
+      introExtraSave(list);
+      render();
+      showToast(added+' adresse'+(added>1?'s':'')+' ajoutée'+(added>1?'s':'')+(dup?' · '+dup+' déjà dans la liste':'')+(bad?' · '+bad+' invalide'+(bad>1?'s':''):'')+'.');
+    }
+    else if(action==='intro-extra-del'){
+      const em = (e.currentTarget.dataset.email||'').toLowerCase();
+      introExtraSave(introExtraList().filter(x=>x.email.toLowerCase()!==em));
+      render();
+      showToast('Adresse retirée.');
+    }
+    else if(action==='intro-send-open'){
+      const tb = introTabs().find(x=>x.id===e.currentTarget.dataset.tab);
+      if(!tb || !tb.tpl || !tb.count){ showToast('Rien à envoyer pour cette liste.'); return; }
+      const soon = introSoon();
+      if((tb.tpl==='date_debut' || tb.tpl==='offre_du_jour') && !soon){ showToast('Aucun programme d’intro à venir : impossible de préparer ce courriel.'); return; }
+      state.modal = {type:'intro-send', payload:{tab:tb.id, tpl:tb.tpl, recipients:introRecipients(tb), soon}};
+      render();
+    }
+    else if(action==='intro-send-test' || action==='intro-send-go'){
+      const btn = e.currentTarget;
+      const mp = state.modal && state.modal.payload;
+      if(!mp || btn.disabled) return;
+      const isTest = action==='intro-send-test';
+      const origLabel = btn.textContent;
+      document.querySelectorAll('[data-action="intro-send-test"],[data-action="intro-send-go"]').forEach(b=>{ b.disabled = true; });
+      btn.textContent = 'Envoi en cours…';
+      let recips = mp.recipients;
+      try{
+        if(isTest){
+          const { data: sd } = await sb.auth.getSession();
+          const me = sd && sd.session && sd.session.user && sd.session.user.email;
+          if(!me) throw new Error('Impossible de trouver ton adresse de connexion.');
+          const mgr = currentManager();
+          const first = mp.recipients[0] || {};
+          recips = [{email:me, firstName: mgr && mgr.name ? String(mgr.name).split(' ')[0] : '', start:first.start, end:first.end}];
+        }
+        const resp = await sb.functions.invoke('koss-send-intro-email', {body:{template:mp.tpl, recipients:recips, soon:mp.soon}});
+        if(resp.error || !resp.data || !resp.data.ok){
+          const failedN = resp.data && resp.data.failed ? resp.data.failed.length : 0;
+          throw new Error(failedN ? failedN+' courriel(s) n’ont pas pu partir.' : ((resp.data && resp.data.error) || 'Envoi impossible pour l’instant.'));
+        }
+        if(isTest){
+          showToast('Test envoyé à ton adresse !');
+        } else {
+          introSendLogAdd({at:Date.now(), tpl:mp.tpl, tab:mp.tab, count:resp.data.sent || recips.length});
+          state.modal = null; closeModalDom(); render();
+          showToast((resp.data.sent||recips.length)+' courriel'+((resp.data.sent||recips.length)>1?'s':'')+' envoyé'+((resp.data.sent||recips.length)>1?'s':'')+' !');
+          return;
+        }
+      }catch(err){
+        console.error('Échec envoi courriels intro:', err);
+        showToast('Envoi impossible : '+(err && err.message ? err.message : 'réessaie dans un moment')+' Rien n’a été perdu, tu peux réessayer.');
+      }
+      document.querySelectorAll('[data-action="intro-send-test"],[data-action="intro-send-go"]').forEach(b=>{ b.disabled = false; });
+      btn.textContent = origLabel;
     }
     else if(action==='mc-mark-all-read'){
       (state.data.messageThreads||[]).forEach(t=>{ if(mcBox(t)==='inbox' && mcUnseen(t)) setLocalMsgSeenAdmin(t.id, Date.now()); });
@@ -16388,6 +16702,22 @@
         window.history.replaceState(null, '', window.location.pathname + keep);
       }
     }catch(err){}
+    // 9 nov. 2026 : ?intro=AAAA-MM-JJ&rabais=20|15 (boutons du courriel « Offre du jour »). Gardé en m\u00e9moire ET dans
+    // localStorage (survit \u00e0 la cr\u00e9ation de compte / au retour Google), puis retir\u00e9 de l'URL.
+    try{
+      const sp = new URLSearchParams(window.location.search);
+      const ioStart = sp.get('intro'); const ioPct = parseInt(sp.get('rabais'),10);
+      if(ioStart && (ioPct===15 || ioPct===20)){
+        const prev = introOfferLoad();
+        const o = (prev && prev.start===ioStart && prev.pct===ioPct) ? prev : {pct:ioPct, start:ioStart};
+        if(introOfferValid(o)){ state.introOffer = o; introOfferSave(o); state.introOfferFromLink = true; }
+        else { state.introOfferExpired = true; }
+        const keepA = ADMIN_URL_FLAG ? '?admin' : '';
+        window.history.replaceState(null, '', window.location.pathname + keepA);
+      } else {
+        state.introOffer = introOfferLoad();
+      }
+    }catch(err){ state.introOffer = null; }
     // Restaure une session gestionnaire déjà active (compte courriel/mot de passe) AVANT
     // loadData(), pour qu'elle choisisse tout de suite la bonne vue au chargement/actualisation
     // — c'est le serveur seul (koss_is_manager) qui décide, jamais un NIP local.
@@ -16403,6 +16733,7 @@
       }catch(err){ console.error('Échec vérification session gestionnaire:', err); state.adminUnlocked = false; }
     }
     await loadData();
+    if(state.introOfferExpired){ state.introOfferExpired = false; showToast('Ce rabais de l\u2019Intro n\u2019est plus valable (il expire \u00e0 18 h 05 le jour du d\u00e9but).'); }
     if(iaToken){ startInactivityResponse(iaToken); }
     if(ADMIN_URL_FLAG && state.adminUnlocked && !state.currentManagerId){
       try{
