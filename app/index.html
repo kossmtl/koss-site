@@ -2075,7 +2075,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-11-09-participants';
+  const APP_BUILD = '2026-11-17-collants-multiples';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -8096,7 +8096,7 @@
           <input id="sticker-search-input" placeholder="Rechercher..." value="${escapeHtml(state.stickerSearchQuery||'')}">
           <div class="btn-row"><button class="btn btn-secondary" data-action="run-sticker-search">Rechercher</button></div>
           ${state.data.stickers.length ? (groupRows || '<p class="muted" style="color:var(--chalk-dim);margin-top:10px;">Aucun résultat.</p>') : '<p class="muted" style="color:var(--chalk-dim);">Aucun autocollant. Ajoutez-en un ci-dessous.</p>'}
-          <div class="btn-row"><button class="btn btn-primary" data-action="new-sticker">+ Ajouter un autocollant</button></div>
+          <div class="btn-row"><button class="btn btn-primary" data-action="new-sticker">+ Ajouter un autocollant</button><button class="btn btn-secondary" data-action="open-sticker-grant-multi">🎁 Attribuer à plusieurs</button></div>
         `;
       })())}
 
@@ -10681,6 +10681,76 @@
           <div class="btn-row"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
         </div>
       `;
+    } else if(m.type === 'sticker-grant-multi'){
+      const mg = m.payload || {};
+      const sel = mg.selected || [];
+      const selSet = new Set(sel.map(mgKey));
+      const willGet = sel.filter(r=>!mgHasSticker(mg.stickerId, r));
+      const found = mgResults(mg.query);
+      const attr = r => `data-email="${escapeHtml(r.email)}" data-profile="${r.profileId?escapeHtml(r.profileId):''}" data-name="${escapeHtml(r.name)}"`;
+      const label = r => escapeHtml(r.name) + (r.profileId ? ' <span style="font-size:11px;color:var(--chalk-dim);">(enfant)</span>' : '');
+      let classBlock = '';
+      if(mg.showClass){
+        const dI = mg.classDay;
+        let rowsHtml = '';
+        if(dI){
+          const wd = (new Date(dI+'T12:00:00').getDay()+6)%7;
+          const cls = state.data.classes.filter(c=>c.dayOfWeek===wd && (!c.startDate || !c.endDate || (dI>=c.startDate && dI<=c.endDate))).slice().sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+          rowsHtml = cls.map(c=>{
+            const ec = getEffectiveClass(c, dI);
+            if(ec && ec.cancelled) return '';
+            const n = state.data.bookings.filter(b=>b.classId===c.id && b.dateIso===dI && b.status==='confirmee').length;
+            return `<li><span>${escapeHtml((ec||c).name)} · ${escapeHtml(c.time||'')} <span style="color:var(--chalk-dim);font-size:11px;">(${n} inscrit·e${n>1?'s':''})</span></span><span>${n ? `<button class="small-btn" data-action="mg-add-class" data-class="${escapeHtml(c.id)}" data-date="${escapeHtml(dI)}">➕ Ajouter</button>` : ''}</span></li>`;
+          }).join('');
+          if(!rowsHtml) rowsHtml = '<li style="color:var(--chalk-dim);">Aucun cours ce jour-là.</li>';
+        }
+        classBlock = `
+          <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:8px;">
+            <label style="margin-top:0;">Date du cours</label>
+            <div style="display:flex;gap:8px;"><input type="date" id="mg-date" value="${escapeHtml(mg.date||todayIso())}" style="flex:1;margin:0;max-width:200px;"><button class="btn btn-secondary" data-action="mg-load-class">Voir les cours</button></div>
+            ${dI ? `<ul class="link-list" style="margin-top:8px;">${rowsHtml}</ul>` : ''}
+          </div>`;
+      }
+      html = `
+        <div class="modal" style="max-width:470px;">
+          <button class="close-x" data-action="close-modal">✕</button>
+          <h3>🎁 Attribuer un autocollant à plusieurs</h3>
+          <label style="margin-top:6px;">1. Autocollant</label>
+          ${state.data.stickers.length ? `
+            <div class="sticker-picker-grid">
+              ${state.data.stickers.map(s=>`
+                <div class="sticker-picker-item" data-action="mg-pick-sticker" data-sticker="${s.id}" style="${mg.stickerId===s.id?'outline:2px solid var(--sage);outline-offset:2px;background:rgba(147,180,143,0.12);':''}">
+                  <img src="${s.image}">
+                  <div class="sname">${escapeHtml(s.name)}${mg.stickerId===s.id?' ✓':''}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : `<p class="muted" style="color:var(--chalk-dim);">Aucun autocollant dans la banque — ajoutes-en un dans la carte Autocollants.</p>`}
+          <label style="margin-top:12px;">2. Petit message (optionnel, le même pour tout le monde)</label>
+          <input id="mg-message" placeholder="ex. Bravo pour ta ceinture !" value="${escapeHtml(mg.message||'')}" style="margin-bottom:6px;">
+          <label style="margin-top:12px;">3. Étudiant·es</label>
+          <div style="display:flex;gap:8px;"><input id="mg-search" placeholder="Nom, courriel ou téléphone..." value="${escapeHtml(mg.queryDraft||'')}" style="flex:1;margin:0;"><button class="btn btn-secondary" data-action="mg-search">Chercher</button></div>
+          ${mg.query ? (found.length ? `
+            <ul class="link-list" style="margin-top:8px;">${found.map(r=>{
+              const has = mgHasSticker(mg.stickerId, r);
+              return `<li style="${has?'opacity:.45;':''}"><label style="display:flex;align-items:center;gap:10px;margin:0;cursor:pointer;flex:1;"><input type="checkbox" data-action="mg-toggle" ${attr(r)} ${selSet.has(mgKey(r))?'checked':''} ${has?'disabled':''} style="width:auto;margin:0;"><span>${label(r)}${r.parentName?` <span style="font-size:11px;color:var(--chalk-dim);">de ${escapeHtml(r.parentName)}</span>`:''}${has?' <span style="font-size:11px;color:var(--chalk-dim);">(a déjà cet autocollant)</span>':''}</span></label></li>`;
+            }).join('')}</ul>` : '<p class="muted" style="color:var(--chalk-dim);margin-top:8px;">Aucun résultat.</p>') : ''}
+          <div class="btn-row" style="margin-top:6px;">
+            ${found.length ? '<button class="small-btn" data-action="mg-check-all">☑ Cocher tous les résultats</button>' : ''}
+            <button class="small-btn" data-action="mg-toggle-class">${mg.showClass?'▲':'➕'} Les inscrit·es d’un cours…</button>
+          </div>
+          ${classBlock}
+          <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
+            <p style="margin:0 0 8px;font-size:12.5px;color:var(--chalk-dim);"><strong style="color:var(--chalk);">${sel.length} personne${sel.length>1?'s':''} sélectionnée${sel.length>1?'s':''}</strong>${sel.length && willGet.length!==sel.length ? ` · ${willGet.length} recevront l’autocollant` : ''}</p>
+            ${sel.map(r=>`<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-tile);border:1px solid var(--border);border-radius:999px;padding:4px 6px 4px 11px;font-size:12.5px;margin:0 6px 6px 0;${mgHasSticker(mg.stickerId, r)?'opacity:.5;':''}">${label(r)}<button type="button" data-action="mg-remove" ${attr(r)} style="border:none;background:transparent;color:var(--chalk-dim);cursor:pointer;padding:0 4px;font-size:13px;">✕</button></span>`).join('')}
+          </div>
+          <p style="font-size:11.5px;color:var(--chalk-dim);margin:4px 0 0;">Un courriel est envoyé à chaque personne, signé de ton prénom. Celles qui ont déjà cet autocollant sont sautées.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="mg-submit" ${(mg.stickerId && willGet.length)?'':'style="opacity:.55;"'}>🎁 Offrir${willGet.length ? ' à '+willGet.length+' personne'+(willGet.length>1?'s':'') : ''}</button>
+            <button class="btn btn-secondary" data-action="close-modal">Annuler</button>
+          </div>
+        </div>
+      `;
     } else if(m.type === 'send-note-form'){
       const {email, profileId} = m.payload;
       const pid = profileId || null;
@@ -11492,6 +11562,26 @@
   ];
 
   // ---------- event handling ----------
+  // ===== Attribuer un autocollant à plusieurs (17 nov. 2026) =====
+  function mgKey(r){ return (r.email||'').toLowerCase()+'|'+(r.profileId||''); }
+  // Lit les champs de la fenêtre avant tout re-rendu (message, texte de recherche, date).
+  function mgSync(){
+    const p = state.modal && state.modal.payload; if(!p) return null;
+    const mi = document.getElementById('mg-message'); if(mi) p.message = mi.value;
+    const si = document.getElementById('mg-search'); if(si) p.queryDraft = si.value;
+    const di = document.getElementById('mg-date'); if(di && di.value) p.date = di.value;
+    return p;
+  }
+  function mgResults(query){
+    if(!query) return [];
+    return searchStudentAccounts(query).map(r=> r.type==='child'
+      ? {email:r.parentEmail, profileId:r.memberId, name:r.name, parentName:r.parentName}
+      : {email:r.email, profileId:null, name:r.name});
+  }
+  function mgHasSticker(stickerId, r){
+    return !!stickerId && state.data.stickerGrants.some(g=>g.stickerId===stickerId && (g.email||'').toLowerCase()===(r.email||'').toLowerCase() && (g.profileId||null)===(r.profileId||null));
+  }
+
   function attachHandlers(scope){
     const root = scope || document.getElementById('app');
     root.querySelectorAll('[data-action]').forEach(node=>{
@@ -15453,6 +15543,112 @@
           senderName: (currentManager()||{}).name || ''
         }});
       }catch(err){ console.error('Échec envoi courriel autocollant:', err); }
+    }
+    else if(action==='open-sticker-grant-multi'){
+      state.modal = {type:'sticker-grant-multi', payload:{stickerId:null, message:'', query:'', queryDraft:'', selected:[], date:todayIso(), showClass:false, classDay:null}};
+      render();
+    }
+    else if(action==='mg-pick-sticker'){
+      const p = mgSync(); if(!p) return;
+      p.stickerId = e.currentTarget.dataset.sticker;
+      render();
+    }
+    else if(action==='mg-search'){
+      const p = mgSync(); if(!p) return;
+      p.query = (p.queryDraft||'').trim();
+      render();
+    }
+    else if(action==='mg-toggle' || action==='mg-remove'){
+      const p = mgSync(); if(!p) return;
+      const d = e.currentTarget.dataset;
+      const r = {email:d.email, profileId:d.profile||null, name:d.name};
+      const k = mgKey(r);
+      const i = (p.selected||[]).findIndex(x=>mgKey(x)===k);
+      if(action==='mg-remove' || i>=0){ if(i>=0) p.selected.splice(i,1); }
+      else { p.selected = (p.selected||[]).concat([r]); }
+      render();
+    }
+    else if(action==='mg-check-all'){
+      const p = mgSync(); if(!p) return;
+      const have = new Set((p.selected||[]).map(mgKey));
+      mgResults(p.query).forEach(r=>{ if(!have.has(mgKey(r)) && !mgHasSticker(p.stickerId, r)){ p.selected.push(r); have.add(mgKey(r)); } });
+      render();
+    }
+    else if(action==='mg-toggle-class'){
+      const p = mgSync(); if(!p) return;
+      p.showClass = !p.showClass;
+      render();
+    }
+    else if(action==='mg-load-class'){
+      const p = mgSync(); if(!p) return;
+      p.classDay = p.date || todayIso();
+      render();
+    }
+    else if(action==='mg-add-class'){
+      const p = mgSync(); if(!p) return;
+      const classId = e.currentTarget.dataset.class, dateIso = e.currentTarget.dataset.date;
+      const have = new Set((p.selected||[]).map(mgKey));
+      let added = 0, noEmail = 0;
+      state.data.bookings.filter(b=>b.classId===classId && b.dateIso===dateIso && b.status==='confirmee').forEach(b=>{
+        if(!b.studentEmail){ noEmail++; return; }
+        const r = {email:b.studentEmail, profileId:b.profileId||null, name:b.studentName||b.studentEmail};
+        if(have.has(mgKey(r))) return;
+        p.selected.push(r); have.add(mgKey(r)); added++;
+      });
+      render();
+      showToast(added ? `${added} personne${added>1?'s':''} ajoutée${added>1?'s':''}.` + (noEmail ? ` (${noEmail} sans courriel, ignorée${noEmail>1?'s':''})` : '') : 'Tout le monde est déjà dans la liste.');
+    }
+    else if(action==='mg-submit'){
+      const btn = e.currentTarget; // capturé AVANT tout await
+      const p = mgSync(); if(!p) return;
+      if(!p.stickerId){ showToast('Choisis un autocollant.'); return; }
+      const sticker = state.data.stickers.find(s=>s.id===p.stickerId);
+      if(!sticker){ showToast('Cet autocollant n’existe plus.'); return; }
+      if(!(p.selected||[]).length){ showToast('Choisis au moins une personne.'); return; }
+      const message = (p.message||'').trim();
+      const fresh = [];
+      let skipped = 0;
+      p.selected.forEach(r=>{ if(mgHasSticker(p.stickerId, r)) skipped++; else fresh.push(r); });
+      if(!fresh.length){ showToast('Tout le monde a déjà cet autocollant.'); return; }
+      btn.disabled = true;
+      const now = Date.now();
+      const newGrants = fresh.map(r=>({id:uid(), stickerId:p.stickerId, email:r.email, profileId:r.profileId||null, message, grantedAt:now}));
+      state.data.stickerGrants.push(...newGrants);
+      try{ await persist(); }
+      catch(err){
+        const ids = new Set(newGrants.map(g=>g.id));
+        state.data.stickerGrants = state.data.stickerGrants.filter(g=>!ids.has(g.id));
+        btn.disabled = false;
+        throw err;
+      }
+      state.modal = null; closeModalDom();
+      render();
+      showToast(`Autocollant offert à ${fresh.length} personne${fresh.length>1?'s':''}.` + (skipped ? ` (${skipped} l’avai${skipped>1?'ent':'t'} déjà)` : ''));
+      // Courriels — best-effort, un à la fois (pause entre chaque, pour ne pas dépasser la limite d'envoi
+      // de Resend), après l'enregistrement : un échec ne défait jamais l'attribution.
+      const senderName = (currentManager()||{}).name || '';
+      (async ()=>{
+        let ok = 0, fail = 0;
+        for(const r of fresh){
+          try{
+            const acctForEmail = findStudentAccount(r.email);
+            let firstName = acctForEmail ? (acctForEmail.firstName || acctForEmail.name) : r.email;
+            if(r.profileId && acctForEmail){
+              const fm = (acctForEmail.familyMembers||[]).find(f=>f.id===r.profileId);
+              if(fm) firstName = (fm.name||'').split(' ')[0] || fm.name;
+            }
+            const res = await sb.functions.invoke('koss-send-sticker-email', {body:{
+              email:r.email, firstName,
+              stickerName: sticker.name || 'Autocollant K-OSS',
+              stickerImage: sticker.image || null,
+              message, senderName
+            }});
+            if(res && res.error) fail++; else ok++;
+          }catch(err){ fail++; console.error('Échec envoi courriel autocollant:', err); }
+          await new Promise(res=>setTimeout(res, 700));
+        }
+        if(fail) showToast(`Courriels : ${ok} envoyé${ok>1?'s':''}, ${fail} en échec (les autocollants sont bien offerts).`);
+      })();
     }
     else if(action==='revoke-sticker-grant'){
       state.data.stickerGrants = state.data.stickerGrants.filter(g=>g.id!==id);
