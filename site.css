@@ -175,6 +175,14 @@
   .intro-card-text{ font-size:14px; color:var(--sage); max-width:36ch; margin:0 0 18px; }
   .intro-card-link{ display:inline-block; font-family:'Aestetico', sans-serif; font-weight:600; font-size:13px; color:var(--paper); text-decoration:none; border-bottom:2px solid var(--tan); padding-bottom:2px; }
   .intro-card-link:hover{ color:var(--tan); }
+  /* Jeudi midi gratuit pour toujours (18 nov. 2026) */
+  .free-thu-card{ grid-column:1 / -1; background:var(--sage); color:var(--ink); margin:26px 0 0; padding:26px 32px; display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap; }
+  .free-thu-label{ font-family:'Aestetico', sans-serif; font-weight:600; font-size:12px; letter-spacing:0.15em; text-transform:uppercase; margin-bottom:6px; }
+  .free-thu-title{ font-family:'Aestetico', sans-serif; font-weight:800; font-size:clamp(28px,5vw,40px); line-height:1; text-transform:uppercase; margin:0 0 8px; color:var(--ink); }
+  .free-thu-sub{ margin:0; font-size:15px; max-width:48ch; }
+  .free-thu-btn{ background:var(--ink); color:var(--paper); padding:15px 26px; font-family:'Aestetico', sans-serif; font-weight:600; font-size:14px; text-decoration:none; white-space:nowrap; }
+  .free-thu-btn:hover{ background:var(--deep); }
+  .free-pill{ display:inline-block; margin-top:10px; background:var(--sage); color:var(--ink); font-family:'Aestetico', sans-serif; font-weight:800; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; padding:4px 9px; }
   @media (max-width:700px){
     .intro-banner-grid{ grid-template-columns:1fr; }
     .intro-card{ padding:24px 0 20px; }
