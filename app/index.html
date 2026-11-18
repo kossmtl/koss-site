@@ -1681,6 +1681,13 @@
         }
       });
     }
+    // 18 nov. 2026 : le cours du jeudi midi (BJJ adulte, 12 h) est gratuit POUR TOUJOURS, 0 $, aucune contribution
+    // demandée. Rejouée à chaque chargement (idempotente) : survit à un cours recréé ou modifié.
+    state.data.classes.forEach(c=>{
+      if(c.dayOfWeek===3 && c.time==='12:00' && c.category==='bjj_adulte' && !(c.startDate && c.endDate) && !c.freeForLife){
+        c.free = true; c.freeForLife = true; c.price = 'Gratuit pour toujours'; changed = true;
+      }
+    });
     if(!state.data.migratedFreeClassesV1){
       state.data.classes.forEach(c=>{
         if(c.name && c.name.trim()==='Queers & Allies'){ c.free = true; }
@@ -2075,7 +2082,7 @@
   // ⚠️ À CHAQUE nouvelle livraison de ce fichier : changer la valeur d'APP_BUILD ci-dessous
   // (sinon les pages ouvertes ne peuvent pas savoir qu'une nouvelle version existe — sans danger,
   // le garde-fou ne fait alors simplement rien). Échec ouvert : toute erreur réseau = on laisse faire.
-  const APP_BUILD = '2026-11-17-collants-multiples';
+  const APP_BUILD = '2026-11-18-jeudi-gratuit';
   // Icône « i » (info) : même dessin que sur le site (kossmtl.ca). Couleur = currentColor.
   const INFO_ICON_SVG = '<svg class="info-icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="11.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.2" cy="7.1" r="1.5" fill="currentColor"/><path d="M9.3 10.3h3.9v6.9h1.9v1.7H9.3v-1.7h1.9v-5.2H9.3z" fill="currentColor"/></svg>';
   let pageStamp = null, pageStale = false, pageCheckAt = 0, pageChecking = null;
@@ -2812,7 +2819,64 @@
   // un montant (min 3 $). Sous 5 $ = sur place seulement (minimum de Helcim); dès 5 $ = en ligne ou sur place.
   const CONTRIB_MIN = 3, CONTRIB_ONLINE_MIN = 5;
   // Depuis le 13 oct. 2026 : TOUT cours marqué « gratuit » (c.free) est à contribution volontaire.
-  function isContributionClass(c){ return !!(c && (c.free || (c.name && c.name.trim()==='Queers & Allies'))); }
+  function isFreeForLifeClass(c){ return !!(c && c.freeForLife); }   // jeudi midi : gratuit pour toujours, 0 $ (18 nov. 2026)
+  function isContributionClass(c){ return !!(c && !c.freeForLife && (c.free || (c.name && c.name.trim()==='Queers & Allies'))); }
+  function freeThuClass(){ try{ return (state.data.classes||[]).find(c=>c.freeForLife && !(c.startDate && c.endDate)) || null; }catch(e){ return null; } }
+  // Prochain jeudi midi gratuit : celui de cette semaine s'il n'est pas déjà passé, sinon celui de la semaine suivante.
+  function nextFreeThuDate(){
+    const c = freeThuClass(); if(!c) return null;
+    const thisIso = isoDate(getWeekDates(0)[c.dayOfWeek]);
+    return isClassPast(c, thisIso) ? addDaysIsoFrom(thisIso, 7) : thisIso;
+  }
+  function goToFreeThu(){
+    const iso = nextFreeThuDate();
+    state.view = 'student';
+    const weekIso = getWeekDates(0).map(isoDate);
+    if(iso && weekIso.indexOf(iso) >= 0){ state.bookingDayOnly = true; state.bookingSelectedDate = iso; state.weekOffset = 0; }
+    else { state.bookingDayOnly = false; state.bookingSelectedDate = null; state.weekOffset = 1; }
+    state.modal = null;
+    render();
+  }
+  function freeThuBannerHtml(){
+    if(isManagerContext() || !freeThuClass()) return '';
+    return `<div style="max-width:480px;margin:0 auto 14px;background:var(--sage);color:#25262A;border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div><div style="font-family:var(--font-d);font-size:13px;letter-spacing:.08em;font-weight:700;">JEUDI 12 H · GRATUIT POUR TOUJOURS</div>
+      <div style="font-size:12.5px;margin-top:2px;">NOGI Skills/Essentials : sans abonnement, sans frais.</div></div>
+      <button type="button" data-action="free-thu-go" style="background:#25262A;color:var(--chalk);border:0;border-radius:8px;padding:9px 14px;font-family:var(--font-d);font-size:13px;letter-spacing:.05em;cursor:pointer;">Voir le cours</button>
+    </div>`;
+  }
+  // Pop-up hebdomadaire : la première ouverture de l'app de chaque semaine (semaine = du dimanche au samedi),
+  // une seule fois par semaine et par appareil, élèves seulement.
+  const FREE_THU_LS_KEY = 'koss_freethu_popup_week';
+  function freeThuWeekKey(){
+    const now = new Date();
+    const sun = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+    return sun.getFullYear() + '-' + String(sun.getMonth()+1).padStart(2,'0') + '-' + String(sun.getDate()).padStart(2,'0');
+  }
+  function ensureFreeThuPopup(){
+    if(document.getElementById('free-thu-popup')) return;
+    if(!state.data || !state.studentSession || ADMIN_URL_FLAG || state.adminUnlocked || isManagerContext()) return;
+    if(document.getElementById('health-gate') || !healthNoticeAccepted()) return;
+    if(!freeThuClass()) return;
+    const wk = freeThuWeekKey();
+    try{ if(localStorage.getItem(FREE_THU_LS_KEY) === wk) return; }catch(e){}
+    try{ localStorage.setItem(FREE_THU_LS_KEY, wk); }catch(e){}
+    const g = document.createElement('div');
+    g.id = 'free-thu-popup';
+    g.setAttribute('role','dialog'); g.setAttribute('aria-modal','true');
+    g.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(20,21,24,.78);display:flex;align-items:center;justify-content:center;padding:20px;';
+    g.innerHTML = `<div style="background:var(--sage);color:#25262A;border-radius:14px;max-width:380px;width:100%;padding:26px 22px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.5);">
+      <div style="font-family:var(--font-d);font-size:12px;letter-spacing:.14em;font-weight:700;">JEUDI 12 H</div>
+      <div style="font-family:var(--font-d);font-size:34px;line-height:1.05;font-weight:700;text-transform:uppercase;margin:8px 0 10px;">Gratuit.<br>Pour toujours.</div>
+      <div style="font-size:14px;line-height:1.4;margin-bottom:18px;">Le cours NOGI Skills/Essentials du jeudi midi est offert gratuitement, sans abonnement. Viens t'entraîner !</div>
+      <button type="button" id="ftp-go" style="display:block;width:100%;background:#25262A;color:var(--chalk);border:0;border-radius:10px;padding:13px;font-family:var(--font-d);font-size:15px;letter-spacing:.05em;cursor:pointer;">Voir le cours</button>
+      <button type="button" id="ftp-close" style="display:block;width:100%;background:transparent;color:#25262A;border:0;padding:12px;font-size:13px;text-decoration:underline;cursor:pointer;">Plus tard</button>
+    </div>`;
+    document.body.appendChild(g);
+    g.querySelector('#ftp-close').addEventListener('click', ()=>g.remove());
+    g.addEventListener('click', ev=>{ if(ev.target===g) g.remove(); });
+    g.querySelector('#ftp-go').addEventListener('click', ()=>{ g.remove(); goToFreeThu(); });
+  }
   function isRainbowClass(c){ return !!(c && c.name && c.name.trim()==='Queers & Allies'); }
   // Règle du 13 oct. 2026 (Amélie) : un cours à contribution est INCLUS dans tout abonnement illimité actif
   // (aucune contribution demandée). Une personne qui a une passe (crédits) peut, si elle préfère, payer ce
@@ -5873,6 +5937,7 @@
     }
 
     ensureHealthGate();
+    ensureFreeThuPopup();
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -6213,7 +6278,11 @@
     const isRainbow = c.name && c.name.trim()==='Queers & Allies';
     const nameColor = isRainbow ? '#FFFBF8' : accent;
     const tint = classTint(c);
-    const tileStyle = isRainbow ? '' : ` style="border-left-color:${accent};${tint ? `background:${tint};` : ''}"`;
+    const ffl = isFreeForLifeClass(c);
+    const flStyle = ffl ? 'position:relative;border:1px solid var(--sage);border-left:5px solid var(--sage);box-shadow:0 0 0 2px rgba(147,180,143,0.25);background:#2A342C;' : '';
+    const flBadge = ffl ? '<div style="position:absolute;top:-1px;right:-1px;background:var(--sage);color:#25262A;font-family:var(--font-d);font-size:11px;letter-spacing:.08em;padding:4px 9px;border-radius:0 6px 0 8px;font-weight:700;">GRATUIT À VIE</div>' : '';
+    const flNote = ffl ? '<div style="color:var(--sage);font-size:11.5px;margin-top:3px;">♥ Gratuit pour toujours, sans abonnement</div>' : '';
+    const tileStyle = isRainbow ? '' : ` style="border-left-color:${accent};${tint ? `background:${tint};` : ''}${flStyle}"`;
     const _past = !isManagerContext() && !isProgram && isClassPast(c, dateIso);
     if(_past){
       return `
@@ -6225,8 +6294,10 @@
     }
     const tileInner = `
       <div class="class-tile ${full?'full':''}"${tileStyle} data-action="open-class" data-class="${c.id}" data-date="${dateIso}">
-        <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">\u00b7 ${categoryLabel(c.category)}</span> ${isContributionClass(c) ? '<span style="color:var(--sage);">\u00b7 contribution volontaire</span>' : (c.free ? '<span style="color:var(--sage);">\u00b7 gratuit</span>' : '')}</div>
-        <div class="class-name" style="color:${nameColor};">${escapeHtml(c.name)}${isProgram ? ` <span style="color:var(--amber);font-size:11px;">\u00b7 ${programOrEventWord(c)}</span>` : ''}</div>
+        ${flBadge}
+        <div class="class-time">${c.time} <span style="color:var(--chalk);font-weight:700;">· ${categoryLabel(c.category)}</span> ${isContributionClass(c) ? '<span style="color:var(--sage);">\u00b7 contribution volontaire</span>' : (c.free ? '<span style="color:var(--sage);">\u00b7 gratuit</span>' : '')}</div>
+        <div class="class-name" style="color:${nameColor};">${escapeHtml(c.name)}${isProgram ? ` <span style="color:var(--amber);font-size:11px;">· ${programOrEventWord(c)}</span>` : ''}</div>
+        ${flNote}
         ${c.publicNote ? `<div style="color:var(--sage);font-size:11px;line-height:1.3;margin-top:2px;">\u{1F4CC} ${escapeHtml(c.publicNote)}</div>` : ''}
         ${spotsText ? `<div class="class-spots">${spotsText}</div>` : ''}
         ${hideSpots ? '' : `<div class="dots">${dots}</div>`}
@@ -6367,6 +6438,7 @@
     }
 
     return `
+      ${freeThuBannerHtml()}
       ${myWeekBookingsHtml}
       ${bookingDayOnly ? `
       ${getNextIntroProgram() ? `<div style="max-width:480px;margin:0 auto 14px;"><button class="btn-intro-highlight intro-btn-daybar" data-action="goto-next-intro">Aller au prochain programme d'intro — ${formatShortDate(getNextIntroProgram().startDate)} au ${formatShortDate(getNextIntroProgram().endDate)}</button></div>` : ''}
@@ -8848,7 +8920,7 @@
       const occ = isProgram ? getProgramOccurrences(c) : [];
       const isFirstOcc = isProgram && isFirstProgramOccurrence(c, dateIso);
       const confirmedList = state.data.bookings.filter(b=>b.classId===classId && b.dateIso===dateIso && b.status==='confirmee');
-      const payLabel = c.free ? 'Cours à contribution volontaire' : 'Cours payant';
+      const payLabel = isFreeForLifeClass(c) ? 'Cours gratuit, pour toujours' : (c.free ? 'Cours à contribution volontaire' : 'Cours payant');
       // Demandé par Amélie (S41) : pouvoir annuler sa présence directement en cliquant sur
       // le cours (pas seulement via le ✕ dans "Mes réservations cette semaine"). On liste ici
       // TOUTES les réservations actives de ce compte (élève + famille) pour cette occurrence.
@@ -12006,7 +12078,8 @@
     const action = e.currentTarget.dataset.action;
     const id = e.currentTarget.dataset.id;
 
-    if(action==='goto-student'){
+    if(action==='free-thu-go'){ goToFreeThu(); }
+    else if(action==='goto-student'){
       // S48 (23 sept) : comme goto-attendance, on repart TOUJOURS sur la vue jour à chaque
       // ouverture explicite de l'onglet Réserver (voir renderStudent, state.bookingDayOnly).
       state.view='student';
