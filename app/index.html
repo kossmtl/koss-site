@@ -3962,6 +3962,21 @@
     return `<span class="badge ${cls2}">${label}</span>`;
   }
 
+  // Date d'activation d'un abonnement (vue admin) : date de début si elle existe, sinon la date
+  // de création (anciens abonnements / importés). Sert à voir d'un coup d'œil depuis quand
+  // l'abonnement est actif avant de le prolonger.
+  function membershipActivationIso(m){
+    if(m.startDate) return m.startDate;
+    if(typeof m.createdAt==='number') return isoDate(new Date(m.createdAt));
+    return '';
+  }
+  function membershipActivationNote(m){
+    const iso = membershipActivationIso(m);
+    if(!iso || m.loanBundle || m.loanFee || m.contributionCredit || m.isContribution) return '';
+    const label = iso > todayIso() ? 'Début le ' : 'Activé le ';
+    return '<span class="mem-activation" style="display:inline-block;color:var(--amber);font-size:11px;font-weight:600;">'+label+escapeHtml(iso)+'</span>';
+  }
+
   function membershipDetail(m){
     if(m.loanBundle) return 'Forfait d’emprunts : '+(m.loansRemaining||0)+' / '+(m.loansTotal||10)+' restants · '+(m.planPrice||'');
     if(m.loanFee) return 'Emprunt de matériel : '+(m.planPrice||'');
@@ -5468,7 +5483,7 @@
         <tr>
           <td>${nameLink}${childOfNoteHtml(m.studentEmail, m.profileId)}<br><span style="color:var(--chalk-dim);font-size:11px;">${escapeHtml(m.studentEmail)}</span></td>
           <td><span class="plan-name-link" data-action="open-membership-actions" data-id="${m.id}">${escapeHtml(m.planName)}</span>${introDateNote(m)}${m.grantedFree?' <span style="color:var(--chalk-dim);font-size:11px;">(offert)</span>':''}${hiddenNote}${refundNote}</td>
-          <td>${ds==='active' ? membershipDetail(m)+passBarHtml(m) : '—'}</td>
+          <td>${ds==='active' ? membershipDetail(m)+passBarHtml(m) : '—'}${membershipActivationNote(m) ? '<br>'+membershipActivationNote(m) : ''}</td>
           <td>${membershipBadge(m)}</td>
           <td class="arrow-cell" style="text-align:center;width:30px;"><button type="button" class="arrow-btn" title="Voir les actions" onclick="var r=document.getElementById('${rowId}');var open=r.style.display!=='table-row';r.style.display=open?'table-row':'none';this.classList.toggle('open',open);">▼</button></td>
         </tr>
@@ -9643,7 +9658,8 @@
           <div class="modal">
             <button class="close-x" data-action="close-modal">✕</button>
             <h3>${escapeHtml(membership.studentName)}</h3>
-            <p class="muted" style="margin:2px 0 16px;">${escapeHtml(membership.planName)} — ${membershipBadge(membership)}</p>
+            <p class="muted" style="margin:2px 0 6px;">${escapeHtml(membership.planName)} — ${membershipBadge(membership)}</p>
+            <p style="margin:0 0 16px;font-size:13px;">${membershipActivationNote(membership)}${membership.endDate ? ' <span style="color:var(--chalk-dim);font-size:12px;">· fin : '+escapeHtml(membership.endDate)+'</span>' : ''}</p>
             ${membershipInstallmentScheduleHtml(membership)}
             <div style="display:flex;flex-direction:column;gap:8px;">${extra || '<p class="muted" style="color:var(--chalk-dim);">Aucune action disponible.</p>'}</div>
             <div class="btn-row" style="margin-top:16px;"><button class="btn btn-secondary" data-action="close-modal">Fermer</button></div>
@@ -11168,6 +11184,7 @@
           <button class="close-x" data-action="close-modal">✕</button>
           <h3>Modifier l\u2019abonnement</h3>
           <p class="muted">${escapeHtml(mem.studentName)} — ${escapeHtml(mem.planName)}</p>
+          <p style="margin:2px 0 12px;font-size:13px;">${membershipActivationNote(mem)}${mem.endDate ? ' <span style="color:var(--chalk-dim);font-size:12px;">· fin actuelle : '+escapeHtml(mem.endDate)+'</span>' : ''}</p>
           ${mem.type==='credits' ? `
             <label>Nombre de cours restants</label>
             <input id="em-credits" type="number" min="0" value="${mem.creditsRemaining}">
